@@ -95,6 +95,9 @@ static void *capture_worker(void *arg)
         int frames = ops->read(s_app.cap_ctx, pcm, FRAMES_20MS);
         if (frames <= 0) { aosl_hal_msleep(5); continue; }
 
+        /* Discard until RTC join succeeds (avoid filling ringbuf with stale data) */
+        if (!s_app.rtc_connected) continue;
+
         if (ringbuf_write(s_app.cap_ringbuf, (char *)pcm, BYTES_20MS) < 0) {
             static int dc = 0;
             if (++dc % 100 == 0) AOSL_LOG_WRN("cap ringbuf full, dropped %d", dc);
