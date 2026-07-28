@@ -34,6 +34,19 @@ int http_post(const char *url, const char *content_type,
               const char *body, http_response_t *resp);
 
 /**
+ * @brief HTTP GET with extra custom headers.
+ * @param extra_headers  Additional header lines to append (e.g. "Authorization: Bearer x\r\n"), or NULL.
+ */
+int http_get_ex(const char *url, const char *extra_headers, http_response_t *resp);
+
+/**
+ * @brief HTTP POST with extra custom headers.
+ * @param extra_headers  Additional header lines to append, or NULL.
+ */
+int http_post_ex(const char *url, const char *content_type, const char *body,
+                 const char *extra_headers, http_response_t *resp);
+
+/**
  * @brief Free resources allocated in a response.
  */
 void http_response_free(http_response_t *resp);

@@ -10,14 +10,13 @@ extern "C" {
 
 /** Application configuration (parsed from command line) */
 typedef struct {
-    char  app_id[64];
-    char  channel[64];
-    char  token[256];
-    char  user[64];           /* string user account for RTC */
+    char  server_base[128];   /* device API server URL */
+    char  device_id[64];      /* unique device identifier */
+    char  firmware_ver[32];   /* firmware version (optional) */
+    char  hw_model[32];       /* hardware model (optional) */
 } app_config_t;
 
 /** Start the mybot application.
- *  Initializes AOSL, audio subsystem, and RTC session.
  *  Blocks until stopped.
  */
 int app_start(const app_config_t *cfg);

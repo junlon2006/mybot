@@ -276,6 +276,7 @@ static int parse_response(const char *raw, size_t raw_len, http_response_t *resp
  * ---------------------------------------------------------- */
 static int http_request(const char *method, const char *url,
                         const char *content_type, const char *req_body,
+                        const char *extra_headers,
                         http_response_t *resp)
 {
     url_parts_t parts;
@@ -297,18 +298,23 @@ static int http_request(const char *method, const char *url,
             "Content-Type: %s\r\n"
             "Content-Length: %zu\r\n"
             "Connection: close\r\n"
+            "%s"            /* extra headers inserted here */
             "\r\n"
             "%s",
             parts.path, parts.host,
             content_type ? content_type : "application/octet-stream",
-            strlen(req_body), req_body);
+            strlen(req_body),
+            extra_headers ? extra_headers : "",
+            req_body);
     } else {
         req_len = snprintf(req, sizeof(req),
             "GET %s HTTP/1.1\r\n"
             "Host: %s\r\n"
             "Connection: close\r\n"
+            "%s"            /* extra headers inserted here */
             "\r\n",
-            parts.path, parts.host);
+            parts.path, parts.host,
+            extra_headers ? extra_headers : "");
     }
 
     if (req_len < 0 || (size_t)req_len >= sizeof(req)) {
@@ -345,17 +351,28 @@ static int http_request(const char *method, const char *url,
 
 int http_get(const char *url, http_response_t *resp)
 {
-    if (!url || !resp)
-        return -1;
-    return http_request("GET", url, NULL, NULL, resp);
+    return http_get_ex(url, NULL, resp);
 }
 
 int http_post(const char *url, const char *content_type,
               const char *body, http_response_t *resp)
 {
+    return http_post_ex(url, content_type, body, NULL, resp);
+}
+
+int http_get_ex(const char *url, const char *extra_headers, http_response_t *resp)
+{
     if (!url || !resp)
         return -1;
-    return http_request("POST", url, content_type, body, resp);
+    return http_request("GET", url, NULL, NULL, extra_headers, resp);
+}
+
+int http_post_ex(const char *url, const char *content_type, const char *body,
+                 const char *extra_headers, http_response_t *resp)
+{
+    if (!url || !resp)
+        return -1;
+    return http_request("POST", url, content_type, body, extra_headers, resp);
 }
 
 void http_response_free(http_response_t *resp)

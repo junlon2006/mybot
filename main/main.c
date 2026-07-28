@@ -7,17 +7,21 @@
 static void print_usage(const char *prog)
 {
     fprintf(stderr,
-        "Usage: %s --app_id <APP_ID> --channel <CHANNEL> [options]\n"
+        "Usage: %s --server <URL> --device-id <ID> [options]\n"
+        "\n"
+        "Required:\n"
+        "  --server <url>     Device API server base URL\n"
+        "                     e.g. http://localhost:3001\n"
+        "  --device-id <id>   Unique device identifier\n"
+        "                     e.g. AG-A1B2C3\n"
         "\n"
         "Options:\n"
-        "  --app_id <id>      Agora App ID (required)\n"
-        "  --channel <name>   Channel name (required)\n"
-        "  --token <token>    Token for authentication (optional)\n"
-        "  --user <name>      User account string (default: mybot_user)\n"
+        "  --fw-ver <str>     Firmware version string (optional)\n"
+        "  --hw-model <str>   Hardware model string (optional)\n"
         "  -h, --help         Show this help\n"
         "\n"
         "Example:\n"
-        "  %s --app_id abc123 --channel mybot_test --user client_a\n",
+        "  %s --server http://localhost:3001 --device-id AG-DEMO-001\n",
         prog, prog);
 }
 
@@ -25,18 +29,16 @@ int main(int argc, char **argv)
 {
     app_config_t cfg;
     memset(&cfg, 0, sizeof(cfg));
-    snprintf(cfg.user, sizeof(cfg.user), "%s", "mybot_user");
 
-    /* Parse arguments */
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--app_id") == 0 && i + 1 < argc) {
-            strncpy(cfg.app_id, argv[++i], sizeof(cfg.app_id) - 1);
-        } else if (strcmp(argv[i], "--channel") == 0 && i + 1 < argc) {
-            strncpy(cfg.channel, argv[++i], sizeof(cfg.channel) - 1);
-        } else if (strcmp(argv[i], "--token") == 0 && i + 1 < argc) {
-            strncpy(cfg.token, argv[++i], sizeof(cfg.token) - 1);
-        } else if (strcmp(argv[i], "--user") == 0 && i + 1 < argc) {
-            strncpy(cfg.user, argv[++i], sizeof(cfg.user) - 1);
+        if (strcmp(argv[i], "--server") == 0 && i + 1 < argc) {
+            strncpy(cfg.server_base, argv[++i], sizeof(cfg.server_base) - 1);
+        } else if (strcmp(argv[i], "--device-id") == 0 && i + 1 < argc) {
+            strncpy(cfg.device_id, argv[++i], sizeof(cfg.device_id) - 1);
+        } else if (strcmp(argv[i], "--fw-ver") == 0 && i + 1 < argc) {
+            strncpy(cfg.firmware_ver, argv[++i], sizeof(cfg.firmware_ver) - 1);
+        } else if (strcmp(argv[i], "--hw-model") == 0 && i + 1 < argc) {
+            strncpy(cfg.hw_model, argv[++i], sizeof(cfg.hw_model) - 1);
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             print_usage(argv[0]);
             return 0;
@@ -47,18 +49,17 @@ int main(int argc, char **argv)
         }
     }
 
-    if (cfg.app_id[0] == '\0' || cfg.channel[0] == '\0') {
-        fprintf(stderr, "ERROR: --app_id and --channel are required\n\n");
+    if (cfg.server_base[0] == '\0' || cfg.device_id[0] == '\0') {
+        fprintf(stderr, "ERROR: --server and --device-id are required\n\n");
         print_usage(argv[0]);
         return 1;
     }
 
     fprintf(stdout, "mybot v0.1.0 starting...\n");
-    fprintf(stdout, "  app_id : %s\n", cfg.app_id);
-    fprintf(stdout, "  channel: %s\n", cfg.channel);
-    if (cfg.token[0])
-        fprintf(stdout, "  token  : %s\n", cfg.token);
-    fprintf(stdout, "  user   : %s\n", cfg.user);
+    fprintf(stdout, "  server   : %s\n", cfg.server_base);
+    fprintf(stdout, "  device-id: %s\n", cfg.device_id);
+    if (cfg.firmware_ver[0]) fprintf(stdout, "  fw-ver   : %s\n", cfg.firmware_ver);
+    if (cfg.hw_model[0])     fprintf(stdout, "  hw-model : %s\n", cfg.hw_model);
     fprintf(stdout, "Press Ctrl+C to stop\n\n");
 
     return app_start(&cfg);

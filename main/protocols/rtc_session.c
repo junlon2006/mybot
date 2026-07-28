@@ -196,7 +196,7 @@ int rtc_session_join(const char *channel, const char *token, const char *user_ac
     /* BWE parameters (defaults) */
     agora_rtc_set_bwe_param(s_rtc.conn_id, 16000, 256000, 64000);
 
-    /* Channel options: PCM input → SDK encodes to Opus */
+    /* Channel options: PCM input → SDK encodes to G.722 */
     rtc_channel_options_t ch_opt;
     memset(&ch_opt, 0, sizeof(ch_opt));
     ch_opt.auto_subscribe_audio     = true;
@@ -206,7 +206,7 @@ int rtc_session_join(const char *channel, const char *token, const char *user_ac
     ch_opt.enable_audio_decode      = true;
 
     /* Tell SDK we'll send PCM; it will encode to Opus */
-    ch_opt.audio_codec_opt.audio_codec_type  = AUDIO_CODEC_TYPE_OPUS;
+    ch_opt.audio_codec_opt.audio_codec_type  = AUDIO_CODEC_TYPE_G722;
     ch_opt.audio_codec_opt.pcm_sample_rate   = 16000;
     ch_opt.audio_codec_opt.pcm_channel_num   = 1;
     ch_opt.audio_codec_opt.pcm_duration      = 20;  /* ms */
