@@ -35,11 +35,17 @@ typedef struct {
     /** A pair code was obtained — device should TTS-broadcast it. */
     void (*on_pair_code)(const char *code);
 
+    /** Audio should start (before POST /conversations/start). */
+    void (*on_audio_start)(void);
+
     /** Conversation should start — join RTC channel with given params. */
     void (*on_conversation_start)(const conversation_params_t *params);
 
     /** Conversation should stop — leave RTC channel. */
     void (*on_conversation_stop)(void);
+
+    /** Audio should stop (after POST /conversations/stop). */
+    void (*on_audio_stop)(void);
 
     /** State changed (for logging / UI). */
     void (*on_state_changed)(device_state_t state);

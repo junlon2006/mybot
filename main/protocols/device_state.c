@@ -193,6 +193,10 @@ static void action_poll_binding_runtime(void)
  * ---------------------------------------------------------- */
 static void action_start_conversation(void)
 {
+    /* Start audio capture/playback BEFORE calling the API */
+    if (s_state.cbs.on_audio_start)
+        s_state.cbs.on_audio_start();
+
     device_conversation_t resp;
     memset(&resp, 0, sizeof(resp));
 
@@ -244,6 +248,10 @@ static void action_stop_conversation(const char *reason)
 
     if (s_state.cbs.on_conversation_stop)
         s_state.cbs.on_conversation_stop();
+
+    /* Stop audio capture/playback AFTER all RTC cleanup */
+    if (s_state.cbs.on_audio_stop)
+        s_state.cbs.on_audio_stop();
 }
 
 /* ----------------------------------------------------------
