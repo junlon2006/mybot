@@ -63,8 +63,8 @@ typedef struct {
     char conversation_id[DEVICE_API_MAX_ID];
     char rtc_app_id[64];
     char rtc_channel[128];
-    int  rtc_uid;
-    int  rtc_agent_uid;
+    char rtc_uid[64];           /* string UID assigned by server */
+    char rtc_agent_uid[64];     /* string UID of the ConvoAI Agent */
     char rtc_token[DEVICE_API_MAX_TOKEN];
 } device_conversation_t;
 

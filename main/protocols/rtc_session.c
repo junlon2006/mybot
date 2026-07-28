@@ -1,6 +1,7 @@
 #include "rtc_session.h"
 
 #include "agora_rtc_api.h"
+#include <api/aosl_log.h>
 
 #include <string.h>
 #include <stdio.h>
@@ -48,9 +49,7 @@ static void set_state(rtc_state_t st)
 static void __on_join_channel_success(connection_id_t conn_id, uint32_t uid, int elapsed)
 {
     (void)conn_id;
-    (void)uid;
-    (void)elapsed;
-    fprintf(stdout, "[RTC] join channel success (uid=%u, elapsed=%d ms)\n", uid, elapsed);
+    AOSL_LOG_INF("!!! join channel SUCCESS (uid=%u, elapsed=%d ms) !!!", uid, elapsed);
     set_state(RTC_STATE_CONNECTED);
 }
 
@@ -164,11 +163,16 @@ int rtc_session_init(const char *app_id, rtc_session_callbacks_t *cbs)
     opt.use_string_uid = true;
     snprintf(opt.license_value, sizeof(opt.license_value), "%s", "");
 
+    AOSL_LOG_INF("calling agora_rtc_init(app_id=%s, use_string_uid=%d)",
+                 app_id, opt.use_string_uid);
+
     int ret = agora_rtc_init((void *)app_id, &handler, &opt);
     if (ret < 0) {
-        fprintf(stderr, "[RTC] agora_rtc_init failed: %s\n", agora_rtc_err_2_str(ret));
+        AOSL_LOG_ERR("agora_rtc_init failed: %s", agora_rtc_err_2_str(ret));
         return -1;
     }
+
+    AOSL_LOG_INF("agora_rtc_init ok (sdk v%s)", agora_rtc_get_version());
 
     s_rtc.initialized = true;
     set_state(RTC_STATE_INITIALIZED);
@@ -213,18 +217,28 @@ int rtc_session_join(const char *channel, const char *token, const char *user_ac
 
     const char *p_token = (token && token[0]) ? token : NULL;
     const char *p_user  = (user_account && user_account[0]) ? user_account : "default_user";
+
+    AOSL_LOG_INF("joining channel: conn_id=%u, channel=%s, user=%s, has_token=%d",
+                 s_rtc.conn_id, channel, p_user, p_token ? 1 : 0);
+    AOSL_LOG_INF("  audio_codec=%d, pcm_rate=%d, pcm_chan=%d, pcm_duration=%d",
+                 ch_opt.audio_codec_opt.audio_codec_type,
+                 ch_opt.audio_codec_opt.pcm_sample_rate,
+                 ch_opt.audio_codec_opt.pcm_channel_num,
+                 ch_opt.audio_codec_opt.pcm_duration);
+
     set_state(RTC_STATE_CONNECTING);
 
     ret = agora_rtc_join_channel_with_user_account(s_rtc.conn_id, channel,
                                                     p_user, p_token, &ch_opt);
     if (ret < 0) {
-        fprintf(stderr, "[RTC] join_channel failed: %s\n", agora_rtc_err_2_str(ret));
+        AOSL_LOG_ERR("join_channel failed: %s", agora_rtc_err_2_str(ret));
         agora_rtc_destroy_connection(s_rtc.conn_id);
         s_rtc.conn_id = 0;
         set_state(RTC_STATE_ERROR);
         return -1;
     }
 
+    AOSL_LOG_INF("join_channel request sent, waiting for callback...");
     return 0;
 }
 
@@ -233,14 +247,20 @@ int rtc_session_leave(void)
     if (!s_rtc.initialized || s_rtc.conn_id == 0)
         return 0;
 
+    AOSL_LOG_INF("leaving channel (conn_id=%u)...", s_rtc.conn_id);
+
     int ret = agora_rtc_leave_channel(s_rtc.conn_id);
     if (ret < 0) {
-        fprintf(stderr, "[RTC] leave_channel failed: %s\n", agora_rtc_err_2_str(ret));
+        AOSL_LOG_ERR("leave_channel failed: %s", agora_rtc_err_2_str(ret));
+    } else {
+        AOSL_LOG_INF("leave_channel ok");
     }
 
     ret = agora_rtc_destroy_connection(s_rtc.conn_id);
     if (ret < 0) {
-        fprintf(stderr, "[RTC] destroy_connection failed: %s\n", agora_rtc_err_2_str(ret));
+        AOSL_LOG_ERR("destroy_connection failed: %s", agora_rtc_err_2_str(ret));
+    } else {
+        AOSL_LOG_INF("connection destroyed");
     }
 
     s_rtc.conn_id = 0;

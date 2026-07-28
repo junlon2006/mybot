@@ -31,6 +31,7 @@ set(MYBOT_SRC
     main/app.c
     components/ringbuf/ringbuf.c
     components/http_client/http_client.c
+    components/cJSON/cJSON.c
     main/protocols/device_api.c
     main/audio/audio_device.c
     main/audio/platform/alsa/audio_capture_alsa.c
@@ -47,6 +48,7 @@ target_include_directories(mybot PRIVATE
     ${CMAKE_SOURCE_DIR}/main/protocols
     ${CMAKE_SOURCE_DIR}/components/ringbuf
     ${CMAKE_SOURCE_DIR}/components/http_client
+    ${CMAKE_SOURCE_DIR}/components/cJSON
     ${AGORA_SDK_DIR}/include
     ${AOSL_DIR}/include
     ${AOSL_DIR}/platform/include

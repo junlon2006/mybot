@@ -11,6 +11,7 @@
 
 #include <hal/aosl_hal_thread.h>
 #include <hal/aosl_hal_time.h>
+#include <hal/aosl_hal_socket.h>
 
 #include <string.h>
 #include <stdio.h>
@@ -55,7 +56,7 @@ static struct {
     char            rtc_app_id[64];
     char            rtc_channel[128];
     char            rtc_token[512];
-    int             rtc_uid;
+    char            rtc_uid[64];
 
     /* Timer handles */
     aosl_timer_t    send_timer;
@@ -170,32 +171,56 @@ static void dev_on_pair_code(const char *code)
 
 static void dev_on_conversation_start(const conversation_params_t *params)
 {
-    AOSL_LOG_INF("conversation start: channel=%s, uid=%d", params->rtc_channel, params->rtc_uid);
+    AOSL_LOG_INF("==== CONVERSATION START ====");
+    AOSL_LOG_INF("  conversation_id: %s", params->conversation_id);
+    AOSL_LOG_INF("  rtc channel    : %s", params->rtc_channel);
+    AOSL_LOG_INF("  rtc uid        : %s", params->rtc_uid);
+    AOSL_LOG_INF("  rtc app_id     : %s", params->rtc_app_id);
+    AOSL_LOG_INF("  rtc token      : %s...", params->rtc_token);
 
     /* Save RTC params and join channel */
     strncpy(s_app.rtc_app_id,  params->rtc_app_id,   sizeof(s_app.rtc_app_id) - 1);
     strncpy(s_app.rtc_channel, params->rtc_channel,  sizeof(s_app.rtc_channel) - 1);
     strncpy(s_app.rtc_token,   params->rtc_token,    sizeof(s_app.rtc_token) - 1);
-    s_app.rtc_uid = params->rtc_uid;
+    strncpy(s_app.rtc_uid,     params->rtc_uid,      sizeof(s_app.rtc_uid) - 1);
 
-    /* Re-init RTC session with the conversation's app_id */
+    /* Init RTC session */
     rtc_session_callbacks_t cbs;
     memset(&cbs, 0, sizeof(cbs));
     cbs.on_remote_audio  = on_remote_audio;
     cbs.on_state_changed = on_rtc_state_changed;
 
-    /* Note: if app_id changes between conversations, we need to re-init.
-     * For now assume same app_id across all conversations. */
-    if (rtc_session_init(params->rtc_app_id, &cbs) == 0) {
-        rtc_session_join(params->rtc_channel, params->rtc_token, "device_client");
+    int ret = rtc_session_init(params->rtc_app_id, &cbs);
+    if (ret < 0) {
+        AOSL_LOG_ERR("rtc_session_init failed");
+        return;
     }
+    AOSL_LOG_INF("rtc_session_init ok");
+
+    /* Join channel with server-assigned string UID */
+    AOSL_LOG_INF("joining RTC as user_account=%s", params->rtc_uid);
+    ret = rtc_session_join(params->rtc_channel, params->rtc_token, params->rtc_uid);
+    if (ret < 0) {
+        AOSL_LOG_ERR("rtc_session_join failed");
+        return;
+    }
+    AOSL_LOG_INF("rtc_session_join requested, waiting for on_join_channel_success...");
 }
 
 static void dev_on_conversation_stop(void)
 {
-    AOSL_LOG_INF("conversation stop");
-    rtc_session_leave();
+    AOSL_LOG_INF("==== CONVERSATION STOP ====");
+    AOSL_LOG_INF("  channel: %s, uid: %s", s_app.rtc_channel, s_app.rtc_uid);
+
+    int ret = rtc_session_leave();
+    if (ret < 0) {
+        AOSL_LOG_ERR("rtc_session_leave failed");
+    } else {
+        AOSL_LOG_INF("rtc_session_leave ok");
+    }
+
     s_app.rtc_connected = false;
+    AOSL_LOG_INF("==== CONVERSATION ENDED ====");
 }
 
 static void dev_on_state_changed(device_state_t state)
@@ -309,9 +334,44 @@ int app_start(const app_config_t *cfg)
     if (aosl_main_start(0, mpq_init, mpq_fini, NULL) < 0)
         { AOSL_LOG_ERR("aosl_main_start failed"); goto fail; }
 
-    /* ---- 9. Main loop: drive state machine + wait for signal ---- */
-    AOSL_LOG_INF("entering main loop, press Ctrl+C to stop");
+    /* ---- 9. Set stdin non-blocking for key handling ---- */
+    aosl_hal_sk_set_nonblock((aosl_fd_t)0);
+
+    /* ---- 10. Main loop: drive state machine + key handling ---- */
+    fprintf(stdout, "\n"
+        "=== mybot ready ===\n"
+        "  s - start conversation\n"
+        "  q - stop conversation\n"
+        "  p - re-pair device\n"
+        "  Ctrl+C - exit\n"
+        "\n");
     while (s_app.running) {
+        /* Check for key presses (non-blocking) */
+        char ch;
+        int n = aosl_hal_sk_read((aosl_fd_t)0, &ch, 1);
+        if (n == 1) {
+            switch (ch) {
+            case 's':
+                fprintf(stdout, "[KEY] s -> start conversation\n");
+                device_state_request_start();
+                break;
+            case 'q':
+                fprintf(stdout, "[KEY] q -> stop conversation\n");
+                device_state_request_stop();
+                break;
+            case 'p':
+                fprintf(stdout, "[KEY] p -> re-pair\n");
+                device_state_request_pair();
+                break;
+            case '\n':
+            case '\r':
+                break;
+            default:
+                fprintf(stdout, "[KEY] '%c' ignored (s=start, q=stop, p=pair)\n", ch);
+                break;
+            }
+        }
+
         device_state_tick();
         aosl_hal_msleep(100);
     }

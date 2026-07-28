@@ -207,7 +207,7 @@ static void action_start_conversation(void)
     strncpy(s_state.conversation_id, resp.conversation_id,
             sizeof(s_state.conversation_id) - 1);
 
-    fprintf(stdout, "[STATE] conversation started: %s, channel=%s, uid=%d\n",
+    fprintf(stdout, "[STATE] conversation started: %s, channel=%s, uid=%s\n",
             s_state.conversation_id, resp.rtc_channel, resp.rtc_uid);
 
     set_state(DEVICE_STATE_IN_CONVERSATION);
@@ -219,7 +219,7 @@ static void action_start_conversation(void)
         strncpy(params.conversation_id, resp.conversation_id, sizeof(params.conversation_id) - 1);
         strncpy(params.rtc_app_id, resp.rtc_app_id, sizeof(params.rtc_app_id) - 1);
         strncpy(params.rtc_channel, resp.rtc_channel, sizeof(params.rtc_channel) - 1);
-        params.rtc_uid = resp.rtc_uid;
+        strncpy(params.rtc_uid, resp.rtc_uid, sizeof(params.rtc_uid) - 1);
         strncpy(params.rtc_token, resp.rtc_token, sizeof(params.rtc_token) - 1);
         s_state.cbs.on_conversation_start(&params);
     }
