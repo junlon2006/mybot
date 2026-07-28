@@ -226,7 +226,6 @@ static void dev_on_conversation_stop(void)
 static void dev_on_state_changed(device_state_t state)
 {
     (void)state;
-    /* logged by device_state itself */
 }
 
 /* ----------------------------------------------------------
@@ -237,7 +236,6 @@ static int mpq_init(void *arg)
     (void)arg;
     AOSL_LOG_INF("MPQ loop started");
 
-    /* Create 20ms send timer for audio */
     s_app.send_timer = aosl_mpq_set_timer(20, send_audio_timer, NULL, 0);
     if (aosl_mpq_timer_invalid(s_app.send_timer))
         AOSL_LOG_ERR("failed to create send timer");
@@ -337,7 +335,7 @@ int app_start(const app_config_t *cfg)
     /* ---- 9. Set stdin non-blocking for key handling ---- */
     aosl_hal_sk_set_nonblock((aosl_fd_t)0);
 
-    /* ---- 10. Main loop: drive state machine + key handling ---- */
+    /* ---- 10. Main loop: key handling + state machine ---- */
     fprintf(stdout, "\n"
         "=== mybot ready ===\n"
         "  s - start conversation\n"
@@ -346,10 +344,8 @@ int app_start(const app_config_t *cfg)
         "  Ctrl+C - exit\n"
         "\n");
     while (s_app.running) {
-        /* Check for key presses (non-blocking) */
         char ch;
-        int n = aosl_hal_sk_read((aosl_fd_t)0, &ch, 1);
-        if (n == 1) {
+        if (aosl_hal_sk_read((aosl_fd_t)0, &ch, 1) == 1) {
             switch (ch) {
             case 's':
                 fprintf(stdout, "[KEY] s -> start conversation\n");
@@ -371,32 +367,36 @@ int app_start(const app_config_t *cfg)
                 break;
             }
         }
-
         device_state_tick();
         aosl_hal_msleep(100);
     }
 
-    /* ---- 10. Shutdown ---- */
-    /* Stop any ongoing conversation */
+    /* ---- 11. Shutdown ---- */
     device_state_request_stop();
-    aosl_hal_msleep(500); /* allow stop request to be processed */
+    aosl_hal_msleep(500);
 
     aosl_main_exit_wait();
 
 cleanup:
     AOSL_LOG_INF("cleaning up...");
 
-    s_app.running = false;
-    if (s_app.cap_thread) { aosl_hal_thread_join(s_app.cap_thread, NULL); s_app.cap_thread = 0; }
-    if (s_app.pb_thread) { aosl_hal_thread_join(s_app.pb_thread, NULL); s_app.pb_thread = 0; }
-
+    /* Step 1: stop RTC session */
     rtc_session_fini();
 
+    /* Step 2: close PCM devices — unblocks capture/playback threads */
     aosl_hal_mutex_lock(s_app.lock);
-    if (s_app.cap_ctx) { cap_ops->destroy(s_app.cap_ctx); s_app.cap_ctx = NULL; }
-    if (s_app.pb_ctx)  { pb_ops->destroy(s_app.pb_ctx);  s_app.pb_ctx  = NULL; }
+    if (s_app.cap_ctx) { cap_ops->stop(s_app.cap_ctx); cap_ops->destroy(s_app.cap_ctx); s_app.cap_ctx = NULL; }
+    if (s_app.pb_ctx)  { pb_ops->stop(s_app.pb_ctx);  pb_ops->destroy(s_app.pb_ctx);  s_app.pb_ctx  = NULL; }
     aosl_hal_mutex_unlock(s_app.lock);
 
+    /* Step 3: wait for worker threads to exit */
+    s_app.running = false;
+    aosl_hal_msleep(50);
+
+    if (s_app.cap_thread) { aosl_hal_thread_join(s_app.cap_thread, NULL); s_app.cap_thread = 0; }
+    if (s_app.pb_thread)  { aosl_hal_thread_join(s_app.pb_thread, NULL);  s_app.pb_thread  = 0; }
+
+    /* Step 4: destroy ring buffers */
     if (s_app.cap_ringbuf) { ringbuf_destroy(s_app.cap_ringbuf); s_app.cap_ringbuf = NULL; }
     if (s_app.pb_ringbuf)  { ringbuf_destroy(s_app.pb_ringbuf);  s_app.pb_ringbuf  = NULL; }
 

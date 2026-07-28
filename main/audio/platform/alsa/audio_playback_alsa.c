@@ -6,9 +6,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define TAG "ALSA_PB"
+#include <api/aosl_log.h>
 
-/* ---- ALSA error recovery helpers (mirrors capture pattern) ---- */
+/* ---- ALSA error recovery helpers ---- */
 static int xrun_recover(snd_pcm_t *handle)
 {
     snd_pcm_status_t *status;
@@ -16,19 +16,18 @@ static int xrun_recover(snd_pcm_t *handle)
 
     int err = snd_pcm_status(handle, status);
     if (err < 0) {
-        fprintf(stderr, "[ALSA_PB] status error: %s\n", snd_strerror(err));
+        AOSL_LOG_ERR("xrun_recover: status error: %s", snd_strerror(err));
         goto prepare;
     }
     if (snd_pcm_status_get_state(status) == SND_PCM_STATE_XRUN) {
         snd_pcm_uframes_t delay = snd_pcm_status_get_delay(status);
-        fprintf(stderr, "[ALSA_PB] underrun detected (%lu frames), recovering\n",
-                (unsigned long)delay);
+        AOSL_LOG_WRN("xrun: underrun detected (%lu frames), recovering", (unsigned long)delay);
     }
 
 prepare:
     err = snd_pcm_prepare(handle);
     if (err < 0) {
-        fprintf(stderr, "[ALSA_PB] prepare failed after xrun: %s\n", snd_strerror(err));
+        AOSL_LOG_ERR("xrun_recover: prepare failed: %s", snd_strerror(err));
         return -1;
     }
     return 0;
@@ -42,7 +41,7 @@ static int suspend_recover(snd_pcm_t *handle)
     if (err < 0) {
         err = snd_pcm_prepare(handle);
         if (err < 0) {
-            fprintf(stderr, "[ALSA_PB] resume/prepare failed: %s\n", snd_strerror(err));
+            AOSL_LOG_ERR("suspend_recover: resume/prepare failed: %s", snd_strerror(err));
             return -1;
         }
     }
@@ -54,7 +53,7 @@ static int pcm_write(snd_pcm_t *handle, const char *buf, size_t frames)
     ssize_t r;
     size_t  count = frames;
     size_t  result = 0;
-    int     frame_bytes = 2; /* 16-bit mono = 2 bytes/frame */
+    int     frame_bytes = 2;
 
     while (count > 0) {
         r = snd_pcm_writei(handle, buf + result * frame_bytes, count);
@@ -67,7 +66,7 @@ static int pcm_write(snd_pcm_t *handle, const char *buf, size_t frames)
             if (suspend_recover(handle) < 0)
                 return -1;
         } else if (r < 0) {
-            fprintf(stderr, "[ALSA_PB] write error: %s\n", snd_strerror(r));
+            AOSL_LOG_ERR("pcm_write: %s", snd_strerror(r));
             return -1;
         }
         if (r > 0) {
@@ -101,20 +100,21 @@ static int alsa_playback_init(void **ctx, int rate, int channels, int bits)
     p->channels        = channels;
     p->bits_per_sample = bits;
 
+    AOSL_LOG_INF("init: rate=%d channels=%d bits=%d", rate, channels, bits);
+
     int err;
     snd_pcm_hw_params_t *hw;
     snd_pcm_sw_params_t *sw;
 
     err = snd_pcm_open(&p->handle, "default", SND_PCM_STREAM_PLAYBACK, 0);
     if (err < 0) {
-        fprintf(stderr, "[ALSA_PB] open failed: %s\n", snd_strerror(err));
+        AOSL_LOG_ERR("init: snd_pcm_open failed: %s", snd_strerror(err));
         goto fail;
     }
 
     /* HW params */
     snd_pcm_hw_params_alloca(&hw);
     snd_pcm_hw_params_any(p->handle, hw);
-
     snd_pcm_hw_params_set_access(p->handle, hw, SND_PCM_ACCESS_RW_INTERLEAVED);
     snd_pcm_hw_params_set_format(p->handle, hw, SND_PCM_FORMAT_S16_LE);
     snd_pcm_hw_params_set_channels(p->handle, hw, channels);
@@ -131,9 +131,12 @@ static int alsa_playback_init(void **ctx, int rate, int channels, int bits)
 
     err = snd_pcm_hw_params(p->handle, hw);
     if (err < 0) {
-        fprintf(stderr, "[ALSA_PB] hw_params failed: %s\n", snd_strerror(err));
+        AOSL_LOG_ERR("init: hw_params failed: %s", snd_strerror(err));
         goto fail;
     }
+
+    AOSL_LOG_DBG("init: hw_params ok (rate=%u, buf=%lu, period=%lu)",
+                 actual_rate, (unsigned long)buf_frames, (unsigned long)period_frames);
 
     /* SW params: start only when buffer is full */
     snd_pcm_sw_params_alloca(&sw);
@@ -142,11 +145,12 @@ static int alsa_playback_init(void **ctx, int rate, int channels, int bits)
     snd_pcm_sw_params_set_start_threshold(p->handle, sw, buf_frames);
     err = snd_pcm_sw_params(p->handle, sw);
     if (err < 0) {
-        fprintf(stderr, "[ALSA_PB] sw_params failed: %s\n", snd_strerror(err));
+        AOSL_LOG_ERR("init: sw_params failed: %s", snd_strerror(err));
         goto fail;
     }
 
     *ctx = p;
+    AOSL_LOG_INF("init: ok");
     return 0;
 
 fail:
@@ -158,6 +162,7 @@ fail:
 static int alsa_playback_start(void *ctx)
 {
     (void)ctx;
+    AOSL_LOG_INF("start");
     return 0;
 }
 
@@ -169,6 +174,7 @@ static int alsa_playback_write(void *ctx, const void *buf, int frames)
 
 static int alsa_playback_stop(void *ctx)
 {
+    AOSL_LOG_INF("stop");
     if (ctx) {
         alsa_pb_t *p = (alsa_pb_t *)ctx;
         snd_pcm_drain(p->handle);
@@ -178,6 +184,7 @@ static int alsa_playback_stop(void *ctx)
 
 static void alsa_playback_destroy(void *ctx)
 {
+    AOSL_LOG_INF("destroy");
     if (!ctx)
         return;
     alsa_pb_t *p = (alsa_pb_t *)ctx;
@@ -197,8 +204,8 @@ static const audio_playback_ops_t g_alsa_playback_ops = {
     .destroy = alsa_playback_destroy,
 };
 
-/* Called once to register the ALSA playback backend */
 void audio_platform_register_alsa_playback(void)
 {
     audio_device_register_playback(&g_alsa_playback_ops);
+    AOSL_LOG_INF("platform registered");
 }
