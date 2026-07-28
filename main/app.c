@@ -199,50 +199,6 @@ static void send_audio_timer(aosl_timer_t id, const aosl_ts_t *now,
  * Device state machine callbacks
  * ---------------------------------------------------------- */
 
-static void dev_on_audio_start(void)
-{
-    AOSL_LOG_INF("audio start");
-    const audio_capture_ops_t  *cap_ops = audio_device_get_capture();
-    const audio_playback_ops_t *pb_ops  = audio_device_get_playback();
-    if (!cap_ops || !pb_ops) { AOSL_LOG_ERR("audio device not registered"); return; }
-
-    cap_ops->start(s_app.cap_ctx);
-    pb_ops->start(s_app.pb_ctx);
-
-    s_app.running = true;
-
-    aosl_thread_param_t p_cap = { "cap_worker", AOSL_THRD_PRI_NORMAL, 0 };
-    aosl_hal_thread_create(&s_app.cap_thread, &p_cap, capture_worker, NULL);
-
-    aosl_thread_param_t p_pb = { "pb_worker", AOSL_THRD_PRI_NORMAL, 0 };
-    aosl_hal_thread_create(&s_app.pb_thread, &p_pb, playback_worker, NULL);
-}
-
-static void dev_on_audio_stop(void)
-{
-    AOSL_LOG_INF("audio stop");
-    const audio_capture_ops_t  *cap_ops = audio_device_get_capture();
-    const audio_playback_ops_t *pb_ops  = audio_device_get_playback();
-
-    /* Close PCM devices to unblock capture/playback threads */
-    if (cap_ops && s_app.cap_ctx) { cap_ops->stop(s_app.cap_ctx); cap_ops->destroy(s_app.cap_ctx); s_app.cap_ctx = NULL; }
-    if (pb_ops && s_app.pb_ctx)  { pb_ops->stop(s_app.pb_ctx);  pb_ops->destroy(s_app.pb_ctx);  s_app.pb_ctx  = NULL; }
-
-    s_app.running = false;
-    aosl_hal_msleep(50);
-
-    if (s_app.cap_thread) { aosl_hal_thread_join(s_app.cap_thread, NULL); s_app.cap_thread = 0; }
-    if (s_app.pb_thread)  { aosl_hal_thread_join(s_app.pb_thread, NULL);  s_app.pb_thread  = 0; }
-
-    /* Clear all ring buffers */
-    if (s_app.cap_ringbuf) ringbuf_clear(s_app.cap_ringbuf);
-    if (s_app.pb_ringbuf)  ringbuf_clear(s_app.pb_ringbuf);
-#if MYBOT_CLOUD_AEC
-    if (s_app.ref_ringbuf) ringbuf_clear(s_app.ref_ringbuf);
-#endif
-    AOSL_LOG_INF("audio stop complete, ringbufs cleared");
-}
-
 static void dev_on_pair_code(const char *code)
 {
     fprintf(stdout, "\n*** PAIR CODE: %s ***\n", code);
@@ -386,14 +342,26 @@ int app_start(const app_config_t *cfg)
     AOSL_LOG_INF("cloud AEC enabled, ref ringbuf created");
 #endif
 
-    /* ---- 5. Initialize device state machine ---- */
+    /* ---- 5. Start audio devices ---- */
+    cap_ops->start(s_app.cap_ctx);
+    pb_ops->start(s_app.pb_ctx);
+
+    /* ---- 6. Start capture/playback threads ---- */
+    {
+        aosl_thread_param_t p = { "cap_worker", AOSL_THRD_PRI_NORMAL, 0 };
+        aosl_hal_thread_create(&s_app.cap_thread, &p, capture_worker, NULL);
+    }
+    {
+        aosl_thread_param_t p = { "pb_worker", AOSL_THRD_PRI_NORMAL, 0 };
+        aosl_hal_thread_create(&s_app.pb_thread, &p, playback_worker, NULL);
+    }
+
+    /* ---- 7. Initialize device state machine ---- */
     device_state_callbacks_t dev_cbs;
     memset(&dev_cbs, 0, sizeof(dev_cbs));
     dev_cbs.on_pair_code           = dev_on_pair_code;
-    dev_cbs.on_audio_start         = dev_on_audio_start;
     dev_cbs.on_conversation_start  = dev_on_conversation_start;
     dev_cbs.on_conversation_stop   = dev_on_conversation_stop;
-    dev_cbs.on_audio_stop          = dev_on_audio_stop;
     dev_cbs.on_state_changed       = dev_on_state_changed;
 
     if (device_state_init(cfg->server_base, cfg->device_id,
