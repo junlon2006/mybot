@@ -1,4 +1,5 @@
 #include "device_api.h"
+#include "mybot_config.h"
 #include "http_client.h"
 #include "cJSON.h"
 
@@ -273,9 +274,41 @@ int device_api_start_conversation(const char *base_url,
     snprintf(url, sizeof(url), "%s/devices/%s/conversations/start",
              base_url, device_id);
 
-    /* Use provided body_params or default */
-    const char *body = body_params ? body_params :
-        "{\"trigger\":\"button\",\"audio\":{\"codec\":\"G722\",\"p_time\":20}}";
+    /* Build body: use caller-provided or construct from config macros */
+    char *body = NULL;
+    bool body_allocated = false;
+
+    if (body_params) {
+        body = (char *)body_params;
+    } else {
+        cJSON *root = cJSON_CreateObject();
+        cJSON_AddStringToObject(root, "trigger", "button");
+
+        cJSON *audio = cJSON_CreateObject();
+        cJSON_AddNumberToObject(audio, "p_time", 20);
+        cJSON_AddStringToObject(audio, "codec", "G722");
+        cJSON_AddItemToObject(root, "audio", audio);
+
+        cJSON *features = cJSON_CreateObject();
+#if MYBOT_CLOUD_AEC
+        cJSON_AddBoolToObject(features, "cloud_aec", 1);
+#else
+        cJSON_AddBoolToObject(features, "cloud_aec", 0);
+#endif
+#if MYBOT_AI_QOS
+        cJSON_AddBoolToObject(features, "ai_qos", 1);
+        cJSON_AddNumberToObject(features, "fast_send_multiplier", MYBOT_FAST_SEND_MULTIPLIER);
+#else
+        cJSON_AddBoolToObject(features, "ai_qos", 0);
+#endif
+        cJSON_AddBoolToObject(features, "show_transcript", MYBOT_SHOW_TRANSCRIPT);
+        cJSON_AddItemToObject(root, "features", features);
+
+        body = cJSON_PrintUnformatted(root);
+        cJSON_Delete(root);
+        body_allocated = true;
+        if (!body) { AOSL_LOG_ERR("failed to build request body"); return -1; }
+    }
 
     char extra_hdrs[DEVICE_API_MAX_TOKEN + 32];
     snprintf(extra_hdrs, sizeof(extra_hdrs), "Authorization: Device %s\r\n", device_token);
@@ -287,8 +320,10 @@ int device_api_start_conversation(const char *base_url,
 
     if (http_post_ex(url, "application/json", body, extra_hdrs, &raw) < 0) {
         AOSL_LOG_ERR("POST %s failed (http)", url);
+        if (body_allocated) free(body);
         return -1;
     }
+    if (body_allocated) free(body);
 
     AOSL_LOG_INF("POST %s -> status=%d, body: %s",
                  url, raw.status_code,

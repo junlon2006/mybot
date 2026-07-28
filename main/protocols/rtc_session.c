@@ -1,4 +1,5 @@
 #include "rtc_session.h"
+#include "mybot_config.h"
 
 #include "agora_rtc_api.h"
 #include <api/aosl_log.h>
@@ -208,8 +209,14 @@ int rtc_session_join(const char *channel, const char *token, const char *user_ac
     ch_opt.enable_audio_jitter_buffer = true;
     ch_opt.enable_audio_mixer       = false;  /* per-user audio callback */
     ch_opt.enable_audio_decode      = true;
+#if MYBOT_CLOUD_AEC
+    ch_opt.enable_audio_downlink_aec = true;
+#endif
+#if MYBOT_AI_QOS
+    ch_opt.enable_audio_ai_qos      = true;
+#endif
 
-    /* Tell SDK we'll send PCM; it will encode to Opus */
+    /* Tell SDK we'll send PCM; it will encode to G.722 */
     ch_opt.audio_codec_opt.audio_codec_type  = AUDIO_CODEC_TYPE_G722;
     ch_opt.audio_codec_opt.pcm_sample_rate   = 16000;
     ch_opt.audio_codec_opt.pcm_channel_num   = 1;

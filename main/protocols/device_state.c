@@ -1,6 +1,8 @@
 #include "device_state.h"
 #include "device_api.h"
 
+#include <api/aosl_log.h>
+
 #include <string.h>
 #include <stdio.h>
 
@@ -56,7 +58,7 @@ static void set_state(device_state_t new_state)
     if (s_state.state == new_state)
         return;
     s_state.state = new_state;
-    fprintf(stdout, "[STATE] %s\n", s_name[new_state]);
+    AOSL_LOG_INF("%s", s_name[new_state]);
     if (s_state.cbs.on_state_changed)
         s_state.cbs.on_state_changed(new_state);
 }
@@ -85,12 +87,12 @@ static void action_create_pair_code(void)
         s_state.server_base, s_state.device_id,
         s_state.firmware_ver, s_state.hw_model, &resp);
     if (ret < 0) {
-        fprintf(stderr, "[STATE] pair-code request failed\n");
+        AOSL_LOG_ERR("pair-code request failed");
         set_state(DEVICE_STATE_UNPROVISIONED);
         return;
     }
 
-    fprintf(stdout, "[STATE] pair-code obtained: code=%s, poll=%ds\n",
+    AOSL_LOG_INF("pair-code obtained: code=%s, poll=%ds",
             resp.code, resp.poll_after_seconds);
 
     /* Save pair token and poll settings */
@@ -122,11 +124,11 @@ static void action_poll_binding_pair(void)
     int ret = device_api_get_binding_status(
         s_state.server_base, s_state.device_id, auth, &resp);
     if (ret < 0) {
-        fprintf(stderr, "[STATE] bind poll (pair) failed, retrying\n");
+        AOSL_LOG_ERR("bind poll (pair) failed, retrying");
         return;
     }
 
-    fprintf(stdout, "[STATE] bind poll -> status=%s\n", resp.status);
+    AOSL_LOG_INF("bind poll -> status=%s", resp.status);
 
     if (strcmp(resp.status, "pending") == 0) {
         s_state.pair_poll_interval = resp.poll_after_seconds > 0
@@ -137,24 +139,24 @@ static void action_poll_binding_pair(void)
         if (resp.device_token[0]) {
             strncpy(s_state.device_token, resp.device_token,
                     sizeof(s_state.device_token) - 1);
-            fprintf(stdout, "[STATE] device_token obtained\n");
+            AOSL_LOG_INF("device_token obtained");
         }
         set_state(DEVICE_STATE_RUNTIME);
         s_state.runtime_poll_interval = resp.poll_after_seconds > 0
                                             ? resp.poll_after_seconds : 30;
         s_state.runtime_tick_counter  = 0;
     } else if (strcmp(resp.status, "expired") == 0) {
-        fprintf(stdout, "[STATE] pair code expired, re-pairing\n");
+        AOSL_LOG_INF("pair code expired, re-pairing");
         set_state(DEVICE_STATE_UNPROVISIONED);
         /* auto-trigger re-pair */
         s_state.start_pairing_flag = true;
     } else if (strcmp(resp.status, "unbound") == 0) {
         /* Shouldn't happen during pairing, but handle gracefully */
-        fprintf(stdout, "[STATE] unexpected unbound during pairing\n");
+        AOSL_LOG_INF("unexpected unbound during pairing");
         set_state(DEVICE_STATE_UNPROVISIONED);
     } else {
         /* unknown status */
-        fprintf(stderr, "[STATE] unknown bind status: %s\n", resp.status);
+        AOSL_LOG_ERR("unknown bind status: %s", resp.status);
     }
 }
 
@@ -172,7 +174,7 @@ static void action_poll_binding_runtime(void)
     int ret = device_api_get_binding_status(
         s_state.server_base, s_state.device_id, auth, &resp);
     if (ret < 0) {
-        fprintf(stderr, "[STATE] bind poll (device) failed, retrying\n");
+        AOSL_LOG_ERR("bind poll (device) failed, retrying");
         return;
     }
 
@@ -180,11 +182,11 @@ static void action_poll_binding_runtime(void)
         s_state.runtime_poll_interval = resp.poll_after_seconds > 0
                                             ? resp.poll_after_seconds : 30;
     } else if (strcmp(resp.status, "unbound") == 0) {
-        fprintf(stdout, "[STATE] device unbound by user\n");
+        AOSL_LOG_INF("device unbound by user");
         s_state.device_token[0] = '\0';
         set_state(DEVICE_STATE_UNPROVISIONED);
     } else {
-        fprintf(stderr, "[STATE] unexpected runtime status: %s\n", resp.status);
+        AOSL_LOG_ERR("unexpected runtime status: %s", resp.status);
     }
 }
 
@@ -200,14 +202,14 @@ static void action_start_conversation(void)
         s_state.server_base, s_state.device_id,
         s_state.device_token, NULL, &resp);
     if (ret < 0) {
-        fprintf(stderr, "[STATE] start conversation failed\n");
+        AOSL_LOG_ERR("start conversation failed");
         return;
     }
 
     strncpy(s_state.conversation_id, resp.conversation_id,
             sizeof(s_state.conversation_id) - 1);
 
-    fprintf(stdout, "[STATE] conversation started: %s, channel=%s, uid=%s\n",
+    AOSL_LOG_INF("conversation started: %s, channel=%s, uid=%s",
             s_state.conversation_id, resp.rtc_channel, resp.rtc_uid);
 
     set_state(DEVICE_STATE_IN_CONVERSATION);
@@ -237,7 +239,7 @@ static void action_stop_conversation(const char *reason)
         s_state.server_base, s_state.device_id,
         s_state.device_token, s_state.conversation_id, reason);
 
-    fprintf(stdout, "[STATE] conversation stopped\n");
+    AOSL_LOG_INF("conversation stopped");
     s_state.conversation_id[0] = '\0';
 
     set_state(DEVICE_STATE_RUNTIME);
@@ -338,7 +340,7 @@ void device_state_request_pair(void)
 void device_state_request_start(void)
 {
     if (s_state.state != DEVICE_STATE_RUNTIME) {
-        fprintf(stderr, "[STATE] cannot start: not in runtime\n");
+        AOSL_LOG_ERR("cannot start: not in runtime");
         return;
     }
     s_state.conversation_requested = true;
@@ -347,7 +349,7 @@ void device_state_request_start(void)
 void device_state_request_stop(void)
 {
     if (s_state.state != DEVICE_STATE_IN_CONVERSATION) {
-        fprintf(stderr, "[STATE] cannot stop: not in conversation\n");
+        AOSL_LOG_ERR("cannot stop: not in conversation");
         return;
     }
     s_state.stop_requested = true;
