@@ -30,10 +30,14 @@ set(MYBOT_SRC
     main/main.c
     main/app.c
     components/ringbuf/ringbuf.c
+    components/http_client/http_client.c
+    components/cJSON/cJSON.c
+    main/protocols/device_api.c
     main/audio/audio_device.c
     main/audio/platform/alsa/audio_capture_alsa.c
     main/audio/platform/alsa/audio_playback_alsa.c
     main/protocols/rtc_session.c
+    main/protocols/device_state.c
 )
 
 add_executable(mybot ${MYBOT_SRC})
@@ -43,7 +47,11 @@ target_include_directories(mybot PRIVATE
     ${CMAKE_SOURCE_DIR}/main/audio
     ${CMAKE_SOURCE_DIR}/main/protocols
     ${CMAKE_SOURCE_DIR}/components/ringbuf
+    ${CMAKE_SOURCE_DIR}/components/http_client
+    ${CMAKE_SOURCE_DIR}/components/cJSON
     ${AGORA_SDK_DIR}/include
+    ${AOSL_DIR}/include
+    ${AOSL_DIR}/platform/include
 )
 
 target_link_libraries(mybot PRIVATE

@@ -1,0 +1,365 @@
+#include "device_api.h"
+#include "http_client.h"
+#include "cJSON.h"
+
+#include <hal/aosl_hal_memory.h>
+#include <api/aosl_log.h>
+
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdarg.h>
+
+/* ----------------------------------------------------------
+ * JSON helpers — implemented via cJSON
+ * ---------------------------------------------------------- */
+
+char *device_api_json_build(const char *first_key, ...)
+{
+    cJSON *obj = cJSON_CreateObject();
+    if (!obj) return NULL;
+
+    va_list args;
+    va_start(args, first_key);
+    const char *key = first_key;
+
+    while (key) {
+        const char *val = va_arg(args, const char *);
+        if (!val) break;
+        cJSON_AddStringToObject(obj, key, val);
+        key = va_arg(args, const char *);
+    }
+    va_end(args);
+
+    char *json_str = cJSON_PrintUnformatted(obj);
+    cJSON_Delete(obj);
+
+    /* cJSON uses malloc/free; copy to aosl_hal memory for API contract */
+    if (!json_str) return NULL;
+    size_t len = strlen(json_str) + 1;
+    char *result = (char *)aosl_hal_malloc(len);
+    if (result) memcpy(result, json_str, len);
+    free(json_str);
+    return result;
+}
+
+char *device_api_json_get_string(const char *json, const char *key)
+{
+    if (!json || !key) return NULL;
+
+    cJSON *root = cJSON_Parse(json);
+    if (!root) return NULL;
+
+    cJSON *item = cJSON_GetObjectItem(root, key);
+    char *result = NULL;
+
+    if (item && item->valuestring) {
+        result = (char *)aosl_hal_malloc(strlen(item->valuestring) + 1);
+        if (result) strcpy(result, item->valuestring);
+    }
+
+    cJSON_Delete(root);
+    return result;
+}
+
+int device_api_json_get_int(const char *json, const char *key, int def)
+{
+    if (!json || !key) return def;
+
+    cJSON *root = cJSON_Parse(json);
+    if (!root) return def;
+
+    cJSON *item = cJSON_GetObjectItem(root, key);
+    int val = def;
+    if (item) val = (int)item->valueint;
+
+    cJSON_Delete(root);
+    return val;
+}
+
+void device_api_json_free(void *ptr)
+{
+    aosl_hal_free(ptr);
+}
+
+/* ----------------------------------------------------------
+ * Internal: extract nested RTC block from conversation start response
+ * ---------------------------------------------------------- */
+static int parse_rtc_block(cJSON *root, device_conversation_t *resp)
+{
+    cJSON *rtc = cJSON_GetObjectItem(root, "rtc");
+    if (!rtc) return -1;
+
+    cJSON *item;
+
+    item = cJSON_GetObjectItem(rtc, "app_id");
+    if (item && item->valuestring)
+        strncpy(resp->rtc_app_id, item->valuestring, sizeof(resp->rtc_app_id) - 1);
+
+    item = cJSON_GetObjectItem(rtc, "channel");
+    if (item && item->valuestring)
+        strncpy(resp->rtc_channel, item->valuestring, sizeof(resp->rtc_channel) - 1);
+
+    item = cJSON_GetObjectItem(rtc, "token");
+    if (item && item->valuestring)
+        strncpy(resp->rtc_token, item->valuestring, sizeof(resp->rtc_token) - 1);
+
+    item = cJSON_GetObjectItem(rtc, "uid");
+    if (item && item->valuestring)
+        strncpy(resp->rtc_uid, item->valuestring, sizeof(resp->rtc_uid) - 1);
+
+    return 0;
+}
+
+/* ----------------------------------------------------------
+ * Device API — server communication
+ * ---------------------------------------------------------- */
+
+int device_api_create_pair_code(const char *base_url,
+                                const char *device_id,
+                                const char *firmware_ver,
+                                const char *hw_model,
+                                device_pair_code_t *resp)
+{
+    if (!base_url || !device_id || !resp)
+        return -1;
+    memset(resp, 0, sizeof(*resp));
+
+    /* Build request body */
+    cJSON *body_obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(body_obj, "device_id", device_id);
+    if (firmware_ver && firmware_ver[0])
+        cJSON_AddStringToObject(body_obj, "firmware_version", firmware_ver);
+    if (hw_model && hw_model[0])
+        cJSON_AddStringToObject(body_obj, "hardware_model", hw_model);
+
+    char *body = cJSON_PrintUnformatted(body_obj);
+    cJSON_Delete(body_obj);
+    if (!body) return -1;
+
+    char url[DEVICE_API_MAX_URL];
+    snprintf(url, sizeof(url), "%s/devices/pair-codes", base_url);
+
+    AOSL_LOG_INF("POST %s body: %s", url, body);
+
+    http_response_t raw;
+    memset(&raw, 0, sizeof(raw));
+
+    if (http_post(url, "application/json", body, &raw) < 0) {
+        free(body);
+        AOSL_LOG_ERR("POST %s failed (http)", url);
+        return -1;
+    }
+    free(body);
+
+    AOSL_LOG_INF("POST %s -> status=%d, body: %s",
+                 url, raw.status_code,
+                 raw.body ? raw.body : "(empty)");
+
+    /* Parse with cJSON */
+    cJSON *root = raw.body ? cJSON_Parse(raw.body) : NULL;
+    if (!root) { http_response_free(&raw); return -1; }
+
+    cJSON *data = cJSON_GetObjectItem(root, "data");
+    if (!data) { cJSON_Delete(root); http_response_free(&raw); return -1; }
+
+    cJSON *item;
+
+    item = cJSON_GetObjectItem(data, "device_id");
+    if (item && item->valuestring)
+        strncpy(resp->device_id, item->valuestring, sizeof(resp->device_id) - 1);
+
+    item = cJSON_GetObjectItem(data, "code");
+    if (item && item->valuestring)
+        strncpy(resp->code, item->valuestring, sizeof(resp->code) - 1);
+
+    item = cJSON_GetObjectItem(data, "pair_token");
+    if (item && item->valuestring)
+        strncpy(resp->pair_token, item->valuestring, sizeof(resp->pair_token) - 1);
+
+    item = cJSON_GetObjectItem(data, "expires_in_seconds");
+    if (item) resp->expires_in_seconds = (int)item->valueint;
+
+    item = cJSON_GetObjectItem(data, "poll_after_seconds");
+    if (item) resp->poll_after_seconds = (int)item->valueint;
+
+    AOSL_LOG_INF("pair_code: device_id=%s code=%s expires_in=%ds poll=%ds",
+                 resp->device_id, resp->code,
+                 resp->expires_in_seconds, resp->poll_after_seconds);
+
+    cJSON_Delete(root);
+    http_response_free(&raw);
+    return 0;
+}
+
+int device_api_get_binding_status(const char *base_url,
+                                  const char *device_id,
+                                  const char *auth_header,
+                                  device_binding_t *resp)
+{
+    if (!base_url || !device_id || !auth_header || !resp)
+        return -1;
+    memset(resp, 0, sizeof(*resp));
+
+    char url[DEVICE_API_MAX_URL];
+    snprintf(url, sizeof(url), "%s/devices/%s/binding-status",
+             base_url, device_id);
+
+    char extra_hdrs[DEVICE_API_MAX_TOKEN + 32];
+    snprintf(extra_hdrs, sizeof(extra_hdrs), "Authorization: %s\r\n", auth_header);
+
+    AOSL_LOG_INF("GET %s (auth=%s...)", url, auth_header);
+
+    http_response_t raw;
+    memset(&raw, 0, sizeof(raw));
+
+    if (http_get_ex(url, extra_hdrs, &raw) < 0) {
+        AOSL_LOG_ERR("GET %s failed (http)", url);
+        return -1;
+    }
+
+    AOSL_LOG_INF("GET %s -> status=%d, body: %s",
+                 url, raw.status_code,
+                 raw.body ? raw.body : "(empty)");
+
+    /* Parse with cJSON */
+    cJSON *root = raw.body ? cJSON_Parse(raw.body) : NULL;
+    if (!root) { http_response_free(&raw); return -1; }
+
+    cJSON *data = cJSON_GetObjectItem(root, "data");
+    if (!data) { cJSON_Delete(root); http_response_free(&raw); return -1; }
+
+    cJSON *item;
+
+    item = cJSON_GetObjectItem(data, "status");
+    if (item && item->valuestring)
+        strncpy(resp->status, item->valuestring, sizeof(resp->status) - 1);
+
+    item = cJSON_GetObjectItem(data, "device_token");
+    if (item && item->valuestring)
+        strncpy(resp->device_token, item->valuestring, sizeof(resp->device_token) - 1);
+
+    item = cJSON_GetObjectItem(data, "agent_id");
+    if (item && item->valuestring)
+        strncpy(resp->agent_id, item->valuestring, sizeof(resp->agent_id) - 1);
+
+    item = cJSON_GetObjectItem(data, "agent_name");
+    if (item && item->valuestring)
+        strncpy(resp->agent_name, item->valuestring, sizeof(resp->agent_name) - 1);
+
+    item = cJSON_GetObjectItem(data, "poll_after_seconds");
+    if (item) resp->poll_after_seconds = (int)item->valueint;
+
+    AOSL_LOG_DBG("binding: status=%s agent=%s has_token=%d poll=%ds",
+                 resp->status, resp->agent_name,
+                 resp->device_token[0] ? 1 : 0, resp->poll_after_seconds);
+
+    cJSON_Delete(root);
+    http_response_free(&raw);
+    return 0;
+}
+
+int device_api_start_conversation(const char *base_url,
+                                  const char *device_id,
+                                  const char *device_token,
+                                  const char *body_params,
+                                  device_conversation_t *resp)
+{
+    if (!base_url || !device_id || !device_token || !resp)
+        return -1;
+    memset(resp, 0, sizeof(*resp));
+
+    char url[DEVICE_API_MAX_URL];
+    snprintf(url, sizeof(url), "%s/devices/%s/conversations/start",
+             base_url, device_id);
+
+    /* Use provided body_params or default */
+    const char *body = body_params ? body_params :
+        "{\"trigger\":\"button\",\"audio\":{\"codec\":\"G722\",\"p_time\":20}}";
+
+    char extra_hdrs[DEVICE_API_MAX_TOKEN + 32];
+    snprintf(extra_hdrs, sizeof(extra_hdrs), "Authorization: Device %s\r\n", device_token);
+
+    AOSL_LOG_INF("POST %s body: %s", url, body);
+
+    http_response_t raw;
+    memset(&raw, 0, sizeof(raw));
+
+    if (http_post_ex(url, "application/json", body, extra_hdrs, &raw) < 0) {
+        AOSL_LOG_ERR("POST %s failed (http)", url);
+        return -1;
+    }
+
+    AOSL_LOG_INF("POST %s -> status=%d, body: %s",
+                 url, raw.status_code,
+                 raw.body ? raw.body : "(empty)");
+
+    /* Parse with cJSON */
+    cJSON *root = raw.body ? cJSON_Parse(raw.body) : NULL;
+    if (!root) { http_response_free(&raw); return -1; }
+
+    cJSON *data = cJSON_GetObjectItem(root, "data");
+    if (!data) { cJSON_Delete(root); http_response_free(&raw); return -1; }
+
+    cJSON *item;
+
+    item = cJSON_GetObjectItem(data, "conversation_id");
+    if (item && item->valuestring)
+        strncpy(resp->conversation_id, item->valuestring, sizeof(resp->conversation_id) - 1);
+
+    /* Parse nested "rtc":{...} block */
+    parse_rtc_block(data, resp);
+
+    AOSL_LOG_INF("conversation: id=%s channel=%s uid=%s",
+                 resp->conversation_id, resp->rtc_channel, resp->rtc_uid);
+
+    cJSON_Delete(root);
+    http_response_free(&raw);
+    return 0;
+}
+
+int device_api_stop_conversation(const char *base_url,
+                                 const char *device_id,
+                                 const char *device_token,
+                                 const char *conversation_id,
+                                 const char *reason)
+{
+    if (!base_url || !device_id || !device_token || !conversation_id)
+        return -1;
+
+    char url[DEVICE_API_MAX_URL];
+    snprintf(url, sizeof(url), "%s/devices/%s/conversations/stop",
+             base_url, device_id);
+
+    /* Build body with cJSON */
+    cJSON *body_obj = cJSON_CreateObject();
+    cJSON_AddStringToObject(body_obj, "conversation_id", conversation_id);
+    if (reason)
+        cJSON_AddStringToObject(body_obj, "reason", reason);
+
+    char *body = cJSON_PrintUnformatted(body_obj);
+    cJSON_Delete(body_obj);
+    if (!body) return -1;
+
+    char extra_hdrs[DEVICE_API_MAX_TOKEN + 32];
+    snprintf(extra_hdrs, sizeof(extra_hdrs), "Authorization: Device %s\r\n", device_token);
+
+    AOSL_LOG_INF("POST %s body: %s", url, body);
+
+    http_response_t raw;
+    memset(&raw, 0, sizeof(raw));
+
+    int ret = http_post_ex(url, "application/json", body, extra_hdrs, &raw);
+    free(body);
+
+    if (ret == 0) {
+        AOSL_LOG_INF("POST %s -> status=%d, body: %s",
+                     url, raw.status_code,
+                     raw.body ? raw.body : "(empty)");
+    } else {
+        AOSL_LOG_ERR("POST %s failed (http)", url);
+    }
+
+    http_response_free(&raw);
+    return ret;
+}
