@@ -1,4 +1,5 @@
 #include "app.h"
+#include "mybot_config.h"
 #include "audio/audio_device.h"
 #include "protocols/rtc_session.h"
 #include "protocols/device_state.h"
@@ -50,6 +51,11 @@ static struct {
     void           *pb_ctx;
     aosl_thread_t   pb_thread;
     ringbuf_t       pb_ringbuf;
+
+#if MYBOT_CLOUD_AEC
+    /* AEC reference ringbuf: holds downlink PCM fed to the speaker */
+    ringbuf_t       ref_ringbuf;
+#endif
 
     /* RTC session state */
     volatile bool   rtc_connected;
@@ -112,8 +118,13 @@ static void *playback_worker(void *arg)
         int avail = ringbuf_get_data_size(s_app.pb_ringbuf);
         if (avail < BYTES_20MS) { aosl_hal_msleep(5); continue; }
 
-        if (ringbuf_read((char *)pcm, BYTES_20MS, s_app.pb_ringbuf) == BYTES_20MS)
+        if (ringbuf_read((char *)pcm, BYTES_20MS, s_app.pb_ringbuf) == BYTES_20MS) {
+#if MYBOT_CLOUD_AEC
+            /* Feed a copy to the AEC reference ringbuf before sending to speaker */
+            ringbuf_write(s_app.ref_ringbuf, (char *)pcm, BYTES_20MS);
+#endif
             ops->write(s_app.pb_ctx, pcm, FRAMES_20MS);
+        }
     }
     AOSL_LOG_INF("playback worker stopped");
     return NULL;
@@ -155,8 +166,30 @@ static void send_audio_timer(aosl_timer_t id, const aosl_ts_t *now,
     uint8_t pcm[BYTES_20MS];
     if (ringbuf_get_data_size(s_app.cap_ringbuf) < BYTES_20MS) return;
 
-    if (ringbuf_read((char *)pcm, BYTES_20MS, s_app.cap_ringbuf) == BYTES_20MS)
+    if (ringbuf_read((char *)pcm, BYTES_20MS, s_app.cap_ringbuf) == BYTES_20MS) {
+#if MYBOT_CLOUD_AEC
+        /* Interleave mic PCM with AEC reference (downlink PCM):
+         * output = [mic[0], ref[0], mic[1], ref[1], ...] */
+        int16_t *mic = (int16_t *)pcm;
+        size_t   samples = BYTES_20MS / sizeof(int16_t);  /* 320 */
+        int16_t  interleaved[BYTES_20MS * 2 / sizeof(int16_t)];  /* 640 samples */
+
+        /* Use silence if insufficient ref data available */
+        int16_t ref[320] = {0};
+        if (ringbuf_get_data_size(s_app.ref_ringbuf) >= BYTES_20MS) {
+            ringbuf_read((char *)ref, BYTES_20MS, s_app.ref_ringbuf);
+        }
+
+        for (size_t i = 0; i < samples; i++) {
+            interleaved[i * 2]     = mic[i];
+            interleaved[i * 2 + 1] = ref[i];
+        }
+
+        rtc_session_send_audio(interleaved, sizeof(interleaved));
+#else
         rtc_session_send_audio(pcm, BYTES_20MS);
+#endif
+    }
 }
 
 /* ----------------------------------------------------------
@@ -299,6 +332,12 @@ int app_start(const app_config_t *cfg)
     s_app.pb_ringbuf  = ringbuf_create(RINGBUF_SIZE);
     if (!s_app.cap_ringbuf || !s_app.pb_ringbuf)
         { AOSL_LOG_ERR("ringbuf creation failed"); goto fail; }
+#if MYBOT_CLOUD_AEC
+    s_app.ref_ringbuf = ringbuf_create(RINGBUF_SIZE);
+    if (!s_app.ref_ringbuf)
+        { AOSL_LOG_ERR("ref ringbuf creation failed"); goto fail; }
+    AOSL_LOG_INF("cloud AEC enabled, ref ringbuf created");
+#endif
 
     /* ---- 5. Start audio devices ---- */
     cap_ops->start(s_app.cap_ctx);
@@ -399,6 +438,9 @@ cleanup:
     /* Step 4: destroy ring buffers */
     if (s_app.cap_ringbuf) { ringbuf_destroy(s_app.cap_ringbuf); s_app.cap_ringbuf = NULL; }
     if (s_app.pb_ringbuf)  { ringbuf_destroy(s_app.pb_ringbuf);  s_app.pb_ringbuf  = NULL; }
+#if MYBOT_CLOUD_AEC
+    if (s_app.ref_ringbuf) { ringbuf_destroy(s_app.ref_ringbuf); s_app.ref_ringbuf = NULL; }
+#endif
 
     aosl_hal_mutex_destroy(s_app.lock);
     aosl_dtor();
