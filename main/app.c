@@ -37,12 +37,14 @@ static struct {
 
     /* Audio capture */
     void           *cap_ctx;
-    aosl_timer_t    cap_timer;    /* 10 ms — capture read loop (on mybot_mpq) */
+    aosl_mpq_t      cap_mpq;      /* capture worker thread (aosl_mpq_create) */
+    aosl_timer_t    cap_timer;    /* drives the capture read loop */
     ringbuf_t       cap_ringbuf;
 
     /* Audio playback */
     void           *pb_ctx;
-    aosl_timer_t    pb_timer;     /* 10 ms — playback write loop (on mybot_mpq) */
+    aosl_mpq_t      pb_mpq;       /* playback worker thread (aosl_mpq_create) */
+    aosl_timer_t    pb_timer;     /* drives the playback write loop */
     ringbuf_t       pb_ringbuf;
 
 #if MYBOT_CLOUD_AEC
@@ -69,8 +71,8 @@ static struct {
 } s_app;
 
 /* ----------------------------------------------------------
- * Capture — runs on the mybot_mpq thread.
- * Reads one 20 ms mic frame and feeds cap_ringbuf.
+ * Capture — runs on the capture MPQ thread (cap_mpq).
+ * A periodic timer reads one 20 ms mic frame and feeds cap_ringbuf.
  * ---------------------------------------------------------- */
 static void capture_timer(aosl_timer_t id, const aosl_ts_t *now,
                           uintptr_t argc, uintptr_t argv[])
@@ -93,9 +95,33 @@ static void capture_timer(aosl_timer_t id, const aosl_ts_t *now,
     }
 }
 
+static int cap_mpq_init(void *arg)
+{
+    (void)arg;
+    AOSL_LOG_INF("capture MPQ started");
+
+    s_app.cap_timer = aosl_mpq_set_timer(AUDIO_TICK_MS, capture_timer, NULL, 0);
+    if (aosl_mpq_timer_invalid(s_app.cap_timer))
+        AOSL_LOG_ERR("failed to create capture timer");
+
+    return 0;
+}
+
+static void cap_mpq_fini(void *arg)
+{
+    (void)arg;
+    AOSL_LOG_INF("capture MPQ stopping");
+
+    if (!aosl_mpq_timer_invalid(s_app.cap_timer)) {
+        aosl_mpq_kill_timer(s_app.cap_timer);
+        s_app.cap_timer = AOSL_MPQ_TIMER_INVALID;
+    }
+}
+
 /* ----------------------------------------------------------
- * Playback — runs on the mybot_mpq thread.
- * Pulls one 20 ms frame from pb_ringbuf and writes it to the speaker.
+ * Playback — runs on the playback MPQ thread (pb_mpq).
+ * A periodic timer pulls one 20 ms frame from pb_ringbuf and
+ * writes it to the speaker.
  * ---------------------------------------------------------- */
 static void playback_timer(aosl_timer_t id, const aosl_ts_t *now,
                            uintptr_t argc, uintptr_t argv[])
@@ -113,6 +139,29 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now,
     ringbuf_write(s_app.ref_ringbuf, (char *)pcm, BYTES_20MS);
 #endif
     ops->write(s_app.pb_ctx, pcm, FRAMES_20MS);
+}
+
+static int pb_mpq_init(void *arg)
+{
+    (void)arg;
+    AOSL_LOG_INF("playback MPQ started");
+
+    s_app.pb_timer = aosl_mpq_set_timer(AUDIO_TICK_MS, playback_timer, NULL, 0);
+    if (aosl_mpq_timer_invalid(s_app.pb_timer))
+        AOSL_LOG_ERR("failed to create playback timer");
+
+    return 0;
+}
+
+static void pb_mpq_fini(void *arg)
+{
+    (void)arg;
+    AOSL_LOG_INF("playback MPQ stopping");
+
+    if (!aosl_mpq_timer_invalid(s_app.pb_timer)) {
+        aosl_mpq_kill_timer(s_app.pb_timer);
+        s_app.pb_timer = AOSL_MPQ_TIMER_INVALID;
+    }
 }
 
 /* ----------------------------------------------------------
@@ -291,15 +340,6 @@ static int mpq_init(void *arg)
     if (aosl_mpq_timer_invalid(s_app.send_timer))
         AOSL_LOG_ERR("failed to create send timer");
 
-    /* Capture and playback I/O run on this same MPQ thread. */
-    s_app.cap_timer = aosl_mpq_set_timer(AUDIO_TICK_MS, capture_timer, NULL, 0);
-    if (aosl_mpq_timer_invalid(s_app.cap_timer))
-        AOSL_LOG_ERR("failed to create capture timer");
-
-    s_app.pb_timer = aosl_mpq_set_timer(AUDIO_TICK_MS, playback_timer, NULL, 0);
-    if (aosl_mpq_timer_invalid(s_app.pb_timer))
-        AOSL_LOG_ERR("failed to create playback timer");
-
     return 0;
 }
 
@@ -314,14 +354,6 @@ static void mpq_fini(void *arg)
     if (!aosl_mpq_timer_invalid(s_app.send_timer)) {
         aosl_mpq_kill_timer(s_app.send_timer);
         s_app.send_timer = AOSL_MPQ_TIMER_INVALID;
-    }
-    if (!aosl_mpq_timer_invalid(s_app.cap_timer)) {
-        aosl_mpq_kill_timer(s_app.cap_timer);
-        s_app.cap_timer = AOSL_MPQ_TIMER_INVALID;
-    }
-    if (!aosl_mpq_timer_invalid(s_app.pb_timer)) {
-        aosl_mpq_kill_timer(s_app.pb_timer);
-        s_app.pb_timer = AOSL_MPQ_TIMER_INVALID;
     }
 
     rtc_session_leave();
@@ -340,7 +372,9 @@ int app_start(const app_config_t *cfg)
     s_app.running    = true;
     s_app.mpq         = AOSL_MPQ_INVALID;
     s_app.send_timer  = AOSL_MPQ_TIMER_INVALID;
+    s_app.cap_mpq     = AOSL_MPQ_INVALID;
     s_app.cap_timer   = AOSL_MPQ_TIMER_INVALID;
+    s_app.pb_mpq      = AOSL_MPQ_INVALID;
     s_app.pb_timer    = AOSL_MPQ_TIMER_INVALID;
     s_app.state_mpq   = AOSL_MPQ_INVALID;
     s_app.state_timer = AOSL_MPQ_TIMER_INVALID;
@@ -387,7 +421,27 @@ int app_start(const app_config_t *cfg)
     cap_ops->start(s_app.cap_ctx);
     pb_ops->start(s_app.pb_ctx);
 
-    /* ---- 5. Initialize the device state machine ---- */
+    /* ---- 5. Create the capture/playback worker MPQs ----
+     * Each worker is an MPQ created with aosl_mpq_create(), which spawns the
+     * thread and gives us join semantics through aosl_mpq_destroy_wait() —
+     * the thread HAL (aosl_hal_thread_join) is not available on every
+     * platform. The per-MPQ timer (cap_timer / pb_timer) drives the I/O on
+     * its own thread, so blocking ALSA I/O never starves the audio sender. */
+    s_app.cap_mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MPQ_STACK_SIZE, 1000, "cap_mpq",
+                                    cap_mpq_init, cap_mpq_fini, NULL);
+    if (aosl_mpq_invalid(s_app.cap_mpq)) {
+        AOSL_LOG_ERR("cap_mpq create failed");
+        return -1;
+    }
+
+    s_app.pb_mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MPQ_STACK_SIZE, 1000, "pb_mpq",
+                                   pb_mpq_init, pb_mpq_fini, NULL);
+    if (aosl_mpq_invalid(s_app.pb_mpq)) {
+        AOSL_LOG_ERR("pb_mpq create failed");
+        return -1;
+    }
+
+    /* ---- 6. Initialize the device state machine ---- */
     device_state_callbacks_t dev_cbs;
     memset(&dev_cbs, 0, sizeof(dev_cbs));
     dev_cbs.on_pair_code           = dev_on_pair_code;
@@ -402,7 +456,7 @@ int app_start(const app_config_t *cfg)
         return -1;
     }
 
-    /* ---- 6. Create the MPQ and run its loop in a dedicated thread ----
+    /* ---- 7. Create the MPQ and run its loop in a dedicated thread ----
      * Use aosl_mpq_create() instead of aosl_main_start(): the latter
      * registers an atexit() hook that re-runs aosl_main_exit_wait() after
      * main() returns, which aborts once aosl_dtor() has finalized AOSL.
@@ -414,9 +468,9 @@ int app_start(const app_config_t *cfg)
         return -1;
     }
 
-    /* ---- 7. Create the device-state MPQ ----
+    /* ---- 8. Create the device-state MPQ ----
      * Dedicated thread: device_state_tick() does blocking HTTP polling that
-     * must not delay the real-time audio timers on mybot_mpq. */
+     * must not delay the real-time audio timers. */
     s_app.state_mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MPQ_STACK_SIZE, 1000, "state_mpq",
                                       state_mpq_init, state_mpq_fini, NULL);
     if (aosl_mpq_invalid(s_app.state_mpq)) {
@@ -464,34 +518,46 @@ void app_stop(void)
     s_app.running = false;
 
     /* ---- 2. Stop the MPQ loop ----
-     * Its fini callback kills the audio timers (send/capture/playback) and
-     * leaves the RTC channel. Must happen before rtc_session_fini(): the
-     * RTC SDK finalizes AOSL itself in agora_rtc_fini(), after which no AOSL
-     * call may be made. */
+     * Its fini callback kills the send timer and leaves the RTC channel.
+     * Must happen before rtc_session_fini(): the RTC SDK finalizes AOSL
+     * itself in agora_rtc_fini(), after which no AOSL call may be made. */
     if (!aosl_mpq_invalid(s_app.mpq)) {
         aosl_mpq_destroy_wait(s_app.mpq);
         s_app.mpq = AOSL_MPQ_INVALID;
     }
 
-    /* ---- 3. Stop the device-state MPQ ---- */
+    /* ---- 3. Stop the capture/playback MPQ threads ----
+     * aosl_mpq_destroy_wait() destroys the queue and joins its thread in one
+     * call, replacing the thread-HAL join that is not portable. These must be
+     * torn down before rtc_session_fini() (which finalizes AOSL). */
+    if (!aosl_mpq_invalid(s_app.cap_mpq)) {
+        aosl_mpq_destroy_wait(s_app.cap_mpq);
+        s_app.cap_mpq = AOSL_MPQ_INVALID;
+    }
+    if (!aosl_mpq_invalid(s_app.pb_mpq)) {
+        aosl_mpq_destroy_wait(s_app.pb_mpq);
+        s_app.pb_mpq = AOSL_MPQ_INVALID;
+    }
+
+    /* ---- 4. Stop the device-state MPQ ---- */
     if (!aosl_mpq_invalid(s_app.state_mpq)) {
         aosl_mpq_destroy_wait(s_app.state_mpq);
         s_app.state_mpq = AOSL_MPQ_INVALID;
     }
 
-    /* ---- 4. Stop the RTC session ----
+    /* ---- 5. Stop the RTC session ----
      * Also stops the SDK threads that feed the playback ring buffer. NOTE:
      * agora_rtc_fini() finalizes AOSL internally, so only AOSL-independent
      * teardown (devices, ring buffers) may follow. */
     rtc_session_fini();
 
-    /* ---- 5. Destroy devices (no AOSL dependency) ---- */
+    /* ---- 6. Destroy devices (no AOSL dependency) ---- */
     const audio_capture_ops_t  *cap_ops = audio_device_get_capture();
     const audio_playback_ops_t *pb_ops  = audio_device_get_playback();
     if (cap_ops && s_app.cap_ctx) { cap_ops->destroy(s_app.cap_ctx); s_app.cap_ctx = NULL; }
     if (pb_ops  && s_app.pb_ctx)  { pb_ops->destroy(s_app.pb_ctx);   s_app.pb_ctx  = NULL; }
 
-    /* ---- 6. Destroy ring buffers ----
+    /* ---- 7. Destroy ring buffers ----
      * aosl_hal_free() maps to the system allocator on all platforms, so this
      * stays safe even after AOSL has been finalized by the RTC SDK. */
     if (s_app.cap_ringbuf) { ringbuf_destroy(s_app.cap_ringbuf); s_app.cap_ringbuf = NULL; }
@@ -500,7 +566,7 @@ void app_stop(void)
     if (s_app.ref_ringbuf) { ringbuf_destroy(s_app.ref_ringbuf); s_app.ref_ringbuf = NULL; }
 #endif
 
-    /* ---- 7. Finalize AOSL ----
+    /* ---- 8. Finalize AOSL ----
      * No-op if the RTC SDK already finalized AOSL in rtc_session_fini();
      * kept so the app also works when no SDK is involved. */
     aosl_dtor();
