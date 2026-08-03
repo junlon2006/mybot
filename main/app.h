@@ -20,19 +20,15 @@ typedef struct {
  * @brief Initialize and start the application.
  *
  * Non-blocking: this spawns the worker threads (audio capture/playback and
- * the MPQ loop) and returns. The caller then drives the application from its
- * own main loop by calling app_tick() periodically, and must call app_stop()
- * before exiting to release all resources.
+ * the MPQ loop) and returns. The application then runs on its own, driven by
+ * its MPQ timers; the caller must call app_stop() before exiting to release
+ * all resources.
  *
  * @param cfg configuration; must remain valid for the application lifetime.
  * @return 0 on success, -1 on error. app_stop() may still be called to
  *         release any resources allocated before the failure.
  */
 int app_start(const app_config_t *cfg);
-
-/** @brief Advance application state (device state machine polling etc.).
- *         Call periodically (e.g. every 100 ms) from the main loop. */
-void app_tick(void);
 
 /** @brief Check whether the application is still running. */
 bool app_is_running(void);

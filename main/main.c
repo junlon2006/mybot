@@ -143,12 +143,13 @@ int main(int argc, char **argv)
         "  Ctrl+C - exit\n"
         "\n");
 
-    /* ---- Main loop: interactive keys + application tick ---- */
+    /* ---- Main loop: interactive keys only.
+     * The app drives itself (device state machine etc.) from its own MPQ
+     * timers, so main() only needs to poll stdin here. ---- */
     while (app_is_running()) {
         char ch;
         if (aosl_hal_sk_read((aosl_fd_t)0, &ch, 1) == 1)
             handle_key(ch);
-        app_tick();
         aosl_hal_msleep(100);
     }
 

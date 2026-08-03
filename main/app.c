@@ -25,6 +25,7 @@
 #define BYTES_20MS        640     /* 320 * 16-bit mono */
 #define RINGBUF_SIZE      (BYTES_20MS * 100)
 #define AUDIO_TICK_MS     10      /* MPQ timer cadence driving the audio loops */
+#define STATE_TICK_MS     50      /* device state machine poll interval */
 #define MPQ_STACK_SIZE    16384   /* 16 KB stack for aosl_mpq_create threads */
 
 /* ----------------------------------------------------------
@@ -36,14 +37,12 @@ static struct {
 
     /* Audio capture */
     void           *cap_ctx;
-    aosl_mpq_t      cap_mpq;      /* capture worker thread (aosl_mpq_create) */
-    aosl_timer_t    cap_timer;    /* drives the capture read loop */
+    aosl_timer_t    cap_timer;    /* 10 ms — capture read loop (on mybot_mpq) */
     ringbuf_t       cap_ringbuf;
 
     /* Audio playback */
     void           *pb_ctx;
-    aosl_mpq_t      pb_mpq;       /* playback worker thread (aosl_mpq_create) */
-    aosl_timer_t    pb_timer;     /* drives the playback write loop */
+    aosl_timer_t    pb_timer;     /* 10 ms — playback write loop (on mybot_mpq) */
     ringbuf_t       pb_ringbuf;
 
 #if MYBOT_CLOUD_AEC
@@ -58,14 +57,20 @@ static struct {
     char            rtc_token[512];
     char            rtc_uid[64];
 
-    /* MPQ handles */
+    /* MPQ handles — all real-time audio timers share this one thread */
     aosl_mpq_t      mpq;
-    aosl_timer_t    send_timer;
+    aosl_timer_t    send_timer;    /* 20 ms — send captured PCM to RTC */
+
+    /* Device state machine MPQ — dedicated thread because
+     * device_state_tick() does blocking HTTP polling that must not delay
+     * the real-time audio timers on mybot_mpq. */
+    aosl_mpq_t      state_mpq;
+    aosl_timer_t    state_timer;   /* 100 ms — drive the device state machine */
 } s_app;
 
 /* ----------------------------------------------------------
- * Capture — runs on the capture MPQ thread (cap_mpq).
- * A periodic timer reads one 20 ms mic frame and feeds cap_ringbuf.
+ * Capture — runs on the mybot_mpq thread.
+ * Reads one 20 ms mic frame and feeds cap_ringbuf.
  * ---------------------------------------------------------- */
 static void capture_timer(aosl_timer_t id, const aosl_ts_t *now,
                           uintptr_t argc, uintptr_t argv[])
@@ -88,33 +93,9 @@ static void capture_timer(aosl_timer_t id, const aosl_ts_t *now,
     }
 }
 
-static int cap_mpq_init(void *arg)
-{
-    (void)arg;
-    AOSL_LOG_INF("capture MPQ started");
-
-    s_app.cap_timer = aosl_mpq_set_timer(AUDIO_TICK_MS, capture_timer, NULL, 0);
-    if (aosl_mpq_timer_invalid(s_app.cap_timer))
-        AOSL_LOG_ERR("failed to create capture timer");
-
-    return 0;
-}
-
-static void cap_mpq_fini(void *arg)
-{
-    (void)arg;
-    AOSL_LOG_INF("capture MPQ stopping");
-
-    if (!aosl_mpq_timer_invalid(s_app.cap_timer)) {
-        aosl_mpq_kill_timer(s_app.cap_timer);
-        s_app.cap_timer = AOSL_MPQ_TIMER_INVALID;
-    }
-}
-
 /* ----------------------------------------------------------
- * Playback — runs on the playback MPQ thread (pb_mpq).
- * A periodic timer pulls one 20 ms frame from pb_ringbuf and
- * writes it to the speaker.
+ * Playback — runs on the mybot_mpq thread.
+ * Pulls one 20 ms frame from pb_ringbuf and writes it to the speaker.
  * ---------------------------------------------------------- */
 static void playback_timer(aosl_timer_t id, const aosl_ts_t *now,
                            uintptr_t argc, uintptr_t argv[])
@@ -132,29 +113,6 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now,
     ringbuf_write(s_app.ref_ringbuf, (char *)pcm, BYTES_20MS);
 #endif
     ops->write(s_app.pb_ctx, pcm, FRAMES_20MS);
-}
-
-static int pb_mpq_init(void *arg)
-{
-    (void)arg;
-    AOSL_LOG_INF("playback MPQ started");
-
-    s_app.pb_timer = aosl_mpq_set_timer(AUDIO_TICK_MS, playback_timer, NULL, 0);
-    if (aosl_mpq_timer_invalid(s_app.pb_timer))
-        AOSL_LOG_ERR("failed to create playback timer");
-
-    return 0;
-}
-
-static void pb_mpq_fini(void *arg)
-{
-    (void)arg;
-    AOSL_LOG_INF("playback MPQ stopping");
-
-    if (!aosl_mpq_timer_invalid(s_app.pb_timer)) {
-        aosl_mpq_kill_timer(s_app.pb_timer);
-        s_app.pb_timer = AOSL_MPQ_TIMER_INVALID;
-    }
 }
 
 /* ----------------------------------------------------------
@@ -289,6 +247,38 @@ static void dev_on_state_changed(device_state_t state)
     (void)state;
 }
 
+/* Device state machine tick — runs on a dedicated MPQ (state_mpq) because
+ * device_state_tick() performs blocking HTTP polling. */
+static void state_tick_timer(aosl_timer_t id, const aosl_ts_t *now,
+                             uintptr_t argc, uintptr_t argv[])
+{
+    (void)id; (void)now; (void)argc; (void)argv;
+    device_state_tick();
+}
+
+static int state_mpq_init(void *arg)
+{
+    (void)arg;
+    AOSL_LOG_INF("state MPQ started");
+
+    s_app.state_timer = aosl_mpq_set_timer(STATE_TICK_MS, state_tick_timer, NULL, 0);
+    if (aosl_mpq_timer_invalid(s_app.state_timer))
+        AOSL_LOG_ERR("failed to create state timer");
+
+    return 0;
+}
+
+static void state_mpq_fini(void *arg)
+{
+    (void)arg;
+    AOSL_LOG_INF("state MPQ stopping");
+
+    if (!aosl_mpq_timer_invalid(s_app.state_timer)) {
+        aosl_mpq_kill_timer(s_app.state_timer);
+        s_app.state_timer = AOSL_MPQ_TIMER_INVALID;
+    }
+}
+
 /* ----------------------------------------------------------
  * MPQ init — runs inside MPQ thread at startup
  * ---------------------------------------------------------- */
@@ -300,6 +290,15 @@ static int mpq_init(void *arg)
     s_app.send_timer = aosl_mpq_set_timer(20, send_audio_timer, NULL, 0);
     if (aosl_mpq_timer_invalid(s_app.send_timer))
         AOSL_LOG_ERR("failed to create send timer");
+
+    /* Capture and playback I/O run on this same MPQ thread. */
+    s_app.cap_timer = aosl_mpq_set_timer(AUDIO_TICK_MS, capture_timer, NULL, 0);
+    if (aosl_mpq_timer_invalid(s_app.cap_timer))
+        AOSL_LOG_ERR("failed to create capture timer");
+
+    s_app.pb_timer = aosl_mpq_set_timer(AUDIO_TICK_MS, playback_timer, NULL, 0);
+    if (aosl_mpq_timer_invalid(s_app.pb_timer))
+        AOSL_LOG_ERR("failed to create playback timer");
 
     return 0;
 }
@@ -316,6 +315,14 @@ static void mpq_fini(void *arg)
         aosl_mpq_kill_timer(s_app.send_timer);
         s_app.send_timer = AOSL_MPQ_TIMER_INVALID;
     }
+    if (!aosl_mpq_timer_invalid(s_app.cap_timer)) {
+        aosl_mpq_kill_timer(s_app.cap_timer);
+        s_app.cap_timer = AOSL_MPQ_TIMER_INVALID;
+    }
+    if (!aosl_mpq_timer_invalid(s_app.pb_timer)) {
+        aosl_mpq_kill_timer(s_app.pb_timer);
+        s_app.pb_timer = AOSL_MPQ_TIMER_INVALID;
+    }
 
     rtc_session_leave();
 }
@@ -331,12 +338,12 @@ int app_start(const app_config_t *cfg)
     memset(&s_app, 0, sizeof(s_app));
     s_app.config     = cfg;
     s_app.running    = true;
-    s_app.mpq        = AOSL_MPQ_INVALID;
-    s_app.send_timer = AOSL_MPQ_TIMER_INVALID;
-    s_app.cap_mpq    = AOSL_MPQ_INVALID;
-    s_app.cap_timer  = AOSL_MPQ_TIMER_INVALID;
-    s_app.pb_mpq     = AOSL_MPQ_INVALID;
-    s_app.pb_timer   = AOSL_MPQ_TIMER_INVALID;
+    s_app.mpq         = AOSL_MPQ_INVALID;
+    s_app.send_timer  = AOSL_MPQ_TIMER_INVALID;
+    s_app.cap_timer   = AOSL_MPQ_TIMER_INVALID;
+    s_app.pb_timer    = AOSL_MPQ_TIMER_INVALID;
+    s_app.state_mpq   = AOSL_MPQ_INVALID;
+    s_app.state_timer = AOSL_MPQ_TIMER_INVALID;
 
     /* ---- 1. Initialize AOSL ---- */
     aosl_ctor();
@@ -380,26 +387,7 @@ int app_start(const app_config_t *cfg)
     cap_ops->start(s_app.cap_ctx);
     pb_ops->start(s_app.pb_ctx);
 
-    /* ---- 5. Create the capture/playback worker threads ----
-     * Each worker is an MPQ created with aosl_mpq_create(), which spawns the
-     * thread and gives us join semantics through aosl_mpq_destroy_wait() —
-     * the thread HAL (aosl_hal_thread_join) is not available on every
-     * platform. The per-MPQ timer (cap_timer / pb_timer) drives the I/O. */
-    s_app.cap_mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MPQ_STACK_SIZE, 1000, "cap_mpq",
-                                    cap_mpq_init, cap_mpq_fini, NULL);
-    if (aosl_mpq_invalid(s_app.cap_mpq)) {
-        AOSL_LOG_ERR("cap_mpq create failed");
-        return -1;
-    }
-
-    s_app.pb_mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MPQ_STACK_SIZE, 1000, "pb_mpq",
-                                   pb_mpq_init, pb_mpq_fini, NULL);
-    if (aosl_mpq_invalid(s_app.pb_mpq)) {
-        AOSL_LOG_ERR("pb_mpq create failed");
-        return -1;
-    }
-
-    /* ---- 6. Initialize the device state machine ---- */
+    /* ---- 5. Initialize the device state machine ---- */
     device_state_callbacks_t dev_cbs;
     memset(&dev_cbs, 0, sizeof(dev_cbs));
     dev_cbs.on_pair_code           = dev_on_pair_code;
@@ -414,7 +402,7 @@ int app_start(const app_config_t *cfg)
         return -1;
     }
 
-    /* ---- 7. Create the MPQ and run its loop in a dedicated thread ----
+    /* ---- 6. Create the MPQ and run its loop in a dedicated thread ----
      * Use aosl_mpq_create() instead of aosl_main_start(): the latter
      * registers an atexit() hook that re-runs aosl_main_exit_wait() after
      * main() returns, which aborts once aosl_dtor() has finalized AOSL.
@@ -426,13 +414,18 @@ int app_start(const app_config_t *cfg)
         return -1;
     }
 
+    /* ---- 7. Create the device-state MPQ ----
+     * Dedicated thread: device_state_tick() does blocking HTTP polling that
+     * must not delay the real-time audio timers on mybot_mpq. */
+    s_app.state_mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MPQ_STACK_SIZE, 1000, "state_mpq",
+                                      state_mpq_init, state_mpq_fini, NULL);
+    if (aosl_mpq_invalid(s_app.state_mpq)) {
+        AOSL_LOG_ERR("state_mpq create failed");
+        return -1;
+    }
+
     AOSL_LOG_INF("app started");
     return 0;
-}
-
-void app_tick(void)
-{
-    device_state_tick();
 }
 
 bool app_is_running(void)
@@ -471,25 +464,19 @@ void app_stop(void)
     s_app.running = false;
 
     /* ---- 2. Stop the MPQ loop ----
-     * Its fini callback kills the send timer and leaves the RTC channel.
-     * Must happen before tearing down RTC/audio. */
+     * Its fini callback kills the audio timers (send/capture/playback) and
+     * leaves the RTC channel. Must happen before rtc_session_fini(): the
+     * RTC SDK finalizes AOSL itself in agora_rtc_fini(), after which no AOSL
+     * call may be made. */
     if (!aosl_mpq_invalid(s_app.mpq)) {
         aosl_mpq_destroy_wait(s_app.mpq);
         s_app.mpq = AOSL_MPQ_INVALID;
     }
 
-    /* ---- 3. Stop the capture/playback MPQ threads ----
-     * aosl_mpq_destroy_wait() destroys the queue and joins its thread in one
-     * call, replacing the thread-HAL join that is not portable. These must be
-     * torn down before rtc_session_fini(): the RTC SDK finalizes AOSL itself
-     * in agora_rtc_fini(), after which no AOSL call may be made. */
-    if (!aosl_mpq_invalid(s_app.cap_mpq)) {
-        aosl_mpq_destroy_wait(s_app.cap_mpq);
-        s_app.cap_mpq = AOSL_MPQ_INVALID;
-    }
-    if (!aosl_mpq_invalid(s_app.pb_mpq)) {
-        aosl_mpq_destroy_wait(s_app.pb_mpq);
-        s_app.pb_mpq = AOSL_MPQ_INVALID;
+    /* ---- 3. Stop the device-state MPQ ---- */
+    if (!aosl_mpq_invalid(s_app.state_mpq)) {
+        aosl_mpq_destroy_wait(s_app.state_mpq);
+        s_app.state_mpq = AOSL_MPQ_INVALID;
     }
 
     /* ---- 4. Stop the RTC session ----
