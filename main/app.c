@@ -464,7 +464,13 @@ void app_stop(void)
 {
     AOSL_LOG_INF("stopping app...");
 
-    /* ---- 1. Stop the MPQ loop ----
+    /* ---- 1. Signal workers to stop ----
+     * Set BEFORE any AOSL/audio teardown so the MPQ timer callbacks return
+     * early. The ALSA read/write paths are poll-with-timeout, so each worker
+     * exits within a bounded time even when the device yields no data. */
+    s_app.running = false;
+
+    /* ---- 2. Stop the MPQ loop ----
      * Its fini callback kills the send timer and leaves the RTC channel.
      * Must happen before tearing down RTC/audio. */
     if (!aosl_mpq_invalid(s_app.mpq)) {
@@ -472,19 +478,11 @@ void app_stop(void)
         s_app.mpq = AOSL_MPQ_INVALID;
     }
 
-    /* ---- 2. Stop the RTC session ----
-     * Also stops the SDK threads that feed the playback ring buffer. */
-    rtc_session_fini();
-
-    /* ---- 3. Signal workers to stop BEFORE touching audio devices ----
-     * The ALSA read/write paths are poll-with-timeout, so each worker exits
-     * within a bounded time even when the device yields no data — no thread
-     * is ever blocked inside a PCM call while we tear the devices down. */
-    s_app.running = false;
-
-    /* ---- 4. Stop the capture/playback MPQ threads ----
+    /* ---- 3. Stop the capture/playback MPQ threads ----
      * aosl_mpq_destroy_wait() destroys the queue and joins its thread in one
-     * call, replacing the thread-HAL join that is not portable. */
+     * call, replacing the thread-HAL join that is not portable. These must be
+     * torn down before rtc_session_fini(): the RTC SDK finalizes AOSL itself
+     * in agora_rtc_fini(), after which no AOSL call may be made. */
     if (!aosl_mpq_invalid(s_app.cap_mpq)) {
         aosl_mpq_destroy_wait(s_app.cap_mpq);
         s_app.cap_mpq = AOSL_MPQ_INVALID;
@@ -494,23 +492,30 @@ void app_stop(void)
         s_app.pb_mpq = AOSL_MPQ_INVALID;
     }
 
-    /* ---- 5. Destroy devices — safe now that no worker references them ---- */
+    /* ---- 4. Stop the RTC session ----
+     * Also stops the SDK threads that feed the playback ring buffer. NOTE:
+     * agora_rtc_fini() finalizes AOSL internally, so only AOSL-independent
+     * teardown (devices, ring buffers) may follow. */
+    rtc_session_fini();
+
+    /* ---- 5. Destroy devices (no AOSL dependency) ---- */
     const audio_capture_ops_t  *cap_ops = audio_device_get_capture();
     const audio_playback_ops_t *pb_ops  = audio_device_get_playback();
     if (cap_ops && s_app.cap_ctx) { cap_ops->destroy(s_app.cap_ctx); s_app.cap_ctx = NULL; }
     if (pb_ops  && s_app.pb_ctx)  { pb_ops->destroy(s_app.pb_ctx);   s_app.pb_ctx  = NULL; }
 
-    /* ---- 6. Destroy ring buffers ---- */
+    /* ---- 6. Destroy ring buffers ----
+     * aosl_hal_free() maps to the system allocator on all platforms, so this
+     * stays safe even after AOSL has been finalized by the RTC SDK. */
     if (s_app.cap_ringbuf) { ringbuf_destroy(s_app.cap_ringbuf); s_app.cap_ringbuf = NULL; }
     if (s_app.pb_ringbuf)  { ringbuf_destroy(s_app.pb_ringbuf);  s_app.pb_ringbuf  = NULL; }
 #if MYBOT_CLOUD_AEC
     if (s_app.ref_ringbuf) { ringbuf_destroy(s_app.ref_ringbuf); s_app.ref_ringbuf = NULL; }
 #endif
 
-    /* ---- 7. Finalize AOSL and release its resources ----
-     * Safe here: since the MPQ was created with aosl_mpq_create() (not
-     * aosl_main_start()), no atexit() hook was registered that could touch
-     * AOSL after main() returns. */
+    /* ---- 7. Finalize AOSL ----
+     * No-op if the RTC SDK already finalized AOSL in rtc_session_fini();
+     * kept so the app also works when no SDK is involved. */
     aosl_dtor();
     AOSL_LOG_INF("app stopped cleanly");
 }
