@@ -8,6 +8,11 @@
 
 #include <api/aosl_log.h>
 
+/* Bounded wait for poll-based (non-blocking) PCM I/O. Keeps read/write
+ * interruptible so worker threads can observe stop conditions and exit
+ * promptly instead of blocking forever inside the driver. */
+#define PCM_POLL_TIMEOUT_MS  50
+
 /* ---- ALSA error recovery helpers ---- */
 static int xrun_recover(snd_pcm_t *handle)
 {
@@ -57,8 +62,11 @@ static int pcm_write(snd_pcm_t *handle, const char *buf, size_t frames)
 
     while (count > 0) {
         r = snd_pcm_writei(handle, buf + result * frame_bytes, count);
-        if (r == -EAGAIN || (r >= 0 && (size_t)r < count)) {
-            snd_pcm_wait(handle, 100);
+        if (r == -EAGAIN) {
+            /* Buffer full right now — wait up to the poll timeout, then give
+             * up so the caller can check its own stop condition. */
+            if (snd_pcm_wait(handle, PCM_POLL_TIMEOUT_MS) <= 0)
+                break;
         } else if (r == -EPIPE) {
             if (xrun_recover(handle) < 0)
                 return -1;
@@ -68,10 +76,11 @@ static int pcm_write(snd_pcm_t *handle, const char *buf, size_t frames)
         } else if (r < 0) {
             AOSL_LOG_ERR("pcm_write: %s", snd_strerror(r));
             return -1;
-        }
-        if (r > 0) {
-            result += r;
-            count  -= r;
+        } else if (r > 0) {
+            result += (size_t)r;
+            count  -= (size_t)r;
+        } else {
+            break;
         }
     }
     return (int)result;
@@ -111,6 +120,10 @@ static int alsa_playback_init(void **ctx, int rate, int channels, int bits)
         AOSL_LOG_ERR("init: snd_pcm_open failed: %s", snd_strerror(err));
         goto fail;
     }
+
+    /* Non-blocking mode: pcm_write() uses snd_pcm_wait() with a timeout so a
+     * playback thread blocked on a full buffer can still notice shutdown. */
+    snd_pcm_nonblock(p->handle, 1);
 
     /* HW params */
     snd_pcm_hw_params_alloca(&hw);
@@ -177,7 +190,9 @@ static int alsa_playback_stop(void *ctx)
     AOSL_LOG_INF("stop");
     if (ctx) {
         alsa_pb_t *p = (alsa_pb_t *)ctx;
-        snd_pcm_drain(p->handle);
+        /* Immediate stop (does not wait for playback to drain), safe to call
+         * from another thread than the one inside snd_pcm_writei. */
+        snd_pcm_drop(p->handle);
     }
     return 0;
 }
@@ -189,7 +204,7 @@ static void alsa_playback_destroy(void *ctx)
         return;
     alsa_pb_t *p = (alsa_pb_t *)ctx;
     if (p->handle) {
-        snd_pcm_drain(p->handle);
+        snd_pcm_drop(p->handle);
         snd_pcm_close(p->handle);
     }
     free(p);

@@ -12,6 +12,11 @@
 #define PCM_FRAMES_20MS  320
 #define PCM_BYTES_20MS   640
 
+/* Bounded wait for poll-based (non-blocking) PCM I/O. Keeps read/write
+ * interruptible so worker threads can observe stop conditions and exit
+ * promptly instead of blocking forever inside the driver. */
+#define PCM_POLL_TIMEOUT_MS  50
+
 /* Internal context */
 typedef struct {
     snd_pcm_t      *handle;
@@ -72,8 +77,11 @@ static int pcm_read(snd_pcm_t *handle, char *buf, size_t frames)
 
     while (count > 0) {
         r = snd_pcm_readi(handle, buf + result * frame_bytes, count);
-        if (r == -EAGAIN || (r >= 0 && (size_t)r < count)) {
-            snd_pcm_wait(handle, 100);
+        if (r == -EAGAIN) {
+            /* No data right now — wait up to the poll timeout, then give up
+             * so the caller can check its own stop condition. */
+            if (snd_pcm_wait(handle, PCM_POLL_TIMEOUT_MS) <= 0)
+                break;
         } else if (r == -EPIPE) {
             if (xrun_recover(handle) < 0)
                 return -1;
@@ -83,10 +91,13 @@ static int pcm_read(snd_pcm_t *handle, char *buf, size_t frames)
         } else if (r < 0) {
             AOSL_LOG_ERR("pcm_read: %s", snd_strerror(r));
             return -1;
-        }
-        if (r > 0) {
-            result += r;
-            count  -= r;
+        } else if (r > 0) {
+            result += (size_t)r;
+            count  -= (size_t)r;
+            if (count > 0 && snd_pcm_wait(handle, PCM_POLL_TIMEOUT_MS) <= 0)
+                break;   /* partial read; return what we have */
+        } else {
+            break;
         }
     }
     return (int)result;
@@ -118,6 +129,10 @@ static int alsa_capture_init(void **ctx, int rate, int channels, int bits)
         AOSL_LOG_ERR("init: snd_pcm_open failed: %s", snd_strerror(err));
         goto fail;
     }
+
+    /* Non-blocking mode: pcm_read() uses snd_pcm_wait() with a timeout so a
+     * capture thread blocked on no data can still notice shutdown. */
+    snd_pcm_nonblock(c->handle, 1);
 
     /* HW params */
     snd_pcm_hw_params_alloca(&hw);
@@ -175,11 +190,13 @@ static int alsa_capture_start(void *ctx)
 static int alsa_capture_read(void *ctx, void *buf, int frames)
 {
     alsa_cap_t *c = (alsa_cap_t *)ctx;
+    int frame_bytes = c->bits_per_sample / 8 * c->channels;
+    int want = frames * frame_bytes;
     int total_bytes = 0;
-    int want = frames * c->bits_per_sample / 8 * c->channels;
-    int chunk_frames;
+    int got;
 
     while (total_bytes < want) {
+        /* Hand out any bytes buffered by a previous partial read first. */
         if (c->acc_len > 0) {
             int copy = (want - total_bytes) < c->acc_len
                            ? (want - total_bytes) : c->acc_len;
@@ -192,12 +209,12 @@ static int alsa_capture_read(void *ctx, void *buf, int frames)
                 break;
         }
 
-        chunk_frames = pcm_read(c->handle, (char *)c->acc_buf, PCM_FRAMES_20MS);
-        if (chunk_frames <= 0) {
-            usleep(5000);
-            continue;
-        }
-        c->acc_len = chunk_frames * c->bits_per_sample / 8 * c->channels;
+        got = pcm_read(c->handle, c->acc_buf, PCM_FRAMES_20MS);
+        if (got < 0)
+            return -1;
+        if (got == 0)
+            return 0;   /* no new data within the wait window */
+        c->acc_len = got * frame_bytes;
     }
 
     return frames;
@@ -208,7 +225,9 @@ static int alsa_capture_stop(void *ctx)
     AOSL_LOG_INF("stop");
     if (ctx) {
         alsa_cap_t *c = (alsa_cap_t *)ctx;
-        snd_pcm_drain(c->handle);
+        /* Immediate stop (does not wait for pending frames), safe to call
+         * from another thread than the one inside snd_pcm_readi. */
+        snd_pcm_drop(c->handle);
     }
     return 0;
 }
@@ -220,7 +239,7 @@ static void alsa_capture_destroy(void *ctx)
         return;
     alsa_cap_t *c = (alsa_cap_t *)ctx;
     if (c->handle) {
-        snd_pcm_drain(c->handle);
+        snd_pcm_drop(c->handle);
         snd_pcm_close(c->handle);
     }
     free(c);
