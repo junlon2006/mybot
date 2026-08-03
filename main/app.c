@@ -64,11 +64,9 @@ static struct {
     char            rtc_token[512];
     char            rtc_uid[64];
 
-    /* Timer handles */
+    /* MPQ handles */
+    aosl_mpq_t      mpq;
     aosl_timer_t    send_timer;
-
-    /* Audio device lifecycle lock */
-    aosl_mutex_t    lock;
 } s_app;
 
 /* ----------------------------------------------------------
@@ -306,9 +304,8 @@ int app_start(const app_config_t *cfg)
     memset(&s_app, 0, sizeof(s_app));
     s_app.config       = cfg;
     s_app.running      = true;
+    s_app.mpq          = AOSL_MPQ_INVALID;
     s_app.send_timer   = AOSL_MPQ_TIMER_INVALID;
-    s_app.lock         = aosl_hal_mutex_create();
-    if (!s_app.lock) { fprintf(stderr, "[APP] mutex create failed\n"); return -1; }
 
     signal(SIGINT,  signal_handler);
     signal(SIGTERM, signal_handler);
@@ -368,11 +365,15 @@ int app_start(const app_config_t *cfg)
                           cfg->firmware_ver, cfg->hw_model,
                           &dev_cbs) < 0)
         { AOSL_LOG_ERR("device state init failed"); goto fail; }
-
-    /* ---- 8. Start MPQ main loop ---- */
-    AOSL_LOG_INF("starting MPQ main loop...");
-    if (aosl_main_start(0, mpq_init, mpq_fini, NULL) < 0)
-        { AOSL_LOG_ERR("aosl_main_start failed"); goto fail; }
+    /* ---- 8. Create the MPQ and run its loop in a dedicated thread ----
+     * Use aosl_mpq_create() instead of aosl_main_start(): the latter
+     * registers an atexit() hook that re-runs aosl_main_exit_wait() after
+     * main() returns, which aborts once aosl_dtor() has finalized AOSL.
+     * Creating the queue explicitly keeps teardown fully in our control. */
+    AOSL_LOG_INF("starting MPQ loop...");
+    s_app.mpq = aosl_mpq_create(0, 0, 100000, "mybot_mpq", mpq_init, mpq_fini, NULL);
+    if (aosl_mpq_invalid(s_app.mpq))
+        { AOSL_LOG_ERR("aosl_mpq_create failed"); goto fail; }
 
     /* ---- 9. Set stdin non-blocking for key handling ---- */
     aosl_hal_sk_set_nonblock((aosl_fd_t)0);
@@ -383,6 +384,7 @@ int app_start(const app_config_t *cfg)
         "  s - start conversation\n"
         "  q - stop conversation\n"
         "  p - re-pair device\n"
+        "  e - exit\n"
         "  Ctrl+C - exit\n"
         "\n");
     while (s_app.running) {
@@ -401,11 +403,16 @@ int app_start(const app_config_t *cfg)
                 fprintf(stdout, "[KEY] p -> re-pair\n");
                 device_state_request_pair();
                 break;
+            case 'e':
+                /* Same as Ctrl+C: exit the app gracefully */
+                fprintf(stdout, "[KEY] e -> exit\n");
+                s_app.running = false;
+                break;
             case '\n':
             case '\r':
                 break;
             default:
-                fprintf(stdout, "[KEY] '%c' ignored (s=start, q=stop, p=pair)\n", ch);
+                fprintf(stdout, "[KEY] '%c' ignored (s=start, q=stop, p=pair, e=exit)\n", ch);
                 break;
             }
         }
@@ -417,35 +424,43 @@ int app_start(const app_config_t *cfg)
     device_state_request_stop();
     aosl_hal_msleep(500);
 
-    aosl_main_exit_wait();
-
 cleanup:
     AOSL_LOG_INF("cleaning up...");
 
-    /* Step 1: stop RTC session */
+    /* Step 1: stop the MPQ loop. Its fini callback kills the send timer and
+     * leaves the RTC channel. Must happen before tearing down RTC/audio. */
+    if (!aosl_mpq_invalid(s_app.mpq)) {
+        aosl_mpq_destroy_wait(s_app.mpq);
+        s_app.mpq = AOSL_MPQ_INVALID;
+    }
+
+    /* Step 2: stop RTC session */
     rtc_session_fini();
 
-    /* Step 2: close PCM devices — unblocks capture/playback threads */
-    aosl_hal_mutex_lock(s_app.lock);
-    if (s_app.cap_ctx) { cap_ops->stop(s_app.cap_ctx); cap_ops->destroy(s_app.cap_ctx); s_app.cap_ctx = NULL; }
-    if (s_app.pb_ctx)  { pb_ops->stop(s_app.pb_ctx);  pb_ops->destroy(s_app.pb_ctx);  s_app.pb_ctx  = NULL; }
-    aosl_hal_mutex_unlock(s_app.lock);
-
-    /* Step 3: wait for worker threads to exit */
+    /* Step 3: signal workers to stop BEFORE touching audio devices.
+     * The ALSA read/write paths are poll-with-timeout, so each worker exits
+     * within a bounded time even when the device yields no data — no thread
+     * is ever blocked inside a PCM call while we tear the devices down. */
     s_app.running = false;
-    aosl_hal_msleep(50);
 
+    /* Step 4: wait for worker threads to exit */
     if (s_app.cap_thread) { aosl_hal_thread_join(s_app.cap_thread, NULL); s_app.cap_thread = 0; }
     if (s_app.pb_thread)  { aosl_hal_thread_join(s_app.pb_thread, NULL);  s_app.pb_thread  = 0; }
 
-    /* Step 4: destroy ring buffers */
+    /* Step 5: destroy devices — safe now that no worker references them */
+    if (s_app.cap_ctx) { cap_ops->destroy(s_app.cap_ctx); s_app.cap_ctx = NULL; }
+    if (s_app.pb_ctx)  { pb_ops->destroy(s_app.pb_ctx);   s_app.pb_ctx  = NULL; }
+
+    /* Step 6: destroy ring buffers */
     if (s_app.cap_ringbuf) { ringbuf_destroy(s_app.cap_ringbuf); s_app.cap_ringbuf = NULL; }
     if (s_app.pb_ringbuf)  { ringbuf_destroy(s_app.pb_ringbuf);  s_app.pb_ringbuf  = NULL; }
 #if MYBOT_CLOUD_AEC
     if (s_app.ref_ringbuf) { ringbuf_destroy(s_app.ref_ringbuf); s_app.ref_ringbuf = NULL; }
 #endif
 
-    aosl_hal_mutex_destroy(s_app.lock);
+    /* Finalize AOSL and release its resources. Safe here: since the MPQ was
+     * created with aosl_mpq_create() (not aosl_main_start()), no atexit()
+     * hook was registered that could touch AOSL after main() returns. */
     aosl_dtor();
     AOSL_LOG_INF("app stopped cleanly");
     return 0;
