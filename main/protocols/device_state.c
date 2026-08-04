@@ -105,7 +105,10 @@ static void action_create_pair_code(void)
 
     /* Save pair token and poll settings */
     strncpy(s_state.pair_token, resp.pair_token, sizeof(s_state.pair_token) - 1);
-    s_state.pair_poll_interval = resp.poll_after_seconds;
+    /* Enforce a minimum 3 s poll interval even if the server omits or
+     * undershoots poll_after_seconds (otherwise the device would busy-poll). */
+    s_state.pair_poll_interval = resp.poll_after_seconds >= 3
+                                     ? resp.poll_after_seconds : 3;
     s_state.pair_tick_counter  = 0;
 
     /* Clear any old device token */
@@ -140,7 +143,7 @@ static void action_poll_binding_pair(void)
     AOSL_LOG_INF("bind poll -> status=%s", resp.status);
 
     if (strcmp(resp.status, "pending") == 0) {
-        s_state.pair_poll_interval = resp.poll_after_seconds > 0
+        s_state.pair_poll_interval = resp.poll_after_seconds >= 3
                                          ? resp.poll_after_seconds : 3;
         /* stay in awaiting_claim */
     } else if (strcmp(resp.status, "bound") == 0) {
