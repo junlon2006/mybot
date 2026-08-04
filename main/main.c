@@ -22,7 +22,10 @@ void mybot_audio_platform_register_alsa_playback(void);
 static void signal_handler(int sig)
 {
     (void)sig;
-    AOSL_LOG_INF("caught signal, stopping...");
+    /* Only set the stop flag here. AOSL_LOG is not async-signal-safe and
+     * could deadlock on the logging lock if the signal interrupts a thread
+     * that is currently logging. The shutdown itself is logged by
+     * mybot_app_stop(). */
     mybot_app_request_exit();
 }
 
