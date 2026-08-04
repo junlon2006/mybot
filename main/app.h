@@ -14,44 +14,44 @@ typedef struct {
     char  device_id[64];      /* unique device identifier */
     char  firmware_ver[32];   /* firmware version (optional) */
     char  hw_model[32];       /* hardware model (optional) */
-} app_config_t;
+} mybot_app_config_t;
 
 /**
  * @brief Initialize and start the application.
  *
  * Non-blocking: this spawns the worker threads (audio capture/playback and
  * the MPQ loop) and returns. The application then runs on its own, driven by
- * its MPQ timers; the caller must call app_stop() before exiting to release
+ * its MPQ timers; the caller must call mybot_app_stop() before exiting to release
  * all resources.
  *
  * @param cfg configuration; must remain valid for the application lifetime.
- * @return 0 on success, -1 on error. app_stop() may still be called to
+ * @return 0 on success, -1 on error. mybot_app_stop() may still be called to
  *         release any resources allocated before the failure.
  */
-int app_start(const app_config_t *cfg);
+int mybot_app_start(const mybot_app_config_t *cfg);
 
 /** @brief Check whether the application is still running. */
-bool app_is_running(void);
+bool mybot_app_is_running(void);
 
 /** @brief Request a graceful exit (used by signal handlers / UI keys). */
-void app_request_exit(void);
+void mybot_app_request_exit(void);
 
 /** @brief User requests to start a conversation (button / key). */
-void app_start_conversation(void);
+void mybot_app_start_conversation(void);
 
 /** @brief User requests to stop the current conversation. */
-void app_stop_conversation(void);
+void mybot_app_stop_conversation(void);
 
 /** @brief User requests to (re-)pair the device. */
-void app_pair(void);
+void mybot_app_pair(void);
 
 /**
  * @brief Stop the application and release all resources.
  *
  * Blocks until all worker threads have exited. Idempotent, and safe to call
- * even if app_start() failed partway through initialization.
+ * even if mybot_app_start() failed partway through initialization.
  */
-void app_stop(void);
+void mybot_app_stop(void);
 
 #ifdef __cplusplus
 }

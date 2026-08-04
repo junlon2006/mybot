@@ -25,7 +25,7 @@ static inline int free_size(ringbuf_internal_t *rb)
     return rb->size - data_size(rb) - RINGBUF_GUARD_BYTE;
 }
 
-ringbuf_t ringbuf_create(int size)
+mybot_ringbuf_t mybot_ringbuf_create(int size)
 {
     if (size <= 0)
         return NULL;
@@ -41,10 +41,10 @@ ringbuf_t ringbuf_create(int size)
         return NULL;
     }
     rb->head = rb->tail = 0;
-    return (ringbuf_t)rb;
+    return (mybot_ringbuf_t)rb;
 }
 
-int ringbuf_destroy(ringbuf_t handle)
+int mybot_ringbuf_destroy(mybot_ringbuf_t handle)
 {
     if (!handle)
         return -1;
@@ -54,7 +54,7 @@ int ringbuf_destroy(ringbuf_t handle)
     return 0;
 }
 
-int ringbuf_clear(ringbuf_t handle)
+int mybot_ringbuf_clear(mybot_ringbuf_t handle)
 {
     if (!handle)
         return -1;
@@ -63,21 +63,21 @@ int ringbuf_clear(ringbuf_t handle)
     return 0;
 }
 
-int ringbuf_get_free_size(ringbuf_t handle)
+int mybot_ringbuf_get_free_size(mybot_ringbuf_t handle)
 {
     if (!handle)
         return -1;
     return free_size((ringbuf_internal_t *)handle);
 }
 
-int ringbuf_get_data_size(ringbuf_t handle)
+int mybot_ringbuf_get_data_size(mybot_ringbuf_t handle)
 {
     if (!handle)
         return -1;
     return data_size((ringbuf_internal_t *)handle);
 }
 
-int ringbuf_write(ringbuf_t handle, const char *src, int writelen)
+int mybot_ringbuf_write(mybot_ringbuf_t handle, const char *src, int writelen)
 {
     if (!handle || !src || writelen <= 0)
         return -1;
@@ -98,7 +98,7 @@ int ringbuf_write(ringbuf_t handle, const char *src, int writelen)
     return writelen;
 }
 
-int ringbuf_read(char *dst, int readlen, ringbuf_t handle)
+int mybot_ringbuf_read(char *dst, int readlen, mybot_ringbuf_t handle)
 {
     if (!handle || !dst || readlen <= 0)
         return -1;

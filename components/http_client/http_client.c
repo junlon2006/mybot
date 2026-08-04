@@ -199,7 +199,7 @@ static int parse_status_line(const char *line)
  * Parse a complete HTTP response from raw data.
  * Returns the response struct (body will point into or be a copy from raw).
  */
-static int parse_response(const char *raw, size_t raw_len, http_response_t *resp)
+static int parse_response(const char *raw, size_t raw_len, mybot_http_response_t *resp)
 {
     memset(resp, 0, sizeof(*resp));
 
@@ -277,7 +277,7 @@ static int parse_response(const char *raw, size_t raw_len, http_response_t *resp
 static int http_request(const char *method, const char *url,
                         const char *content_type, const char *req_body,
                         const char *extra_headers,
-                        http_response_t *resp)
+                        mybot_http_response_t *resp)
 {
     url_parts_t parts;
     if (parse_url(url, &parts) < 0)
@@ -349,33 +349,33 @@ static int http_request(const char *method, const char *url,
  * Public API
  * ---------------------------------------------------------- */
 
-int http_get(const char *url, http_response_t *resp)
+int mybot_http_get(const char *url, mybot_http_response_t *resp)
 {
-    return http_get_ex(url, NULL, resp);
+    return mybot_http_get_ex(url, NULL, resp);
 }
 
-int http_post(const char *url, const char *content_type,
-              const char *body, http_response_t *resp)
+int mybot_http_post(const char *url, const char *content_type,
+                    const char *body, mybot_http_response_t *resp)
 {
-    return http_post_ex(url, content_type, body, NULL, resp);
+    return mybot_http_post_ex(url, content_type, body, NULL, resp);
 }
 
-int http_get_ex(const char *url, const char *extra_headers, http_response_t *resp)
+int mybot_http_get_ex(const char *url, const char *extra_headers, mybot_http_response_t *resp)
 {
     if (!url || !resp)
         return -1;
     return http_request("GET", url, NULL, NULL, extra_headers, resp);
 }
 
-int http_post_ex(const char *url, const char *content_type, const char *body,
-                 const char *extra_headers, http_response_t *resp)
+int mybot_http_post_ex(const char *url, const char *content_type, const char *body,
+                       const char *extra_headers, mybot_http_response_t *resp)
 {
     if (!url || !resp)
         return -1;
     return http_request("POST", url, content_type, body, extra_headers, resp);
 }
 
-void http_response_free(http_response_t *resp)
+void mybot_http_response_free(mybot_http_response_t *resp)
 {
     if (resp) {
         if (resp->body) {

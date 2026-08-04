@@ -12,10 +12,10 @@
 /* ----------------------------------------------------------
  * Platform-specific audio backend (Linux: ALSA).
  * Registers the capture/playback ops used by the app layer via
- * audio_device_register_*() before app_start() is called.
+ * audio_device_register_*() before mybot_app_start() is called.
  * ---------------------------------------------------------- */
-void audio_platform_register_alsa_capture(void);
-void audio_platform_register_alsa_playback(void);
+void mybot_audio_platform_register_alsa_capture(void);
+void mybot_audio_platform_register_alsa_playback(void);
 
 /* ----------------------------------------------------------
  * Signal handling — POSIX. Request a graceful app exit.
@@ -24,7 +24,7 @@ static void signal_handler(int sig)
 {
     (void)sig;
     AOSL_LOG_INF("caught signal, stopping...");
-    app_request_exit();
+    mybot_app_request_exit();
 }
 
 /* ----------------------------------------------------------
@@ -35,19 +35,19 @@ static void handle_key(char ch)
     switch (ch) {
     case 's':
         fprintf(stdout, "[KEY] s -> start conversation\n");
-        app_start_conversation();
+        mybot_app_start_conversation();
         break;
     case 'q':
         fprintf(stdout, "[KEY] q -> stop conversation\n");
-        app_stop_conversation();
+        mybot_app_stop_conversation();
         break;
     case 'p':
         fprintf(stdout, "[KEY] p -> re-pair\n");
-        app_pair();
+        mybot_app_pair();
         break;
     case 'e':
         fprintf(stdout, "[KEY] e -> exit\n");
-        app_request_exit();
+        mybot_app_request_exit();
         break;
     case '\n':
     case '\r':
@@ -81,7 +81,7 @@ static void print_usage(const char *prog)
 
 int main(int argc, char **argv)
 {
-    app_config_t cfg;
+    mybot_app_config_t cfg;
     memset(&cfg, 0, sizeof(cfg));
 
     /* ---- Parse command line ---- */
@@ -117,17 +117,17 @@ int main(int argc, char **argv)
     if (cfg.hw_model[0])     fprintf(stdout, "  hw-model : %s\n", cfg.hw_model);
 
     /* ---- Register the platform audio backend (Linux: ALSA) ---- */
-    audio_platform_register_alsa_capture();
-    audio_platform_register_alsa_playback();
+    mybot_audio_platform_register_alsa_capture();
+    mybot_audio_platform_register_alsa_playback();
 
     /* ---- Install signal handlers ---- */
     signal(SIGINT,  signal_handler);
     signal(SIGTERM, signal_handler);
 
     /* ---- Start the application (non-blocking) ---- */
-    if (app_start(&cfg) < 0) {
-        fprintf(stderr, "ERROR: app_start failed\n");
-        app_stop();   /* release anything app_start allocated before failing */
+    if (mybot_app_start(&cfg) < 0) {
+        fprintf(stderr, "ERROR: mybot_app_start failed\n");
+        mybot_app_stop();   /* release anything mybot_app_start allocated before failing */
         return 1;
     }
 
@@ -146,7 +146,7 @@ int main(int argc, char **argv)
     /* ---- Main loop: interactive keys only.
      * The app drives itself (device state machine etc.) from its own MPQ
      * timers, so main() only needs to poll stdin here. ---- */
-    while (app_is_running()) {
+    while (mybot_app_is_running()) {
         char ch;
         if (aosl_hal_sk_read((aosl_fd_t)0, &ch, 1) == 1)
             handle_key(ch);
@@ -154,6 +154,6 @@ int main(int argc, char **argv)
     }
 
     /* ---- Stop the application and release all resources ---- */
-    app_stop();
+    mybot_app_stop();
     return 0;
 }

@@ -210,7 +210,7 @@ static void alsa_playback_destroy(void *ctx)
     free(p);
 }
 
-static const audio_playback_ops_t g_alsa_playback_ops = {
+static const mybot_audio_playback_ops_t g_alsa_playback_ops = {
     .name    = "alsa",
     .init    = alsa_playback_init,
     .start   = alsa_playback_start,
@@ -219,8 +219,8 @@ static const audio_playback_ops_t g_alsa_playback_ops = {
     .destroy = alsa_playback_destroy,
 };
 
-void audio_platform_register_alsa_playback(void)
+void mybot_audio_platform_register_alsa_playback(void)
 {
-    audio_device_register_playback(&g_alsa_playback_ops);
+    mybot_audio_device_register_playback(&g_alsa_playback_ops);
     AOSL_LOG_INF("platform registered");
 }

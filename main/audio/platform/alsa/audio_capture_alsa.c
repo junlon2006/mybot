@@ -245,7 +245,7 @@ static void alsa_capture_destroy(void *ctx)
     free(c);
 }
 
-static const audio_capture_ops_t g_alsa_capture_ops = {
+static const mybot_audio_capture_ops_t g_alsa_capture_ops = {
     .name    = "alsa",
     .init    = alsa_capture_init,
     .start   = alsa_capture_start,
@@ -254,8 +254,8 @@ static const audio_capture_ops_t g_alsa_capture_ops = {
     .destroy = alsa_capture_destroy,
 };
 
-void audio_platform_register_alsa_capture(void)
+void mybot_audio_platform_register_alsa_capture(void)
 {
-    audio_device_register_capture(&g_alsa_capture_ops);
+    mybot_audio_device_register_capture(&g_alsa_capture_ops);
     AOSL_LOG_INF("platform registered");
 }
