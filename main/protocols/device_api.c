@@ -18,7 +18,7 @@
 char *mybot_device_api_json_build(const char *first_key, ...)
 {
     mybot_cJSON *obj = mybot_cJSON_CreateObject();
-    if (!obj) return NULL;
+    if (!obj) { return NULL; }
 
     va_list args;
     va_start(args, first_key);
@@ -26,7 +26,7 @@ char *mybot_device_api_json_build(const char *first_key, ...)
 
     while (key) {
         const char *val = va_arg(args, const char *);
-        if (!val) break;
+        if (!val) { break; }
         mybot_cJSON_AddStringToObject(obj, key, val);
         key = va_arg(args, const char *);
     }
@@ -36,27 +36,27 @@ char *mybot_device_api_json_build(const char *first_key, ...)
     mybot_cJSON_Delete(obj);
 
     /* mybot_cJSON uses malloc/free; copy to aosl_hal memory for API contract */
-    if (!json_str) return NULL;
+    if (!json_str) { return NULL; }
     size_t len = strlen(json_str) + 1;
     char *result = (char *)aosl_hal_malloc(len);
-    if (result) memcpy(result, json_str, len);
+    if (result) { memcpy(result, json_str, len); }
     free(json_str);
     return result;
 }
 
 char *mybot_device_api_json_get_string(const char *json, const char *key)
 {
-    if (!json || !key) return NULL;
+    if (!json || !key) { return NULL; }
 
     mybot_cJSON *root = mybot_cJSON_Parse(json);
-    if (!root) return NULL;
+    if (!root) { return NULL; }
 
     mybot_cJSON *item = mybot_cJSON_GetObjectItem(root, key);
     char *result = NULL;
 
     if (item && item->valuestring) {
         result = (char *)aosl_hal_malloc(strlen(item->valuestring) + 1);
-        if (result) strcpy(result, item->valuestring);
+        if (result) { strcpy(result, item->valuestring); }
     }
 
     mybot_cJSON_Delete(root);
@@ -65,14 +65,14 @@ char *mybot_device_api_json_get_string(const char *json, const char *key)
 
 int mybot_device_api_json_get_int(const char *json, const char *key, int def)
 {
-    if (!json || !key) return def;
+    if (!json || !key) { return def; }
 
     mybot_cJSON *root = mybot_cJSON_Parse(json);
-    if (!root) return def;
+    if (!root) { return def; }
 
     mybot_cJSON *item = mybot_cJSON_GetObjectItem(root, key);
     int val = def;
-    if (item) val = (int)item->valueint;
+    if (item) { val = (int)item->valueint; }
 
     mybot_cJSON_Delete(root);
     return val;
@@ -89,25 +89,29 @@ void mybot_device_api_json_free(void *ptr)
 static int parse_rtc_block(mybot_cJSON *root, mybot_device_conversation_t *resp)
 {
     mybot_cJSON *rtc = mybot_cJSON_GetObjectItem(root, "rtc");
-    if (!rtc) return -1;
+    if (!rtc) { return -1; }
 
     mybot_cJSON *item;
 
     item = mybot_cJSON_GetObjectItem(rtc, "app_id");
-    if (item && item->valuestring)
+    if (item && item->valuestring) {
         strncpy(resp->rtc_app_id, item->valuestring, sizeof(resp->rtc_app_id) - 1);
+    }
 
     item = mybot_cJSON_GetObjectItem(rtc, "channel");
-    if (item && item->valuestring)
+    if (item && item->valuestring) {
         strncpy(resp->rtc_channel, item->valuestring, sizeof(resp->rtc_channel) - 1);
+    }
 
     item = mybot_cJSON_GetObjectItem(rtc, "token");
-    if (item && item->valuestring)
+    if (item && item->valuestring) {
         strncpy(resp->rtc_token, item->valuestring, sizeof(resp->rtc_token) - 1);
+    }
 
     item = mybot_cJSON_GetObjectItem(rtc, "uid");
-    if (item && item->valuestring)
+    if (item && item->valuestring) {
         strncpy(resp->rtc_uid, item->valuestring, sizeof(resp->rtc_uid) - 1);
+    }
 
     return 0;
 }
@@ -122,21 +126,24 @@ int mybot_device_api_create_pair_code(const char *base_url,
                                       const char *hw_model,
                                       mybot_device_pair_code_t *resp)
 {
-    if (!base_url || !device_id || !resp)
+    if (!base_url || !device_id || !resp) {
         return -1;
+    }
     memset(resp, 0, sizeof(*resp));
 
     /* Build request body */
     mybot_cJSON *body_obj = mybot_cJSON_CreateObject();
     mybot_cJSON_AddStringToObject(body_obj, "device_id", device_id);
-    if (firmware_ver && firmware_ver[0])
+    if (firmware_ver && firmware_ver[0]) {
         mybot_cJSON_AddStringToObject(body_obj, "firmware_version", firmware_ver);
-    if (hw_model && hw_model[0])
+    }
+    if (hw_model && hw_model[0]) {
         mybot_cJSON_AddStringToObject(body_obj, "hardware_model", hw_model);
+    }
 
     char *body = mybot_cJSON_PrintUnformatted(body_obj);
     mybot_cJSON_Delete(body_obj);
-    if (!body) return -1;
+    if (!body) { return -1; }
 
     char url[MYBOT_DEVICE_API_MAX_URL];
     snprintf(url, sizeof(url), "%s/devices/pair-codes", base_url);
@@ -167,22 +174,25 @@ int mybot_device_api_create_pair_code(const char *base_url,
     mybot_cJSON *item;
 
     item = mybot_cJSON_GetObjectItem(data, "device_id");
-    if (item && item->valuestring)
+    if (item && item->valuestring) {
         strncpy(resp->device_id, item->valuestring, sizeof(resp->device_id) - 1);
+    }
 
     item = mybot_cJSON_GetObjectItem(data, "code");
-    if (item && item->valuestring)
+    if (item && item->valuestring) {
         strncpy(resp->code, item->valuestring, sizeof(resp->code) - 1);
+    }
 
     item = mybot_cJSON_GetObjectItem(data, "pair_token");
-    if (item && item->valuestring)
+    if (item && item->valuestring) {
         strncpy(resp->pair_token, item->valuestring, sizeof(resp->pair_token) - 1);
+    }
 
     item = mybot_cJSON_GetObjectItem(data, "expires_in_seconds");
-    if (item) resp->expires_in_seconds = (int)item->valueint;
+    if (item) { resp->expires_in_seconds = (int)item->valueint; }
 
     item = mybot_cJSON_GetObjectItem(data, "poll_after_seconds");
-    if (item) resp->poll_after_seconds = (int)item->valueint;
+    if (item) { resp->poll_after_seconds = (int)item->valueint; }
 
     AOSL_LOG_INF("pair_code: device_id=%s code=%s expires_in=%ds poll=%ds",
                  resp->device_id, resp->code,
@@ -198,8 +208,9 @@ int mybot_device_api_get_binding_status(const char *base_url,
                                         const char *auth_header,
                                         mybot_device_binding_t *resp)
 {
-    if (!base_url || !device_id || !auth_header || !resp)
+    if (!base_url || !device_id || !auth_header || !resp) {
         return -1;
+    }
     memset(resp, 0, sizeof(*resp));
 
     char url[MYBOT_DEVICE_API_MAX_URL];
@@ -233,23 +244,27 @@ int mybot_device_api_get_binding_status(const char *base_url,
     mybot_cJSON *item;
 
     item = mybot_cJSON_GetObjectItem(data, "status");
-    if (item && item->valuestring)
+    if (item && item->valuestring) {
         strncpy(resp->status, item->valuestring, sizeof(resp->status) - 1);
+    }
 
     item = mybot_cJSON_GetObjectItem(data, "device_token");
-    if (item && item->valuestring)
+    if (item && item->valuestring) {
         strncpy(resp->device_token, item->valuestring, sizeof(resp->device_token) - 1);
+    }
 
     item = mybot_cJSON_GetObjectItem(data, "agent_id");
-    if (item && item->valuestring)
+    if (item && item->valuestring) {
         strncpy(resp->agent_id, item->valuestring, sizeof(resp->agent_id) - 1);
+    }
 
     item = mybot_cJSON_GetObjectItem(data, "agent_name");
-    if (item && item->valuestring)
+    if (item && item->valuestring) {
         strncpy(resp->agent_name, item->valuestring, sizeof(resp->agent_name) - 1);
+    }
 
     item = mybot_cJSON_GetObjectItem(data, "poll_after_seconds");
-    if (item) resp->poll_after_seconds = (int)item->valueint;
+    if (item) { resp->poll_after_seconds = (int)item->valueint; }
 
     AOSL_LOG_DBG("binding: status=%s agent=%s has_token=%d poll=%ds",
                  resp->status, resp->agent_name,
@@ -266,8 +281,9 @@ int mybot_device_api_start_conversation(const char *base_url,
                                         const char *body_params,
                                         mybot_device_conversation_t *resp)
 {
-    if (!base_url || !device_id || !device_token || !resp)
+    if (!base_url || !device_id || !device_token || !resp) {
         return -1;
+    }
     memset(resp, 0, sizeof(*resp));
 
     char url[MYBOT_DEVICE_API_MAX_URL];
@@ -320,10 +336,10 @@ int mybot_device_api_start_conversation(const char *base_url,
 
     if (mybot_http_post_ex(url, "application/json", body, extra_hdrs, &raw) < 0) {
         AOSL_LOG_ERR("POST %s failed (http)", url);
-        if (body_allocated) free(body);
+        if (body_allocated) { free(body); }
         return -1;
     }
-    if (body_allocated) free(body);
+    if (body_allocated) { free(body); }
 
     AOSL_LOG_INF("POST %s -> status=%d, body: %s",
                  url, raw.status_code,
@@ -339,8 +355,9 @@ int mybot_device_api_start_conversation(const char *base_url,
     mybot_cJSON *item;
 
     item = mybot_cJSON_GetObjectItem(data, "conversation_id");
-    if (item && item->valuestring)
+    if (item && item->valuestring) {
         strncpy(resp->conversation_id, item->valuestring, sizeof(resp->conversation_id) - 1);
+    }
 
     /* Parse nested "rtc":{...} block */
     parse_rtc_block(data, resp);
@@ -359,8 +376,9 @@ int mybot_device_api_stop_conversation(const char *base_url,
                                        const char *conversation_id,
                                        const char *reason)
 {
-    if (!base_url || !device_id || !device_token || !conversation_id)
+    if (!base_url || !device_id || !device_token || !conversation_id) {
         return -1;
+    }
 
     char url[MYBOT_DEVICE_API_MAX_URL];
     snprintf(url, sizeof(url), "%s/devices/%s/conversations/stop",
@@ -369,12 +387,13 @@ int mybot_device_api_stop_conversation(const char *base_url,
     /* Build body with mybot_cJSON */
     mybot_cJSON *body_obj = mybot_cJSON_CreateObject();
     mybot_cJSON_AddStringToObject(body_obj, "conversation_id", conversation_id);
-    if (reason)
+    if (reason) {
         mybot_cJSON_AddStringToObject(body_obj, "reason", reason);
+    }
 
     char *body = mybot_cJSON_PrintUnformatted(body_obj);
     mybot_cJSON_Delete(body_obj);
-    if (!body) return -1;
+    if (!body) { return -1; }
 
     char extra_hdrs[MYBOT_DEVICE_API_MAX_TOKEN + 32];
     snprintf(extra_hdrs, sizeof(extra_hdrs), "Authorization: Device %s\r\n", device_token);

@@ -48,19 +48,22 @@ static const char *s_name[] = {
 
 const char *mybot_device_state_name(mybot_device_state_t s)
 {
-    if ((size_t)s >= sizeof(s_name) / sizeof(s_name[0]))
+    if ((size_t)s >= sizeof(s_name) / sizeof(s_name[0])) {
         return "?";
+    }
     return s_name[s];
 }
 
 static void set_state(mybot_device_state_t new_state)
 {
-    if (s_state.state == new_state)
+    if (s_state.state == new_state) {
         return;
+    }
     s_state.state = new_state;
     AOSL_LOG_INF("%s", s_name[new_state]);
-    if (s_state.cbs.on_state_changed)
+    if (s_state.cbs.on_state_changed) {
         s_state.cbs.on_state_changed(new_state);
+    }
 }
 
 const char *mybot_device_state_get_token(void)
@@ -104,8 +107,9 @@ static void action_create_pair_code(void)
     s_state.device_token[0] = '\0';
 
     /* Notify app to broadcast pair code */
-    if (s_state.cbs.on_pair_code)
+    if (s_state.cbs.on_pair_code) {
         s_state.cbs.on_pair_code(resp.code);
+    }
 
     set_state(MYBOT_DEVICE_STATE_AWAITING_CLAIM);
 }
@@ -232,8 +236,9 @@ static void action_start_conversation(void)
  * ---------------------------------------------------------- */
 static void action_stop_conversation(const char *reason)
 {
-    if (!s_state.conversation_id[0])
+    if (!s_state.conversation_id[0]) {
         return;
+    }
 
     mybot_device_api_stop_conversation(
         s_state.server_base, s_state.device_id,
@@ -244,8 +249,9 @@ static void action_stop_conversation(const char *reason)
 
     set_state(MYBOT_DEVICE_STATE_RUNTIME);
 
-    if (s_state.cbs.on_conversation_stop)
+    if (s_state.cbs.on_conversation_stop) {
         s_state.cbs.on_conversation_stop();
+    }
 }
 
 /* ----------------------------------------------------------
@@ -256,19 +262,23 @@ int mybot_device_state_init(const char *server_base, const char *device_id,
                       const char *firmware_ver, const char *hw_model,
                       mybot_device_state_callbacks_t *cbs)
 {
-    if (!server_base || !device_id)
+    if (!server_base || !device_id) {
         return -1;
+    }
 
     memset(&s_state, 0, sizeof(s_state));
 
     strncpy(s_state.server_base, server_base, sizeof(s_state.server_base) - 1);
     strncpy(s_state.device_id, device_id, sizeof(s_state.device_id) - 1);
-    if (firmware_ver)
+    if (firmware_ver) {
         strncpy(s_state.firmware_ver, firmware_ver, sizeof(s_state.firmware_ver) - 1);
-    if (hw_model)
+    }
+    if (hw_model) {
         strncpy(s_state.hw_model, hw_model, sizeof(s_state.hw_model) - 1);
-    if (cbs)
+    }
+    if (cbs) {
         s_state.cbs = *cbs;
+    }
 
     /* Start in pairing mode */
     set_state(MYBOT_DEVICE_STATE_UNPROVISIONED);

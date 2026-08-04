@@ -78,20 +78,20 @@ static void capture_timer(aosl_timer_t id, const aosl_ts_t *now,
                           uintptr_t argc, uintptr_t argv[])
 {
     (void)id; (void)now; (void)argc; (void)argv;
-    if (!s_app.running) return;
+    if (!s_app.running) { return; }
 
     const mybot_audio_capture_ops_t *ops = mybot_audio_device_get_capture();
     uint8_t pcm[BYTES_20MS];
 
     int frames = ops->read(s_app.cap_ctx, pcm, FRAMES_20MS);
-    if (frames <= 0) return;
+    if (frames <= 0) { return; }
 
     /* Discard until RTC join succeeds (avoid filling ringbuf with stale data) */
-    if (!s_app.rtc_connected) return;
+    if (!s_app.rtc_connected) { return; }
 
     if (mybot_ringbuf_write(s_app.cap_ringbuf, (char *)pcm, BYTES_20MS) < 0) {
         static int dc = 0;
-        if (++dc % 100 == 0) AOSL_LOG_WRN("cap ringbuf full, dropped %d", dc);
+        if (++dc % 100 == 0) { AOSL_LOG_WRN("cap ringbuf full, dropped %d", dc); }
     }
 }
 
@@ -101,8 +101,9 @@ static int cap_mpq_init(void *arg)
     AOSL_LOG_INF("capture MPQ started");
 
     s_app.cap_timer = aosl_mpq_set_timer(AUDIO_TICK_MS, capture_timer, NULL, 0);
-    if (aosl_mpq_timer_invalid(s_app.cap_timer))
+    if (aosl_mpq_timer_invalid(s_app.cap_timer)) {
         AOSL_LOG_ERR("failed to create capture timer");
+    }
 
     return 0;
 }
@@ -127,13 +128,13 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now,
                            uintptr_t argc, uintptr_t argv[])
 {
     (void)id; (void)now; (void)argc; (void)argv;
-    if (!s_app.running) return;
+    if (!s_app.running) { return; }
 
     const mybot_audio_playback_ops_t *ops = mybot_audio_device_get_playback();
     uint8_t pcm[BYTES_20MS];
 
-    if (mybot_ringbuf_get_data_size(s_app.pb_ringbuf) < BYTES_20MS) return;
-    if (mybot_ringbuf_read((char *)pcm, BYTES_20MS, s_app.pb_ringbuf) != BYTES_20MS) return;
+    if (mybot_ringbuf_get_data_size(s_app.pb_ringbuf) < BYTES_20MS) { return; }
+    if (mybot_ringbuf_read((char *)pcm, BYTES_20MS, s_app.pb_ringbuf) != BYTES_20MS) { return; }
 #if MYBOT_CLOUD_AEC
     /* Feed a copy to the AEC reference ringbuf before sending to speaker */
     mybot_ringbuf_write(s_app.ref_ringbuf, (char *)pcm, BYTES_20MS);
@@ -147,8 +148,9 @@ static int pb_mpq_init(void *arg)
     AOSL_LOG_INF("playback MPQ started");
 
     s_app.pb_timer = aosl_mpq_set_timer(AUDIO_TICK_MS, playback_timer, NULL, 0);
-    if (aosl_mpq_timer_invalid(s_app.pb_timer))
+    if (aosl_mpq_timer_invalid(s_app.pb_timer)) {
         AOSL_LOG_ERR("failed to create playback timer");
+    }
 
     return 0;
 }
@@ -170,11 +172,11 @@ static void pb_mpq_fini(void *arg)
 static void on_remote_audio(uint32_t uid, const void *data, size_t len)
 {
     (void)uid;
-    if (!s_app.running) return;
+    if (!s_app.running) { return; }
 
     if (mybot_ringbuf_write(s_app.pb_ringbuf, (const char *)data, (int)len) < 0) {
         static int dc = 0;
-        if (++dc % 100 == 0) AOSL_LOG_WRN("pb ringbuf full, dropped %d", dc);
+        if (++dc % 100 == 0) { AOSL_LOG_WRN("pb ringbuf full, dropped %d", dc); }
     }
 }
 
@@ -195,10 +197,10 @@ static void send_audio_timer(aosl_timer_t id, const aosl_ts_t *now,
 {
     (void)id; (void)now; (void)argc; (void)argv;
 
-    if (!s_app.rtc_connected) return;
+    if (!s_app.rtc_connected) { return; }
 
     uint8_t pcm[BYTES_20MS];
-    if (mybot_ringbuf_get_data_size(s_app.cap_ringbuf) < BYTES_20MS) return;
+    if (mybot_ringbuf_get_data_size(s_app.cap_ringbuf) < BYTES_20MS) { return; }
 
     if (mybot_ringbuf_read((char *)pcm, BYTES_20MS, s_app.cap_ringbuf) == BYTES_20MS) {
 #if MYBOT_CLOUD_AEC
@@ -311,8 +313,9 @@ static int state_mpq_init(void *arg)
     AOSL_LOG_INF("state MPQ started");
 
     s_app.state_timer = aosl_mpq_set_timer(STATE_TICK_MS, state_tick_timer, NULL, 0);
-    if (aosl_mpq_timer_invalid(s_app.state_timer))
+    if (aosl_mpq_timer_invalid(s_app.state_timer)) {
         AOSL_LOG_ERR("failed to create state timer");
+    }
 
     return 0;
 }
@@ -337,8 +340,9 @@ static int mpq_init(void *arg)
     AOSL_LOG_INF("MPQ loop started");
 
     s_app.send_timer = aosl_mpq_set_timer(20, send_audio_timer, NULL, 0);
-    if (aosl_mpq_timer_invalid(s_app.send_timer))
+    if (aosl_mpq_timer_invalid(s_app.send_timer)) {
         AOSL_LOG_ERR("failed to create send timer");
+    }
 
     return 0;
 }
@@ -365,7 +369,7 @@ static void mpq_fini(void *arg)
 
 int mybot_app_start(const mybot_app_config_t *cfg)
 {
-    if (!cfg) return -1;
+    if (!cfg) { return -1; }
 
     memset(&s_app, 0, sizeof(s_app));
     s_app.config     = cfg;

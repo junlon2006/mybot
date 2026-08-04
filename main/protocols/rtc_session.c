@@ -37,12 +37,14 @@ static const char *state_str(mybot_rtc_state_t s)
 
 static void set_state(mybot_rtc_state_t st)
 {
-    if (s_rtc.state == st)
+    if (s_rtc.state == st) {
         return;
+    }
     s_rtc.state = st;
     AOSL_LOG_INF("[RTC] state -> %s", state_str(st));
-    if (s_rtc.cbs.on_state_changed)
+    if (s_rtc.cbs.on_state_changed) {
         s_rtc.cbs.on_state_changed(st);
+    }
 }
 
 /* ---- Agora SDK callbacks ---- */
@@ -98,8 +100,9 @@ static void __on_audio_data(connection_id_t conn_id, const uint32_t uid, uint16_
     (void)conn_id;
     (void)sent_ts;
     (void)info_ptr;
-    if (s_rtc.cbs.on_remote_audio)
+    if (s_rtc.cbs.on_remote_audio) {
         s_rtc.cbs.on_remote_audio(uid, data, len);
+    }
 }
 
 static void __on_error(connection_id_t conn_id, int code, const char *msg)
@@ -135,11 +138,13 @@ static void __on_rtc_stats(connection_id_t conn_id, rtc_stats_t stats)
 
 int mybot_rtc_session_init(const char *app_id, mybot_rtc_session_callbacks_t *cbs)
 {
-    if (s_rtc.initialized)
+    if (s_rtc.initialized) {
         return 0;
+    }
 
-    if (cbs)
+    if (cbs) {
         s_rtc.cbs = *cbs;
+    }
 
     /* Set up event handler */
     agora_rtc_event_handler_t handler;
@@ -250,8 +255,9 @@ int mybot_rtc_session_join(const char *channel, const char *token, const char *u
 
 int mybot_rtc_session_leave(void)
 {
-    if (!s_rtc.initialized || s_rtc.conn_id == 0)
+    if (!s_rtc.initialized || s_rtc.conn_id == 0) {
         return 0;
+    }
 
     AOSL_LOG_INF("leaving channel (conn_id=%u)...", s_rtc.conn_id);
 
@@ -276,11 +282,13 @@ int mybot_rtc_session_leave(void)
 
 void mybot_rtc_session_fini(void)
 {
-    if (!s_rtc.initialized)
+    if (!s_rtc.initialized) {
         return;
+    }
 
-    if (s_rtc.conn_id != 0)
+    if (s_rtc.conn_id != 0) {
         mybot_rtc_session_leave();
+    }
 
     agora_rtc_fini();
     s_rtc.initialized = false;
@@ -289,8 +297,9 @@ void mybot_rtc_session_fini(void)
 
 int mybot_rtc_session_send_audio(const void *data, size_t len)
 {
-    if (s_rtc.state != MYBOT_RTC_STATE_CONNECTED || s_rtc.conn_id == 0)
+    if (s_rtc.state != MYBOT_RTC_STATE_CONNECTED || s_rtc.conn_id == 0) {
         return -1;
+    }
 
     audio_frame_info_t info;
     info.data_type = AUDIO_DATA_TYPE_PCM;

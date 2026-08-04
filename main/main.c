@@ -112,8 +112,8 @@ int main(int argc, char **argv)
     AOSL_LOG_INF("mybot v0.1.0 starting...");
     AOSL_LOG_INF("  server   : %s", cfg.server_base);
     AOSL_LOG_INF("  device-id: %s", cfg.device_id);
-    if (cfg.firmware_ver[0]) AOSL_LOG_INF("  fw-ver   : %s", cfg.firmware_ver);
-    if (cfg.hw_model[0])     AOSL_LOG_INF("  hw-model : %s", cfg.hw_model);
+    if (cfg.firmware_ver[0]) { AOSL_LOG_INF("  fw-ver   : %s", cfg.firmware_ver); }
+    if (cfg.hw_model[0]) { AOSL_LOG_INF("  hw-model : %s", cfg.hw_model); }
 
     /* ---- Register the platform audio backend (Linux: ALSA) ---- */
     mybot_audio_platform_register_alsa_capture();
@@ -145,8 +145,9 @@ int main(int argc, char **argv)
      * timers, so main() only needs to poll stdin here. ---- */
     while (mybot_app_is_running()) {
         char ch;
-        if (aosl_hal_sk_read((aosl_fd_t)0, &ch, 1) == 1)
+        if (aosl_hal_sk_read((aosl_fd_t)0, &ch, 1) == 1) {
             handle_key(ch);
+        }
         aosl_hal_msleep(100);
     }
 

@@ -41,8 +41,9 @@ prepare:
 static int suspend_recover(snd_pcm_t *handle)
 {
     int err;
-    while ((err = snd_pcm_resume(handle)) == -EAGAIN)
+    while ((err = snd_pcm_resume(handle)) == -EAGAIN) {
         usleep(1000);
+    }
     if (err < 0) {
         err = snd_pcm_prepare(handle);
         if (err < 0) {
@@ -65,14 +66,17 @@ static int pcm_write(snd_pcm_t *handle, const char *buf, size_t frames)
         if (r == -EAGAIN) {
             /* Buffer full right now — wait up to the poll timeout, then give
              * up so the caller can check its own stop condition. */
-            if (snd_pcm_wait(handle, PCM_POLL_TIMEOUT_MS) <= 0)
+            if (snd_pcm_wait(handle, PCM_POLL_TIMEOUT_MS) <= 0) {
                 break;
+            }
         } else if (r == -EPIPE) {
-            if (xrun_recover(handle) < 0)
+            if (xrun_recover(handle) < 0) {
                 return -1;
+            }
         } else if (r == -ESTRPIPE) {
-            if (suspend_recover(handle) < 0)
+            if (suspend_recover(handle) < 0) {
                 return -1;
+            }
         } else if (r < 0) {
             AOSL_LOG_ERR("pcm_write: %s", snd_strerror(r));
             return -1;
@@ -98,12 +102,14 @@ typedef struct {
 
 static int alsa_playback_init(void **ctx, int rate, int channels, int bits)
 {
-    if (!ctx)
+    if (!ctx) {
         return -1;
+    }
 
     alsa_pb_t *p = (alsa_pb_t *)calloc(1, sizeof(alsa_pb_t));
-    if (!p)
+    if (!p) {
         return -1;
+    }
 
     p->rate            = rate;
     p->channels        = channels;
@@ -167,7 +173,7 @@ static int alsa_playback_init(void **ctx, int rate, int channels, int bits)
     return 0;
 
 fail:
-    if (p->handle) snd_pcm_close(p->handle);
+    if (p->handle) { snd_pcm_close(p->handle); }
     free(p);
     return -1;
 }
@@ -200,8 +206,9 @@ static int alsa_playback_stop(void *ctx)
 static void alsa_playback_destroy(void *ctx)
 {
     AOSL_LOG_INF("destroy");
-    if (!ctx)
+    if (!ctx) {
         return;
+    }
     alsa_pb_t *p = (alsa_pb_t *)ctx;
     if (p->handle) {
         snd_pcm_drop(p->handle);
