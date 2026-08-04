@@ -149,7 +149,17 @@ static int alsa_capture_init(void **ctx, int rate, int channels, int bits)
     snd_pcm_hw_params_set_channels(c->handle, hw, channels);
 
     unsigned int actual_rate = rate;
-    snd_pcm_hw_params_set_rate_near(c->handle, hw, &actual_rate, 0);
+    err = snd_pcm_hw_params_set_rate_near(c->handle, hw, &actual_rate, 0);
+    if (err < 0) {
+        AOSL_LOG_ERR("init: set_rate_near failed: %s", snd_strerror(err));
+        goto fail;
+    }
+    if (actual_rate != (unsigned int)rate) {
+        /* The app derives frame sizes from the requested rate; a mismatch
+         * would silently skew timing, so fail rather than run wrong. */
+        AOSL_LOG_ERR("init: device rate %u != requested %d", actual_rate, rate);
+        goto fail;
+    }
 
     snd_pcm_uframes_t buf_frames = (snd_pcm_uframes_t)(rate * 50 / 1000);
     snd_pcm_hw_params_set_buffer_size_near(c->handle, hw, &buf_frames);

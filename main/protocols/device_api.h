@@ -10,29 +10,6 @@ extern "C" {
 #endif
 
 /* ----------------------------------------------------------
- * JSON helpers (lightweight, embedded-oriented)
- * ---------------------------------------------------------- */
-
-/** Build a JSON string for an object with simple fields.
- *  Caller must free returned string via mybot_device_api_json_free().
- *  Format: {"key1":"val1","key2":"val2",...}
- *  keys/values are alternating in the varargs, terminated by NULL.
- *  String values are JSON-escaped automatically.
- */
-char *mybot_device_api_json_build(const char *first_key, ...);
-
-/** Extract a string field value from a JSON string.
- *  Returns pointer to a newly allocated copy, or NULL if not found.
- *  Caller must free. */
-char *mybot_device_api_json_get_string(const char *json, const char *key);
-
-/** Extract an integer field value from a JSON string. */
-int mybot_device_api_json_get_int(const char *json, const char *key, int default_val);
-
-/** Free a string returned by any device_api function. */
-void mybot_device_api_json_free(void *ptr);
-
-/* ----------------------------------------------------------
  * Device server API — endpoints defined in DEVICE_API.md
  * ---------------------------------------------------------- */
 

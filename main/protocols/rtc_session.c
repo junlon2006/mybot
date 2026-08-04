@@ -22,7 +22,7 @@ typedef struct {
     aosl_atomic_t                 state;   /* atomic: written by SDK callbacks */
     mybot_rtc_session_callbacks_t cbs;
     connection_id_t               conn_id;
-    bool                          initialized;
+    volatile bool                 initialized;   /* read/written across threads */
     aosl_mutex_t                  lock;
 } rtc_priv_t;
 

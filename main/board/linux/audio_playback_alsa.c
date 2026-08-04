@@ -138,7 +138,17 @@ static int alsa_playback_init(void **ctx, int rate, int channels, int bits)
     snd_pcm_hw_params_set_channels(p->handle, hw, channels);
 
     unsigned int actual_rate = rate;
-    snd_pcm_hw_params_set_rate_near(p->handle, hw, &actual_rate, 0);
+    err = snd_pcm_hw_params_set_rate_near(p->handle, hw, &actual_rate, 0);
+    if (err < 0) {
+        AOSL_LOG_ERR("init: set_rate_near failed: %s", snd_strerror(err));
+        goto fail;
+    }
+    if (actual_rate != (unsigned int)rate) {
+        /* The app derives frame sizes from the requested rate; a mismatch
+         * would silently skew timing, so fail rather than run wrong. */
+        AOSL_LOG_ERR("init: device rate %u != requested %d", actual_rate, rate);
+        goto fail;
+    }
 
     /* Larger buffer for playback (150 ms) — acts as jitter buffer */
     snd_pcm_uframes_t buf_frames = (snd_pcm_uframes_t)(rate * 150 / 1000);

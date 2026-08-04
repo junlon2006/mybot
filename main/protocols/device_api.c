@@ -3,85 +3,11 @@
 #include "http_client.h"
 #include "cJSON.h"
 
-#include <hal/aosl_hal_memory.h>
 #include <api/aosl_log.h>
 
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
-
-/* ----------------------------------------------------------
- * JSON helpers — implemented via mybot_cJSON
- * ---------------------------------------------------------- */
-
-char *mybot_device_api_json_build(const char *first_key, ...)
-{
-    mybot_cJSON *obj = mybot_cJSON_CreateObject();
-    if (!obj) { return NULL; }
-
-    va_list args;
-    va_start(args, first_key);
-    const char *key = first_key;
-
-    while (key) {
-        const char *val = va_arg(args, const char *);
-        if (!val) { break; }
-        mybot_cJSON_AddStringToObject(obj, key, val);
-        key = va_arg(args, const char *);
-    }
-    va_end(args);
-
-    char *json_str = mybot_cJSON_PrintUnformatted(obj);
-    mybot_cJSON_Delete(obj);
-
-    /* mybot_cJSON uses malloc/free; copy to aosl_hal memory for API contract */
-    if (!json_str) { return NULL; }
-    size_t len = strlen(json_str) + 1;
-    char *result = (char *)aosl_hal_malloc(len);
-    if (result) { memcpy(result, json_str, len); }
-    free(json_str);
-    return result;
-}
-
-char *mybot_device_api_json_get_string(const char *json, const char *key)
-{
-    if (!json || !key) { return NULL; }
-
-    mybot_cJSON *root = mybot_cJSON_Parse(json);
-    if (!root) { return NULL; }
-
-    mybot_cJSON *item = mybot_cJSON_GetObjectItem(root, key);
-    char *result = NULL;
-
-    if (item && item->valuestring) {
-        result = (char *)aosl_hal_malloc(strlen(item->valuestring) + 1);
-        if (result) { strcpy(result, item->valuestring); }
-    }
-
-    mybot_cJSON_Delete(root);
-    return result;
-}
-
-int mybot_device_api_json_get_int(const char *json, const char *key, int def)
-{
-    if (!json || !key) { return def; }
-
-    mybot_cJSON *root = mybot_cJSON_Parse(json);
-    if (!root) { return def; }
-
-    mybot_cJSON *item = mybot_cJSON_GetObjectItem(root, key);
-    int val = def;
-    if (item) { val = (int)item->valueint; }
-
-    mybot_cJSON_Delete(root);
-    return val;
-}
-
-void mybot_device_api_json_free(void *ptr)
-{
-    aosl_hal_free(ptr);
-}
 
 /* ----------------------------------------------------------
  * Internal: extract nested RTC block from conversation start response

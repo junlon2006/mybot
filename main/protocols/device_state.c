@@ -2,6 +2,7 @@
 #include "device_api.h"
 
 #include <api/aosl_log.h>
+#include <api/aosl_atomic.h>
 
 #include <string.h>
 #include <stdio.h>
@@ -16,7 +17,7 @@ static struct {
     char hw_model[64];
     mybot_device_state_callbacks_t cbs;
 
-    mybot_device_state_t state;
+    aosl_atomic_t state;   /* atomic: also read by the main/SDK threads */
 
     /* Pairing phase */
     char pair_token[MYBOT_DEVICE_API_MAX_TOKEN];
@@ -41,7 +42,7 @@ static struct {
 /* Reason reported to the server for the next conversation stop. Set by
  * mybot_device_state_request_stop() (user hangup) or
  * mybot_device_state_notify_conversation_ended() (RTC drop). */
-static const char *s_pending_stop_reason = "device_hangup";
+static volatile const char *s_pending_stop_reason = "device_hangup";
 
 /* ----------------------------------------------------------
  * Helpers
@@ -59,12 +60,17 @@ const char *mybot_device_state_name(mybot_device_state_t s)
     return s_name[s];
 }
 
+static mybot_device_state_t current_state(void)
+{
+    return (mybot_device_state_t)aosl_atomic_read(&s_state.state);
+}
+
 static void set_state(mybot_device_state_t new_state)
 {
-    if (s_state.state == new_state) {
+    if (current_state() == new_state) {
         return;
     }
-    s_state.state = new_state;
+    aosl_atomic_set(&s_state.state, (intptr_t)new_state);
     AOSL_LOG_INF("%s", s_name[new_state]);
     if (s_state.cbs.on_state_changed) {
         s_state.cbs.on_state_changed(new_state);
@@ -73,14 +79,14 @@ static void set_state(mybot_device_state_t new_state)
 
 const char *mybot_device_state_get_token(void)
 {
-    return (s_state.state == MYBOT_DEVICE_STATE_RUNTIME ||
-            s_state.state == MYBOT_DEVICE_STATE_IN_CONVERSATION)
+    return (current_state() == MYBOT_DEVICE_STATE_RUNTIME ||
+            current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION)
            ? s_state.device_token : NULL;
 }
 
 mybot_device_state_t mybot_device_state_get(void)
 {
-    return s_state.state;
+    return current_state();
 }
 
 /* ----------------------------------------------------------
@@ -303,7 +309,7 @@ void mybot_device_state_tick(void)
      * before the device is rebound. */
     if (s_state.start_pairing_flag) {
         s_state.start_pairing_flag = false;
-        if (s_state.state == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
+        if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
             action_stop_conversation("re-pair");
         }
         s_state.device_token[0] = '\0';
@@ -313,17 +319,17 @@ void mybot_device_state_tick(void)
         return;
     }
 
-    if (s_state.state == MYBOT_DEVICE_STATE_UNPROVISIONED) {
+    if (current_state() == MYBOT_DEVICE_STATE_UNPROVISIONED) {
         /* Unprovisioned with no pending pairing request — wait for 'p'. */
         return;
     }
 
-    if (s_state.state == MYBOT_DEVICE_STATE_PAIRING) {
+    if (current_state() == MYBOT_DEVICE_STATE_PAIRING) {
         /* This state is transient — action_create_pair_code() moves out */
         return;
     }
 
-    if (s_state.state == MYBOT_DEVICE_STATE_AWAITING_CLAIM) {
+    if (current_state() == MYBOT_DEVICE_STATE_AWAITING_CLAIM) {
         s_state.pair_tick_counter++;
         /* 100ms per tick, convert poll interval to ticks */
         int interval_ticks = s_state.pair_poll_interval * 10;
@@ -334,7 +340,7 @@ void mybot_device_state_tick(void)
         return;
     }
 
-    if (s_state.state == MYBOT_DEVICE_STATE_RUNTIME) {
+    if (current_state() == MYBOT_DEVICE_STATE_RUNTIME) {
         /* Check for user requests */
         if (s_state.conversation_requested) {
             s_state.conversation_requested = false;
@@ -353,10 +359,10 @@ void mybot_device_state_tick(void)
         return;
     }
 
-    if (s_state.state == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
+    if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
         if (s_state.stop_requested) {
             s_state.stop_requested = false;
-            action_stop_conversation(s_pending_stop_reason);
+            action_stop_conversation((const char *)s_pending_stop_reason);
         }
         return;
     }
@@ -369,7 +375,7 @@ void mybot_device_state_request_pair(void)
 
 void mybot_device_state_request_start(void)
 {
-    if (s_state.state != MYBOT_DEVICE_STATE_RUNTIME) {
+    if (current_state() != MYBOT_DEVICE_STATE_RUNTIME) {
         AOSL_LOG_ERR("cannot start: not in runtime");
         return;
     }
@@ -378,7 +384,7 @@ void mybot_device_state_request_start(void)
 
 void mybot_device_state_request_stop(void)
 {
-    if (s_state.state != MYBOT_DEVICE_STATE_IN_CONVERSATION) {
+    if (current_state() != MYBOT_DEVICE_STATE_IN_CONVERSATION) {
         AOSL_LOG_ERR("cannot stop: not in conversation");
         return;
     }
@@ -392,7 +398,7 @@ void mybot_device_state_notify_conversation_ended(void)
      * flag the stop here — the actual teardown (HTTP stop + RTC leave) runs
      * on the state_mpq thread via mybot_device_state_tick(), avoiding
      * re-entrant SDK calls from inside an SDK callback. */
-    if (s_state.state == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
+    if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
         s_state.stop_requested = true;
         s_pending_stop_reason = "error";
     }
