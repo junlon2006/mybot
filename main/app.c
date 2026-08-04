@@ -275,6 +275,9 @@ static void dev_on_conversation_start(const mybot_conversation_params_t *params)
     int ret = mybot_rtc_session_init(params->rtc_app_id, &cbs);
     if (ret < 0) {
         AOSL_LOG_ERR("mybot_rtc_session_init failed");
+        /* The state machine already moved to IN_CONVERSATION before this
+         * callback; roll it back so the device does not stay stuck. */
+        mybot_device_state_notify_conversation_ended();
         return;
     }
     AOSL_LOG_INF("mybot_rtc_session_init ok");
@@ -284,6 +287,7 @@ static void dev_on_conversation_start(const mybot_conversation_params_t *params)
     ret = mybot_rtc_session_join(params->rtc_channel, params->rtc_token, params->rtc_uid);
     if (ret < 0) {
         AOSL_LOG_ERR("mybot_rtc_session_join failed");
+        mybot_device_state_notify_conversation_ended();
         return;
     }
     AOSL_LOG_INF("mybot_rtc_session_join requested, waiting for on_join_channel_success...");
