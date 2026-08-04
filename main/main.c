@@ -83,6 +83,8 @@ int main(int argc, char **argv)
     mybot_app_config_t cfg;
     memset(&cfg, 0, sizeof(cfg));
 
+    aosl_set_log_level(AOSL_LOG_INFO);
+
     /* ---- Parse command line ---- */
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--server") == 0 && i + 1 < argc) {
