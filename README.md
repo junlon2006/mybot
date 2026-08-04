@@ -99,7 +99,7 @@ make -j$(nproc)
 
 ## 跨平台扩展
 
-音频设备通过 ops 函数指针表实现平台无关化。添加新平台只需在 `main/audio/platform/` 下新建目录并注册 ops：
+音频设备通过 ops 函数指针表实现平台无关化。板级适配层位于 `main/board/`，添加新平台只需在 `main/board/` 下新建对应平台目录（如 `linux/`）并注册 ops：
 
 ```c
 typedef struct {
@@ -117,7 +117,7 @@ typedef struct {
 
 | 目录 | 内容 |
 |------|------|
-| `main/` | 应用入口、主循环、音频抽象、协议层 |
+| `main/` | 应用入口、主循环、音频抽象、协议层、板级适配（`board/`） |
 | `components/aosl/` | 跨平台系统抽象层（线程/内存/网络/日志） |
 | `components/agora_rtsa_sdk/` | Agora RTSA SDK v1.10.1 |
 | `components/ringbuf/` | 通用锁无关 SPSC 环缓冲 |

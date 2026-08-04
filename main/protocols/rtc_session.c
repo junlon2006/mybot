@@ -11,38 +11,40 @@
 
 /* ---- internal state ---- */
 static struct {
-    rtc_state_t           state;
-    rtc_session_callbacks_t cbs;
-    connection_id_t       conn_id;
-    bool                  initialized;
+    mybot_rtc_state_t             state;
+    mybot_rtc_session_callbacks_t cbs;
+    connection_id_t               conn_id;
+    bool                          initialized;
 } s_rtc = {
-    .state       = RTC_STATE_IDLE,
+    .state       = MYBOT_RTC_STATE_IDLE,
     .conn_id     = 0,
     .initialized = false,
 };
 
-static const char *state_str(rtc_state_t s)
+static const char *state_str(mybot_rtc_state_t s)
 {
     switch (s) {
-    case RTC_STATE_IDLE:           return "IDLE";
-    case RTC_STATE_INITIALIZED:    return "INITIALIZED";
-    case RTC_STATE_CONNECTING:     return "CONNECTING";
-    case RTC_STATE_CONNECTED:      return "CONNECTED";
-    case RTC_STATE_RECONNECTING:   return "RECONNECTING";
-    case RTC_STATE_DISCONNECTED:   return "DISCONNECTED";
-    case RTC_STATE_ERROR:          return "ERROR";
-    default:                       return "?";
+    case MYBOT_RTC_STATE_IDLE:           return "IDLE";
+    case MYBOT_RTC_STATE_INITIALIZED:    return "INITIALIZED";
+    case MYBOT_RTC_STATE_CONNECTING:     return "CONNECTING";
+    case MYBOT_RTC_STATE_CONNECTED:      return "CONNECTED";
+    case MYBOT_RTC_STATE_RECONNECTING:   return "RECONNECTING";
+    case MYBOT_RTC_STATE_DISCONNECTED:   return "DISCONNECTED";
+    case MYBOT_RTC_STATE_ERROR:          return "ERROR";
+    default:                             return "?";
     }
 }
 
-static void set_state(rtc_state_t st)
+static void set_state(mybot_rtc_state_t st)
 {
-    if (s_rtc.state == st)
+    if (s_rtc.state == st) {
         return;
+    }
     s_rtc.state = st;
-    fprintf(stdout, "[RTC] state -> %s\n", state_str(st));
-    if (s_rtc.cbs.on_state_changed)
+    AOSL_LOG_INF("[RTC] state -> %s", state_str(st));
+    if (s_rtc.cbs.on_state_changed) {
         s_rtc.cbs.on_state_changed(st);
+    }
 }
 
 /* ---- Agora SDK callbacks ---- */
@@ -51,21 +53,21 @@ static void __on_join_channel_success(connection_id_t conn_id, uint32_t uid, int
 {
     (void)conn_id;
     AOSL_LOG_INF("!!! join channel SUCCESS (uid=%u, elapsed=%d ms) !!!", uid, elapsed);
-    set_state(RTC_STATE_CONNECTED);
+    set_state(MYBOT_RTC_STATE_CONNECTED);
 }
 
 static void __on_reconnecting(connection_id_t conn_id)
 {
     (void)conn_id;
-    fprintf(stdout, "[RTC] reconnecting...\n");
-    set_state(RTC_STATE_RECONNECTING);
+    AOSL_LOG_INF("[RTC] reconnecting...");
+    set_state(MYBOT_RTC_STATE_RECONNECTING);
 }
 
 static void __on_connection_lost(connection_id_t conn_id)
 {
     (void)conn_id;
-    fprintf(stdout, "[RTC] connection lost\n");
-    set_state(RTC_STATE_DISCONNECTED);
+    AOSL_LOG_INF("[RTC] connection lost");
+    set_state(MYBOT_RTC_STATE_DISCONNECTED);
 }
 
 static void __on_rejoin_channel_success(connection_id_t conn_id, uint32_t uid, int elapsed_ms)
@@ -73,24 +75,23 @@ static void __on_rejoin_channel_success(connection_id_t conn_id, uint32_t uid, i
     (void)conn_id;
     (void)uid;
     (void)elapsed_ms;
-    fprintf(stdout, "[RTC] rejoin channel success (uid=%u)\n", uid);
-    set_state(RTC_STATE_CONNECTED);
+    AOSL_LOG_INF("[RTC] rejoin channel success (uid=%u)", uid);
+    set_state(MYBOT_RTC_STATE_CONNECTED);
 }
 
 static void __on_user_joined_with_user_account(connection_id_t conn_id, const user_info_t *user, int elapsed_ms)
 {
     (void)conn_id;
     (void)elapsed_ms;
-    fprintf(stdout, "[RTC] user \"%s\" (uid=%u) joined\n",
-            user->user_account, user->uid);
+    AOSL_LOG_INF("[RTC] user \"%s\" (uid=%u) joined", user->user_account, user->uid);
 }
 
 static void __on_user_offline_with_user_account(connection_id_t conn_id, const user_info_t *user, int reason)
 {
     (void)conn_id;
     (void)reason;
-    fprintf(stdout, "[RTC] user \"%s\" (uid=%u) offline (reason=%d)\n",
-            user->user_account, user->uid, reason);
+    AOSL_LOG_INF("[RTC] user \"%s\" (uid=%u) offline (reason=%d)",
+                 user->user_account, user->uid, reason);
 }
 
 static void __on_audio_data(connection_id_t conn_id, const uint32_t uid, uint16_t sent_ts,
@@ -99,30 +100,31 @@ static void __on_audio_data(connection_id_t conn_id, const uint32_t uid, uint16_
     (void)conn_id;
     (void)sent_ts;
     (void)info_ptr;
-    if (s_rtc.cbs.on_remote_audio)
+    if (s_rtc.cbs.on_remote_audio) {
         s_rtc.cbs.on_remote_audio(uid, data, len);
+    }
 }
 
 static void __on_error(connection_id_t conn_id, int code, const char *msg)
 {
     (void)conn_id;
-    fprintf(stderr, "[RTC] error (code=%d): %s\n", code, msg ? msg : "null");
-    set_state(RTC_STATE_ERROR);
+    AOSL_LOG_ERR("[RTC] error (code=%d): %s", code, msg ? msg : "null");
+    set_state(MYBOT_RTC_STATE_ERROR);
 }
 
 static void __on_license_failed(connection_id_t conn_id, int reason)
 {
     (void)conn_id;
     (void)reason;
-    fprintf(stderr, "[RTC] license validation failed (reason=%d)\n", reason);
-    set_state(RTC_STATE_ERROR);
+    AOSL_LOG_ERR("[RTC] license validation failed (reason=%d)", reason);
+    set_state(MYBOT_RTC_STATE_ERROR);
 }
 
 static void __on_token_privilege_will_expire(connection_id_t conn_id, const char *token)
 {
     (void)conn_id;
     (void)token;
-    fprintf(stdout, "[RTC] token privilege will expire\n");
+    AOSL_LOG_INF("[RTC] token privilege will expire");
 }
 
 static void __on_rtc_stats(connection_id_t conn_id, rtc_stats_t stats)
@@ -134,28 +136,30 @@ static void __on_rtc_stats(connection_id_t conn_id, rtc_stats_t stats)
 
 /* ---- public API ---- */
 
-int rtc_session_init(const char *app_id, rtc_session_callbacks_t *cbs)
+int mybot_rtc_session_init(const char *app_id, mybot_rtc_session_callbacks_t *cbs)
 {
-    if (s_rtc.initialized)
+    if (s_rtc.initialized) {
         return 0;
+    }
 
-    if (cbs)
+    if (cbs) {
         s_rtc.cbs = *cbs;
+    }
 
     /* Set up event handler */
     agora_rtc_event_handler_t handler;
     memset(&handler, 0, sizeof(handler));
-    handler.on_join_channel_success       = __on_join_channel_success;
-    handler.on_reconnecting              = __on_reconnecting;
-    handler.on_connection_lost           = __on_connection_lost;
-    handler.on_rejoin_channel_success    = __on_rejoin_channel_success;
-    handler.on_user_joined_with_user_account = __on_user_joined_with_user_account;
+    handler.on_join_channel_success           = __on_join_channel_success;
+    handler.on_reconnecting                   = __on_reconnecting;
+    handler.on_connection_lost                = __on_connection_lost;
+    handler.on_rejoin_channel_success         = __on_rejoin_channel_success;
+    handler.on_user_joined_with_user_account  = __on_user_joined_with_user_account;
     handler.on_user_offline_with_user_account = __on_user_offline_with_user_account;
-    handler.on_audio_data                = __on_audio_data;
-    handler.on_error                     = __on_error;
-    handler.on_license_validation_failure = __on_license_failed;
-    handler.on_token_privilege_will_expire = __on_token_privilege_will_expire;
-    handler.on_rtc_stats                 = __on_rtc_stats;
+    handler.on_audio_data                     = __on_audio_data;
+    handler.on_error                          = __on_error;
+    handler.on_license_validation_failure     = __on_license_failed;
+    handler.on_token_privilege_will_expire    = __on_token_privilege_will_expire;
+    handler.on_rtc_stats                      = __on_rtc_stats;
 
     rtc_service_option_t opt;
     memset(&opt, 0, sizeof(opt));
@@ -176,25 +180,25 @@ int rtc_session_init(const char *app_id, rtc_session_callbacks_t *cbs)
     AOSL_LOG_INF("agora_rtc_init ok (sdk v%s)", agora_rtc_get_version());
 
     s_rtc.initialized = true;
-    set_state(RTC_STATE_INITIALIZED);
+    set_state(MYBOT_RTC_STATE_INITIALIZED);
     return 0;
 }
 
-int rtc_session_join(const char *channel, const char *token, const char *user_account)
+int mybot_rtc_session_join(const char *channel, const char *token, const char *user_account)
 {
     if (!s_rtc.initialized) {
-        fprintf(stderr, "[RTC] not initialized\n");
+        AOSL_LOG_ERR("[RTC] not initialized");
         return -1;
     }
-    if (s_rtc.state == RTC_STATE_CONNECTED || s_rtc.state == RTC_STATE_CONNECTING) {
-        fprintf(stderr, "[RTC] already joining/joined\n");
+    if (s_rtc.state == MYBOT_RTC_STATE_CONNECTED || s_rtc.state == MYBOT_RTC_STATE_CONNECTING) {
+        AOSL_LOG_ERR("[RTC] already joining/joined");
         return -1;
     }
 
     /* Create connection */
     int ret = agora_rtc_create_connection(&s_rtc.conn_id);
     if (ret < 0) {
-        fprintf(stderr, "[RTC] create_connection failed: %s\n", agora_rtc_err_2_str(ret));
+        AOSL_LOG_ERR("[RTC] create_connection failed: %s", agora_rtc_err_2_str(ret));
         return -1;
     }
 
@@ -233,7 +237,7 @@ int rtc_session_join(const char *channel, const char *token, const char *user_ac
                  ch_opt.audio_codec_opt.pcm_channel_num,
                  ch_opt.audio_codec_opt.pcm_duration);
 
-    set_state(RTC_STATE_CONNECTING);
+    set_state(MYBOT_RTC_STATE_CONNECTING);
 
     ret = agora_rtc_join_channel_with_user_account(s_rtc.conn_id, channel,
                                                     p_user, p_token, &ch_opt);
@@ -241,7 +245,7 @@ int rtc_session_join(const char *channel, const char *token, const char *user_ac
         AOSL_LOG_ERR("join_channel failed: %s", agora_rtc_err_2_str(ret));
         agora_rtc_destroy_connection(s_rtc.conn_id);
         s_rtc.conn_id = 0;
-        set_state(RTC_STATE_ERROR);
+        set_state(MYBOT_RTC_STATE_ERROR);
         return -1;
     }
 
@@ -249,10 +253,11 @@ int rtc_session_join(const char *channel, const char *token, const char *user_ac
     return 0;
 }
 
-int rtc_session_leave(void)
+int mybot_rtc_session_leave(void)
 {
-    if (!s_rtc.initialized || s_rtc.conn_id == 0)
+    if (!s_rtc.initialized || s_rtc.conn_id == 0) {
         return 0;
+    }
 
     AOSL_LOG_INF("leaving channel (conn_id=%u)...", s_rtc.conn_id);
 
@@ -271,45 +276,48 @@ int rtc_session_leave(void)
     }
 
     s_rtc.conn_id = 0;
-    set_state(RTC_STATE_INITIALIZED);
+    set_state(MYBOT_RTC_STATE_INITIALIZED);
     return 0;
 }
 
-void rtc_session_fini(void)
+void mybot_rtc_session_fini(void)
 {
-    if (!s_rtc.initialized)
+    if (!s_rtc.initialized) {
         return;
+    }
 
-    if (s_rtc.conn_id != 0)
-        rtc_session_leave();
+    if (s_rtc.conn_id != 0) {
+        mybot_rtc_session_leave();
+    }
 
     agora_rtc_fini();
     s_rtc.initialized = false;
-    set_state(RTC_STATE_IDLE);
+    set_state(MYBOT_RTC_STATE_IDLE);
 }
 
-int rtc_session_send_audio(const void *data, size_t len)
+int mybot_rtc_session_send_audio(const void *data, size_t len)
 {
-    if (s_rtc.state != RTC_STATE_CONNECTED || s_rtc.conn_id == 0)
+    if (s_rtc.state != MYBOT_RTC_STATE_CONNECTED || s_rtc.conn_id == 0) {
         return -1;
+    }
 
     audio_frame_info_t info;
     info.data_type = AUDIO_DATA_TYPE_PCM;
 
     int ret = agora_rtc_send_audio_data(s_rtc.conn_id, (void *)data, len, &info);
     if (ret < 0) {
-        fprintf(stderr, "[RTC] send_audio failed: %s\n", agora_rtc_err_2_str(ret));
+        AOSL_LOG_ERR("[RTC] send_audio failed: %s", agora_rtc_err_2_str(ret));
         return -1;
     }
     return 0;
 }
 
-rtc_state_t rtc_session_get_state(void)
+mybot_rtc_state_t mybot_rtc_session_get_state(void)
 {
     return s_rtc.state;
 }
 
-bool rtc_session_is_connected(void)
+bool mybot_rtc_session_is_connected(void)
 {
-    return s_rtc.state == RTC_STATE_CONNECTED;
+    return s_rtc.state == MYBOT_RTC_STATE_CONNECTED;
 }

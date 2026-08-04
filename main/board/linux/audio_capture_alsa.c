@@ -1,4 +1,4 @@
-#include "audio_device.h"
+#include "audio/audio_device.h"
 
 #include <alsa/asoundlib.h>
 
@@ -56,8 +56,9 @@ prepare:
 static int suspend_recover(snd_pcm_t *handle)
 {
     int err;
-    while ((err = snd_pcm_resume(handle)) == -EAGAIN)
+    while ((err = snd_pcm_resume(handle)) == -EAGAIN) {
         usleep(1000);
+    }
     if (err < 0) {
         err = snd_pcm_prepare(handle);
         if (err < 0) {
@@ -80,22 +81,26 @@ static int pcm_read(snd_pcm_t *handle, char *buf, size_t frames)
         if (r == -EAGAIN) {
             /* No data right now — wait up to the poll timeout, then give up
              * so the caller can check its own stop condition. */
-            if (snd_pcm_wait(handle, PCM_POLL_TIMEOUT_MS) <= 0)
+            if (snd_pcm_wait(handle, PCM_POLL_TIMEOUT_MS) <= 0) {
                 break;
+            }
         } else if (r == -EPIPE) {
-            if (xrun_recover(handle) < 0)
+            if (xrun_recover(handle) < 0) {
                 return -1;
+            }
         } else if (r == -ESTRPIPE) {
-            if (suspend_recover(handle) < 0)
+            if (suspend_recover(handle) < 0) {
                 return -1;
+            }
         } else if (r < 0) {
             AOSL_LOG_ERR("pcm_read: %s", snd_strerror(r));
             return -1;
         } else if (r > 0) {
             result += (size_t)r;
             count  -= (size_t)r;
-            if (count > 0 && snd_pcm_wait(handle, PCM_POLL_TIMEOUT_MS) <= 0)
+            if (count > 0 && snd_pcm_wait(handle, PCM_POLL_TIMEOUT_MS) <= 0) {
                 break;   /* partial read; return what we have */
+            }
         } else {
             break;
         }
@@ -107,12 +112,14 @@ static int pcm_read(snd_pcm_t *handle, char *buf, size_t frames)
 
 static int alsa_capture_init(void **ctx, int rate, int channels, int bits)
 {
-    if (!ctx)
+    if (!ctx) {
         return -1;
+    }
 
     alsa_cap_t *c = (alsa_cap_t *)calloc(1, sizeof(alsa_cap_t));
-    if (!c)
+    if (!c) {
         return -1;
+    }
 
     c->rate            = rate;
     c->channels        = channels;
@@ -175,7 +182,7 @@ static int alsa_capture_init(void **ctx, int rate, int channels, int bits)
     return 0;
 
 fail:
-    if (c->handle) snd_pcm_close(c->handle);
+    if (c->handle) { snd_pcm_close(c->handle); }
     free(c);
     return -1;
 }
@@ -203,17 +210,21 @@ static int alsa_capture_read(void *ctx, void *buf, int frames)
             memcpy((uint8_t *)buf + total_bytes, c->acc_buf, copy);
             total_bytes += copy;
             c->acc_len -= copy;
-            if (c->acc_len > 0)
+            if (c->acc_len > 0) {
                 memmove(c->acc_buf, c->acc_buf + copy, c->acc_len);
-            if (total_bytes >= want)
+            }
+            if (total_bytes >= want) {
                 break;
+            }
         }
 
         got = pcm_read(c->handle, c->acc_buf, PCM_FRAMES_20MS);
-        if (got < 0)
+        if (got < 0) {
             return -1;
-        if (got == 0)
+        }
+        if (got == 0) {
             return 0;   /* no new data within the wait window */
+        }
         c->acc_len = got * frame_bytes;
     }
 
@@ -235,8 +246,9 @@ static int alsa_capture_stop(void *ctx)
 static void alsa_capture_destroy(void *ctx)
 {
     AOSL_LOG_INF("destroy");
-    if (!ctx)
+    if (!ctx) {
         return;
+    }
     alsa_cap_t *c = (alsa_cap_t *)ctx;
     if (c->handle) {
         snd_pcm_drop(c->handle);
@@ -245,7 +257,7 @@ static void alsa_capture_destroy(void *ctx)
     free(c);
 }
 
-static const audio_capture_ops_t g_alsa_capture_ops = {
+static const mybot_audio_capture_ops_t g_alsa_capture_ops = {
     .name    = "alsa",
     .init    = alsa_capture_init,
     .start   = alsa_capture_start,
@@ -254,8 +266,8 @@ static const audio_capture_ops_t g_alsa_capture_ops = {
     .destroy = alsa_capture_destroy,
 };
 
-void audio_platform_register_alsa_capture(void)
+void mybot_audio_platform_register_alsa_capture(void)
 {
-    audio_device_register_capture(&g_alsa_capture_ops);
+    mybot_audio_device_register_capture(&g_alsa_capture_ops);
     AOSL_LOG_INF("platform registered");
 }

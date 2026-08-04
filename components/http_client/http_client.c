@@ -34,8 +34,9 @@ typedef struct {
  */
 static int parse_url(const char *url, url_parts_t *parts)
 {
-    if (!url || !parts)
+    if (!url || !parts) {
         return -1;
+    }
 
     memset(parts, 0, sizeof(*parts));
     parts->port = HTTP_DEFAULT_PORT;
@@ -44,17 +45,20 @@ static int parse_url(const char *url, url_parts_t *parts)
     const char *p = url;
 
     /* skip http:// */
-    if (strncmp(p, "http://", 7) != 0)
+    if (strncmp(p, "http://", 7) != 0) {
         return -1;
+    }
     p += 7;
 
     /* extract host (up to ':' or '/' or end) */
     const char *host_start = p;
-    while (*p && *p != ':' && *p != '/')
+    while (*p && *p != ':' && *p != '/') {
         p++;
+    }
     size_t host_len = (size_t)(p - host_start);
-    if (host_len == 0 || host_len >= sizeof(parts->host))
+    if (host_len == 0 || host_len >= sizeof(parts->host)) {
         return -1;
+    }
     memcpy(parts->host, host_start, host_len);
     parts->host[host_len] = '\0';
 
@@ -63,21 +67,25 @@ static int parse_url(const char *url, url_parts_t *parts)
         p++;
         char port_str[8];
         int pi = 0;
-        while (*p >= '0' && *p <= '9' && pi < (int)sizeof(port_str) - 1)
+        while (*p >= '0' && *p <= '9' && pi < (int)sizeof(port_str) - 1) {
             port_str[pi++] = *p++;
+        }
         port_str[pi] = '\0';
-        if (pi == 0)
+        if (pi == 0) {
             return -1;
+        }
         parts->port = atoi(port_str);
-        if (parts->port <= 0 || parts->port > 65535)
+        if (parts->port <= 0 || parts->port > 65535) {
             return -1;
+        }
     }
 
     /* path (defaults to "/") */
     if (*p == '/') {
         size_t path_len = strlen(p);
-        if (path_len >= sizeof(parts->path))
+        if (path_len >= sizeof(parts->path)) {
             return -1;
+        }
         memcpy(parts->path, p, path_len + 1);
     }
 
@@ -96,15 +104,17 @@ static aosl_fd_t tcp_connect(const char *host, int port)
 {
     aosl_sockaddr_t addr;
     int count = aosl_hal_gethostbyname(host, &addr, 1);
-    if (count < 1)
+    if (count < 1) {
         return AOSL_INVALID_FD;
+    }
 
     addr.sa_family = AOSL_AF_INET;
     addr.sa_port   = aosl_htons((uint16_t)port);
 
     aosl_fd_t fd = aosl_hal_sk_socket(AOSL_AF_INET, AOSL_SOCK_STREAM, AOSL_IPPROTO_TCP);
-    if (aosl_fd_invalid(fd))
+    if (aosl_fd_invalid(fd)) {
         return AOSL_INVALID_FD;
+    }
 
     if (aosl_hal_sk_connect(fd, &addr) < 0) {
         aosl_hal_sk_close(fd);
@@ -122,8 +132,9 @@ static int send_all(aosl_fd_t fd, const char *data, size_t len)
 {
     while (len > 0) {
         int n = aosl_hal_sk_send(fd, data, len, 0);
-        if (n < 0)
+        if (n < 0) {
             return -1;
+        }
         data += n;
         len  -= (size_t)n;
     }
@@ -143,8 +154,9 @@ static char *read_all(aosl_fd_t fd, size_t *out_len)
     size_t cap = RECV_BUF_SIZE;
     size_t len = 0;
     char  *buf = (char *)aosl_hal_malloc(cap);
-    if (!buf)
+    if (!buf) {
         return NULL;
+    }
 
     uint64_t deadline = aosl_hal_get_tick_ms() + HTTP_TIMEOUT_MS;
 
@@ -158,8 +170,9 @@ static char *read_all(aosl_fd_t fd, size_t *out_len)
             if (cap - len < RECV_BUF_SIZE / 2) {
                 cap *= 2;
                 char *nb = (char *)aosl_hal_realloc(buf, cap);
-                if (!nb)
+                if (!nb) {
                     goto fail;
+                }
                 buf = nb;
             }
         } else if (ret == 0) {
@@ -184,14 +197,17 @@ fail:
  */
 static int parse_status_line(const char *line)
 {
-    if (strncmp(line, "HTTP/1.", 7) != 0)
+    if (strncmp(line, "HTTP/1.", 7) != 0) {
         return 0;
+    }
     line += 7;
-    while (*line == ' ')
+    while (*line == ' ') {
         line++;
+    }
     int code = 0;
-    while (*line >= '0' && *line <= '9')
+    while (*line >= '0' && *line <= '9') {
         code = code * 10 + (*line++ - '0');
+    }
     return code;
 }
 
@@ -199,7 +215,7 @@ static int parse_status_line(const char *line)
  * Parse a complete HTTP response from raw data.
  * Returns the response struct (body will point into or be a copy from raw).
  */
-static int parse_response(const char *raw, size_t raw_len, http_response_t *resp)
+static int parse_response(const char *raw, size_t raw_len, mybot_http_response_t *resp)
 {
     memset(resp, 0, sizeof(*resp));
 
@@ -208,12 +224,12 @@ static int parse_response(const char *raw, size_t raw_len, http_response_t *resp
 
     /* status line */
     const char *nl = (const char *)memchr(p, '\n', (size_t)(end - p));
-    if (!nl) return -1;
+    if (!nl) { return -1; }
     resp->status_code = parse_status_line(p);
     p = nl + 1;
 
     /* skip CR if present */
-    if (p < end && *p == '\r') p++;
+    if (p < end && *p == '\r') { p++; }
 
     /* headers */
     size_t body_offset = 0;
@@ -221,13 +237,13 @@ static int parse_response(const char *raw, size_t raw_len, http_response_t *resp
 
     while (p < end) {
         nl = (const char *)memchr(p, '\n', (size_t)(end - p));
-        if (!nl) break;
+        if (!nl) { break; }
 
         size_t hdr_len = (size_t)(nl - p);
         /* end of headers: empty line */
         if (hdr_len == 0 || (hdr_len == 1 && *p == '\r')) {
             p = nl + 1;
-            if (p < end && *p == '\r') p++;
+            if (p < end && *p == '\r') { p++; }
             body_offset = (size_t)(p - raw);
             break;
         }
@@ -237,14 +253,15 @@ static int parse_response(const char *raw, size_t raw_len, http_response_t *resp
             (strncasecmp(p, "Content-Length:", 15) == 0 ||
              strncasecmp(p, "content-length:", 15) == 0)) {
             const char *val = p + 15;
-            while (val < nl && *val == ' ') val++;
+            while (val < nl && *val == ' ') { val++; }
             content_length = 0;
-            while (val < nl && *val >= '0' && *val <= '9')
+            while (val < nl && *val >= '0' && *val <= '9') {
                 content_length = content_length * 10 + (*val++ - '0');
+            }
         }
 
         p = nl + 1;
-        if (p < end && *p == '\r') p++;
+        if (p < end && *p == '\r') { p++; }
     }
 
     /* body */
@@ -253,16 +270,18 @@ static int parse_response(const char *raw, size_t raw_len, http_response_t *resp
 
         if (content_length >= 0) {
             resp->body_len = (size_t)content_length;
-            if (resp->body_len > avail)
+            if (resp->body_len > avail) {
                 resp->body_len = avail;
+            }
         } else {
             resp->body_len = avail;
         }
 
         if (resp->body_len > 0) {
             resp->body = (char *)aosl_hal_malloc(resp->body_len + 1);
-            if (!resp->body)
+            if (!resp->body) {
                 return -1;
+            }
             memcpy(resp->body, raw + body_offset, resp->body_len);
             resp->body[resp->body_len] = '\0';
         }
@@ -277,15 +296,17 @@ static int parse_response(const char *raw, size_t raw_len, http_response_t *resp
 static int http_request(const char *method, const char *url,
                         const char *content_type, const char *req_body,
                         const char *extra_headers,
-                        http_response_t *resp)
+                        mybot_http_response_t *resp)
 {
     url_parts_t parts;
-    if (parse_url(url, &parts) < 0)
+    if (parse_url(url, &parts) < 0) {
         return -1;
+    }
 
     aosl_fd_t fd = tcp_connect(parts.host, parts.port);
-    if (aosl_fd_invalid(fd))
+    if (aosl_fd_invalid(fd)) {
         return -1;
+    }
 
     /* Build HTTP request */
     char req[2048];
@@ -349,33 +370,35 @@ static int http_request(const char *method, const char *url,
  * Public API
  * ---------------------------------------------------------- */
 
-int http_get(const char *url, http_response_t *resp)
+int mybot_http_get(const char *url, mybot_http_response_t *resp)
 {
-    return http_get_ex(url, NULL, resp);
+    return mybot_http_get_ex(url, NULL, resp);
 }
 
-int http_post(const char *url, const char *content_type,
-              const char *body, http_response_t *resp)
+int mybot_http_post(const char *url, const char *content_type,
+                    const char *body, mybot_http_response_t *resp)
 {
-    return http_post_ex(url, content_type, body, NULL, resp);
+    return mybot_http_post_ex(url, content_type, body, NULL, resp);
 }
 
-int http_get_ex(const char *url, const char *extra_headers, http_response_t *resp)
+int mybot_http_get_ex(const char *url, const char *extra_headers, mybot_http_response_t *resp)
 {
-    if (!url || !resp)
+    if (!url || !resp) {
         return -1;
+    }
     return http_request("GET", url, NULL, NULL, extra_headers, resp);
 }
 
-int http_post_ex(const char *url, const char *content_type, const char *body,
-                 const char *extra_headers, http_response_t *resp)
+int mybot_http_post_ex(const char *url, const char *content_type, const char *body,
+                       const char *extra_headers, mybot_http_response_t *resp)
 {
-    if (!url || !resp)
+    if (!url || !resp) {
         return -1;
+    }
     return http_request("POST", url, content_type, body, extra_headers, resp);
 }
 
-void http_response_free(http_response_t *resp)
+void mybot_http_response_free(mybot_http_response_t *resp)
 {
     if (resp) {
         if (resp->body) {

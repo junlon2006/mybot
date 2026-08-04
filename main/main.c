@@ -4,7 +4,6 @@
 #include <hal/aosl_hal_socket.h>
 #include <hal/aosl_hal_time.h>
 
-#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -12,10 +11,10 @@
 /* ----------------------------------------------------------
  * Platform-specific audio backend (Linux: ALSA).
  * Registers the capture/playback ops used by the app layer via
- * audio_device_register_*() before app_start() is called.
+ * audio_device_register_*() before mybot_app_start() is called.
  * ---------------------------------------------------------- */
-void audio_platform_register_alsa_capture(void);
-void audio_platform_register_alsa_playback(void);
+void mybot_audio_platform_register_alsa_capture(void);
+void mybot_audio_platform_register_alsa_playback(void);
 
 /* ----------------------------------------------------------
  * Signal handling — POSIX. Request a graceful app exit.
@@ -24,7 +23,7 @@ static void signal_handler(int sig)
 {
     (void)sig;
     AOSL_LOG_INF("caught signal, stopping...");
-    app_request_exit();
+    mybot_app_request_exit();
 }
 
 /* ----------------------------------------------------------
@@ -34,33 +33,33 @@ static void handle_key(char ch)
 {
     switch (ch) {
     case 's':
-        fprintf(stdout, "[KEY] s -> start conversation\n");
-        app_start_conversation();
+        AOSL_LOG_INF("[KEY] s -> start conversation");
+        mybot_app_start_conversation();
         break;
     case 'q':
-        fprintf(stdout, "[KEY] q -> stop conversation\n");
-        app_stop_conversation();
+        AOSL_LOG_INF("[KEY] q -> stop conversation");
+        mybot_app_stop_conversation();
         break;
     case 'p':
-        fprintf(stdout, "[KEY] p -> re-pair\n");
-        app_pair();
+        AOSL_LOG_INF("[KEY] p -> re-pair");
+        mybot_app_pair();
         break;
     case 'e':
-        fprintf(stdout, "[KEY] e -> exit\n");
-        app_request_exit();
+        AOSL_LOG_INF("[KEY] e -> exit");
+        mybot_app_request_exit();
         break;
     case '\n':
     case '\r':
         break;
     default:
-        fprintf(stdout, "[KEY] '%c' ignored (s=start, q=stop, p=pair, e=exit)\n", ch);
+        AOSL_LOG_INF("[KEY] '%c' ignored (s=start, q=stop, p=pair, e=exit)", ch);
         break;
     }
 }
 
 static void print_usage(const char *prog)
 {
-    fprintf(stderr,
+    AOSL_LOG_INF(
         "Usage: %s --server <URL> --device-id <ID> [options]\n"
         "\n"
         "Required:\n"
@@ -75,14 +74,16 @@ static void print_usage(const char *prog)
         "  -h, --help         Show this help\n"
         "\n"
         "Example:\n"
-        "  %s --server http://localhost:3001 --device-id AG-DEMO-001\n",
+        "  %s --server http://localhost:3001 --device-id AG-DEMO-001",
         prog, prog);
 }
 
 int main(int argc, char **argv)
 {
-    app_config_t cfg;
+    mybot_app_config_t cfg;
     memset(&cfg, 0, sizeof(cfg));
+
+    aosl_set_log_level(AOSL_LOG_INFO);
 
     /* ---- Parse command line ---- */
     for (int i = 1; i < argc; i++) {
@@ -98,62 +99,61 @@ int main(int argc, char **argv)
             print_usage(argv[0]);
             return 0;
         } else {
-            fprintf(stderr, "unknown option: %s\n", argv[i]);
+            AOSL_LOG_ERR("unknown option: %s", argv[i]);
             print_usage(argv[0]);
             return 1;
         }
     }
 
     if (cfg.server_base[0] == '\0' || cfg.device_id[0] == '\0') {
-        fprintf(stderr, "ERROR: --server and --device-id are required\n\n");
+        AOSL_LOG_ERR("--server and --device-id are required");
         print_usage(argv[0]);
         return 1;
     }
 
-    fprintf(stdout, "mybot v0.1.0 starting...\n");
-    fprintf(stdout, "  server   : %s\n", cfg.server_base);
-    fprintf(stdout, "  device-id: %s\n", cfg.device_id);
-    if (cfg.firmware_ver[0]) fprintf(stdout, "  fw-ver   : %s\n", cfg.firmware_ver);
-    if (cfg.hw_model[0])     fprintf(stdout, "  hw-model : %s\n", cfg.hw_model);
+    AOSL_LOG_INF("mybot v0.1.0 starting...");
+    AOSL_LOG_INF("  server   : %s", cfg.server_base);
+    AOSL_LOG_INF("  device-id: %s", cfg.device_id);
+    if (cfg.firmware_ver[0]) { AOSL_LOG_INF("  fw-ver   : %s", cfg.firmware_ver); }
+    if (cfg.hw_model[0]) { AOSL_LOG_INF("  hw-model : %s", cfg.hw_model); }
 
     /* ---- Register the platform audio backend (Linux: ALSA) ---- */
-    audio_platform_register_alsa_capture();
-    audio_platform_register_alsa_playback();
+    mybot_audio_platform_register_alsa_capture();
+    mybot_audio_platform_register_alsa_playback();
 
     /* ---- Install signal handlers ---- */
     signal(SIGINT,  signal_handler);
     signal(SIGTERM, signal_handler);
 
     /* ---- Start the application (non-blocking) ---- */
-    if (app_start(&cfg) < 0) {
-        fprintf(stderr, "ERROR: app_start failed\n");
-        app_stop();   /* release anything app_start allocated before failing */
+    if (mybot_app_start(&cfg) < 0) {
+        AOSL_LOG_ERR("mybot_app_start failed");
+        mybot_app_stop();   /* release anything mybot_app_start allocated before failing */
         return 1;
     }
 
     /* ---- Set stdin non-blocking for interactive keys ---- */
     aosl_hal_sk_set_nonblock((aosl_fd_t)0);
 
-    fprintf(stdout, "\n"
-        "=== mybot ready ===\n"
-        "  s - start conversation\n"
-        "  q - stop conversation\n"
-        "  p - re-pair device\n"
-        "  e - exit\n"
-        "  Ctrl+C - exit\n"
-        "\n");
+    AOSL_LOG_INF("=== mybot ready ===\n"
+                 "  s - start conversation\n"
+                 "  q - stop conversation\n"
+                 "  p - re-pair device\n"
+                 "  e - exit\n"
+                 "  Ctrl+C - exit");
 
     /* ---- Main loop: interactive keys only.
      * The app drives itself (device state machine etc.) from its own MPQ
      * timers, so main() only needs to poll stdin here. ---- */
-    while (app_is_running()) {
+    while (mybot_app_is_running()) {
         char ch;
-        if (aosl_hal_sk_read((aosl_fd_t)0, &ch, 1) == 1)
+        if (aosl_hal_sk_read((aosl_fd_t)0, &ch, 1) == 1) {
             handle_key(ch);
+        }
         aosl_hal_msleep(100);
     }
 
     /* ---- Stop the application and release all resources ---- */
-    app_stop();
+    mybot_app_stop();
     return 0;
 }

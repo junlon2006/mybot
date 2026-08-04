@@ -34,8 +34,8 @@ set(MYBOT_SRC
     components/cJSON/cJSON.c
     main/protocols/device_api.c
     main/audio/audio_device.c
-    main/audio/platform/alsa/audio_capture_alsa.c
-    main/audio/platform/alsa/audio_playback_alsa.c
+    main/board/linux/audio_capture_alsa.c
+    main/board/linux/audio_playback_alsa.c
     main/protocols/rtc_session.c
     main/protocols/device_state.c
 )

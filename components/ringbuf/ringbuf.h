@@ -14,28 +14,28 @@ extern "C" {
  * All operations are non-blocking (no locks).
  */
 
-typedef void *ringbuf_t;
+typedef void *mybot_ringbuf_t;
 
 /** Create a ring buffer with given capacity (bytes). Returns NULL on failure. */
-ringbuf_t ringbuf_create(int size);
+mybot_ringbuf_t mybot_ringbuf_create(int size);
 
 /** Destroy the ring buffer. */
-int ringbuf_destroy(ringbuf_t handle);
+int mybot_ringbuf_destroy(mybot_ringbuf_t handle);
 
 /** Reset to empty. */
-int ringbuf_clear(ringbuf_t handle);
+int mybot_ringbuf_clear(mybot_ringbuf_t handle);
 
 /** Number of free bytes available for writing. */
-int ringbuf_get_free_size(ringbuf_t handle);
+int mybot_ringbuf_get_free_size(mybot_ringbuf_t handle);
 
 /** Number of bytes available for reading. */
-int ringbuf_get_data_size(ringbuf_t handle);
+int mybot_ringbuf_get_data_size(mybot_ringbuf_t handle);
 
 /** Write data (non-blocking). Returns bytes written, or -1 if full. */
-int ringbuf_write(ringbuf_t handle, const char *src, int writelen);
+int mybot_ringbuf_write(mybot_ringbuf_t handle, const char *src, int writelen);
 
 /** Read data (non-blocking). Returns bytes read, or -1 if empty. */
-int ringbuf_read(char *dst, int readlen, ringbuf_t handle);
+int mybot_ringbuf_read(char *dst, int readlen, mybot_ringbuf_t handle);
 
 #ifdef __cplusplus
 }

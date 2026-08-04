@@ -44,7 +44,7 @@ typedef struct {
 
     /** Destroy and close the device. */
     void (*destroy)(void *ctx);
-} audio_capture_ops_t;
+} mybot_audio_capture_ops_t;
 
 /** Playback device operations */
 typedef struct {
@@ -64,27 +64,27 @@ typedef struct {
 
     /** Destroy and close the device. */
     void (*destroy)(void *ctx);
-} audio_playback_ops_t;
+} mybot_audio_playback_ops_t;
 
 /* ----------------------------------------------------------
  * Registration API — called by platform implementations
  * ---------------------------------------------------------- */
 
 /** Register capture device ops (call once at startup). */
-int audio_device_register_capture(const audio_capture_ops_t *ops);
+int mybot_audio_device_register_capture(const mybot_audio_capture_ops_t *ops);
 
 /** Register playback device ops (call once at startup). */
-int audio_device_register_playback(const audio_playback_ops_t *ops);
+int mybot_audio_device_register_playback(const mybot_audio_playback_ops_t *ops);
 
 /* ----------------------------------------------------------
  * Unified access API — called by application code
  * ---------------------------------------------------------- */
 
 /** Get the registered capture ops, or NULL if none registered. */
-const audio_capture_ops_t *audio_device_get_capture(void);
+const mybot_audio_capture_ops_t *mybot_audio_device_get_capture(void);
 
 /** Get the registered playback ops, or NULL if none registered. */
-const audio_playback_ops_t *audio_device_get_playback(void);
+const mybot_audio_playback_ops_t *mybot_audio_device_get_playback(void);
 
 #ifdef __cplusplus
 }
