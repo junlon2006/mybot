@@ -3,6 +3,7 @@
 
 #include "agora_rtc_api.h"
 #include <api/aosl_log.h>
+#include <api/aosl_atomic.h>
 #include <hal/aosl_hal_thread.h>
 
 #include <string.h>
@@ -18,7 +19,7 @@
  * set_state() and the SDK callbacks intentionally do NOT take it (they run
  * inside SDK threads and would deadlock). */
 typedef struct {
-    mybot_rtc_state_t             state;
+    aosl_atomic_t                 state;   /* atomic: written by SDK callbacks */
     mybot_rtc_session_callbacks_t cbs;
     connection_id_t               conn_id;
     bool                          initialized;
@@ -45,10 +46,10 @@ static const char *state_str(mybot_rtc_state_t s)
 
 static void set_state(mybot_rtc_state_t st)
 {
-    if (s_rtc.state == st) {
+    if ((mybot_rtc_state_t)aosl_atomic_read(&s_rtc.state) == st) {
         return;
     }
-    s_rtc.state = st;
+    aosl_atomic_set(&s_rtc.state, (intptr_t)st);
     AOSL_LOG_INF("[RTC] state -> %s", state_str(st));
     if (s_rtc.cbs.on_state_changed) {
         s_rtc.cbs.on_state_changed(st);
@@ -211,7 +212,8 @@ int mybot_rtc_session_join(const char *channel, const char *token, const char *u
         ret = -1;
         goto out;
     }
-    if (s_rtc.state == MYBOT_RTC_STATE_CONNECTED || s_rtc.state == MYBOT_RTC_STATE_CONNECTING) {
+    mybot_rtc_state_t cur = (mybot_rtc_state_t)aosl_atomic_read(&s_rtc.state);
+    if (cur == MYBOT_RTC_STATE_CONNECTED || cur == MYBOT_RTC_STATE_CONNECTING) {
         AOSL_LOG_ERR("[RTC] already joining/joined");
         ret = -1;
         goto out;
@@ -341,7 +343,8 @@ int mybot_rtc_session_send_audio(const void *data, size_t len)
 
     aosl_hal_mutex_lock(s_rtc.lock);
 
-    if (s_rtc.state != MYBOT_RTC_STATE_CONNECTED || s_rtc.conn_id == 0) {
+    if ((mybot_rtc_state_t)aosl_atomic_read(&s_rtc.state) != MYBOT_RTC_STATE_CONNECTED ||
+        s_rtc.conn_id == 0) {
         ret = -1;
         goto out;
     }
@@ -362,22 +365,10 @@ out:
 
 mybot_rtc_state_t mybot_rtc_session_get_state(void)
 {
-    if (!s_rtc.lock) {
-        return s_rtc.state;
-    }
-    aosl_hal_mutex_lock(s_rtc.lock);
-    mybot_rtc_state_t st = s_rtc.state;
-    aosl_hal_mutex_unlock(s_rtc.lock);
-    return st;
+    return (mybot_rtc_state_t)aosl_atomic_read(&s_rtc.state);
 }
 
 bool mybot_rtc_session_is_connected(void)
 {
-    if (!s_rtc.lock) {
-        return s_rtc.state == MYBOT_RTC_STATE_CONNECTED;
-    }
-    aosl_hal_mutex_lock(s_rtc.lock);
-    bool connected = s_rtc.state == MYBOT_RTC_STATE_CONNECTED;
-    aosl_hal_mutex_unlock(s_rtc.lock);
-    return connected;
+    return (mybot_rtc_state_t)aosl_atomic_read(&s_rtc.state) == MYBOT_RTC_STATE_CONNECTED;
 }
