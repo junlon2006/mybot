@@ -187,18 +187,16 @@ static void on_remote_audio(uint32_t uid, const void *data, size_t len)
  * ---------------------------------------------------------- */
 static void on_rtc_state_changed(mybot_rtc_state_t state)
 {
-    bool was_connected = s_app.rtc_connected;
-    bool is_connected  = (state == MYBOT_RTC_STATE_CONNECTED);
-    s_app.rtc_connected = is_connected;
+    s_app.rtc_connected = (state == MYBOT_RTC_STATE_CONNECTED);
+    AOSL_LOG_INF("rtc -> %s", state == MYBOT_RTC_STATE_CONNECTED ? "connected" : "disconnected");
 
-    AOSL_LOG_INF("rtc -> %s", is_connected ? "connected" : "disconnected");
-
-    /* Unexpected RTC drop (connection lost / error) while in an active call:
-     * end the conversation. RECONNECTING is transient and is not treated as a
-     * drop. The actual teardown is deferred to the state_mpq thread (this
-     * callback runs on an SDK thread). */
-    if (was_connected &&
-        (state == MYBOT_RTC_STATE_DISCONNECTED || state == MYBOT_RTC_STATE_ERROR)) {
+    /* Unexpected RTC drop (connection lost / error): end the conversation.
+     * mybot_device_state_notify_conversation_ended() only acts while the
+     * device state machine is IN_CONVERSATION, so a deliberate 'q' stop
+     * (state already RUNTIME) is never double-ended. RECONNECTING is transient
+     * and is not treated as a drop. The teardown is deferred to the state_mpq
+     * thread (this callback runs on an SDK thread). */
+    if (state == MYBOT_RTC_STATE_DISCONNECTED || state == MYBOT_RTC_STATE_ERROR) {
         mybot_device_state_notify_conversation_ended();
     }
 }

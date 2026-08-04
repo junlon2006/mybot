@@ -102,21 +102,40 @@ static int parse_url(const char *url, url_parts_t *parts)
  */
 static aosl_fd_t tcp_connect(const char *host, int port)
 {
-    aosl_sockaddr_t addr;
-    int count = aosl_hal_gethostbyname(host, &addr, 1);
+    aosl_sockaddr_t addrs[8];
+    int count = aosl_hal_gethostbyname(host, addrs,
+                                       (int)(sizeof(addrs) / sizeof(addrs[0])));
     if (count < 1) {
         return AOSL_INVALID_FD;
     }
 
-    addr.sa_family = AOSL_AF_INET;
-    addr.sa_port   = aosl_htons((uint16_t)port);
+    /* Prefer an IPv4 address; fall back to IPv6 if that is all the resolver
+     * returned. getaddrinfo() is AF_UNSPEC and may list IPv6 first (e.g.
+     * "::1" for localhost), which would not match the socket family below. */
+    const aosl_sockaddr_t *addr = &addrs[0];
+    enum aosl_socket_domain domain = AOSL_AF_INET;
+    for (int i = 0; i < count; i++) {
+        if (addrs[i].sa_family == AOSL_AF_INET) {
+            addr = &addrs[i];
+            break;
+        }
+    }
+    if (addr->sa_family == AOSL_AF_INET6) {
+        domain = AOSL_AF_INET6;
+    } else if (addr->sa_family != AOSL_AF_INET) {
+        return AOSL_INVALID_FD;   /* unknown address family */
+    }
 
-    aosl_fd_t fd = aosl_hal_sk_socket(AOSL_AF_INET, AOSL_SOCK_STREAM, AOSL_IPPROTO_TCP);
+    /* Fix the port (the resolver does not set it). */
+    aosl_sockaddr_t target = *addr;
+    target.sa_port = aosl_htons((uint16_t)port);
+
+    aosl_fd_t fd = aosl_hal_sk_socket(domain, AOSL_SOCK_STREAM, AOSL_IPPROTO_TCP);
     if (aosl_fd_invalid(fd)) {
         return AOSL_INVALID_FD;
     }
 
-    if (aosl_hal_sk_connect(fd, &addr) < 0) {
+    if (aosl_hal_sk_connect(fd, &target) < 0) {
         aosl_hal_sk_close(fd);
         return AOSL_INVALID_FD;
     }
