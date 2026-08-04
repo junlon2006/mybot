@@ -34,7 +34,6 @@
  * Global app state
  * ---------------------------------------------------------- */
 static struct {
-    const mybot_app_config_t *config;
     volatile bool            running;
 
     /* Audio capture */
@@ -392,7 +391,6 @@ int mybot_app_start(const mybot_app_config_t *cfg)
     if (!cfg) { return -1; }
 
     memset(&s_app, 0, sizeof(s_app));
-    s_app.config     = cfg;
     s_app.running    = true;
     s_app.mpq         = AOSL_MPQ_INVALID;
     s_app.send_timer  = AOSL_MPQ_TIMER_INVALID;
