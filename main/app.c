@@ -25,7 +25,9 @@
 #define BYTES_20MS        640     /* 320 * 16-bit mono */
 #define RINGBUF_SIZE      (BYTES_20MS * 100)
 #define AUDIO_TICK_MS     10      /* MPQ timer cadence driving the audio loops */
-#define STATE_TICK_MS     50      /* device state machine poll interval */
+/* Device state machine poll interval. Must match the 100 ms/tick assumption
+ * in mybot_device_state_tick() (poll_after_seconds * 10 ticks). */
+#define STATE_TICK_MS     100
 #define MPQ_STACK_SIZE    16384   /* 16 KB stack for aosl_mpq_create threads */
 
 /* ----------------------------------------------------------
