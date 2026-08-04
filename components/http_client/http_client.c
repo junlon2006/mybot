@@ -3,6 +3,7 @@
 #include <hal/aosl_hal_socket.h>
 #include <hal/aosl_hal_memory.h>
 #include <hal/aosl_hal_time.h>
+#include <hal/aosl_hal_errno.h>
 
 #include <api/aosl_socket.h>
 
@@ -150,11 +151,30 @@ static aosl_fd_t tcp_connect(const char *host, int port)
  */
 static int send_all(aosl_fd_t fd, const char *data, size_t len)
 {
+    int eagain_retries = 0;
+
     while (len > 0) {
         int n = aosl_hal_sk_send(fd, data, len, 0);
+
+        if (n == AOSL_HAL_RET_EINTR) {
+            /* Interrupted by a signal — the socket state is unchanged, retry
+             * the same data. Uses the AOSL errno abstraction so this stays
+             * valid across platforms/RTOSes. */
+            continue;
+        }
+        if (n == AOSL_HAL_RET_EAGAIN) {
+            /* Would block (e.g. a non-blocking RTOS socket). Wait briefly and
+             * retry, bounded so a stalled peer cannot spin forever. */
+            if (++eagain_retries > 100) {
+                return -1;
+            }
+            aosl_hal_msleep(1);
+            continue;
+        }
         if (n < 0) {
             return -1;
         }
+
         data += n;
         len  -= (size_t)n;
     }
