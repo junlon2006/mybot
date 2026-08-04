@@ -9,11 +9,12 @@
 ```
 mybot/
 ├── main/
-│   ├── main.c                      # 入口，CLI 参数解析
-│   ├── app.h / app.c               # 主循环：MPQ 事件驱动 + 状态机 tick
+│   ├── main.c                      # 入口：CLI 解析、信号处理、按键循环
+│   ├── app.h / app.c               # 跨平台应用层：音频/MPQ/状态机，非阻塞启动
 │   ├── audio/
-│   │   ├── audio_device.h / .c     # 音频平台抽象（ops 函数指针注册表）
-│   │   └── platform/alsa/          # ALSA 采集/播放实现
+│   │   └── audio_device.h / .c     # 音频平台抽象（ops 函数指针注册表）
+│   ├── board/
+│   │   └── linux/                  # 板级适配层：Linux ALSA 采集/播放实现
 │   └── protocols/
 │       ├── rtc_session.h / .c      # Agora RTC 会话管理
 │       ├── device_api.h / .c       # 设备端服务 API（配对/对话/轮询）
@@ -22,7 +23,8 @@ mybot/
     ├── aosl/                       # AOSL 跨平台系统库
     ├── agora_rtsa_sdk/             # Agora RTSA SDK
     ├── ringbuf/                    # 通用锁无关 SPSC 环缓冲
-    └── http_client/                # 阻塞式 HTTP 客户端（AOSL HAL）
+    ├── http_client/                # 阻塞式 HTTP 客户端（AOSL HAL）
+    └── cJSON/                      # JSON 解析库（以 mybot_cJSON_* 前缀导出）
 ```
 
 ### 生命周期
@@ -44,10 +46,12 @@ unprovisioned → pairing → awaiting_claim ──→ runtime ←→ in_convers
 ### 数据流（对话中）
 
 ```
-麦克风 → ALSA采集线程 → capture ringbuf → MPQ定时器(20ms) → RTC发送
-                                                               ↓
-扬声器 ← ALSA播放线程 ← playback ringbuf ← RTC on_audio_data 回调
+麦克风 → cap_mpq 线程(10ms) → capture ringbuf → send_timer(20ms, mybot_mpq) → RTC 发送
+                                                                                  ↓
+扬声器 ← pb_mpq 线程(10ms) ← playback ringbuf ← RTC on_audio_data 回调（SDK 线程）
 ```
+
+设备状态机运行在独立的 `state_mpq` 线程（100ms 轮询，含阻塞 HTTP 请求），不影响实时音频。上行开启云 AEC 时，`send_timer` 将麦克风 PCM 与扬声器下行 PCM 交错发送。所有线程均通过 `aosl_mpq_create()` 创建（跨平台，不依赖 `aosl_hal_thread_join`）。
 
 ## 环境要求
 
@@ -86,16 +90,25 @@ make -j$(nproc)
 | `--fw-ver` | 否 | 固件版本 |
 | `--hw-model` | 否 | 硬件型号 |
 
+### 交互按键
+
+| 按键 | 功能 |
+|------|------|
+| `s` | 启动对话 |
+| `q` | 停止对话 |
+| `p` | 重新配对 |
+| `e` | 退出程序（等同 Ctrl+C） |
+
 ## 设备 API
 
 服务端端点定义见 [DEVICE_API.md](DEVICE_API.md)，已封装的调用：
 
 | 端点 | 函数 | 用途 |
 |------|------|------|
-| `POST /devices/pair-codes` | `device_api_create_pair_code()` | 申请配对码 |
-| `GET /devices/{id}/binding-status` | `device_api_get_binding_status()` | 轮询绑定状态 |
-| `POST /devices/{id}/conversations/start` | `device_api_start_conversation()` | 启动对话 |
-| `POST /devices/{id}/conversations/stop` | `device_api_stop_conversation()` | 停止对话 |
+| `POST /devices/pair-codes` | `mybot_device_api_create_pair_code()` | 申请配对码 |
+| `GET /devices/{id}/binding-status` | `mybot_device_api_get_binding_status()` | 轮询绑定状态 |
+| `POST /devices/{id}/conversations/start` | `mybot_device_api_start_conversation()` | 启动对话 |
+| `POST /devices/{id}/conversations/stop` | `mybot_device_api_stop_conversation()` | 停止对话 |
 
 ## 跨平台扩展
 
@@ -110,18 +123,22 @@ typedef struct {
     int  (*write)(void *ctx, const void *buf, int frames);
     int  (*stop)(void *ctx);
     void (*destroy)(void *ctx);
-} audio_capture_ops_t;
+} mybot_audio_capture_ops_t;
 ```
+
+> 公开接口统一使用 `mybot_` 前缀（类型、函数、宏），防止集成到其它工程时符号冲突；`components/aosl` 与 `components/agora_rtsa_sdk` 保持上游命名。
 
 ## 项目结构
 
 | 目录 | 内容 |
 |------|------|
-| `main/` | 应用入口、主循环、音频抽象、协议层、板级适配（`board/`） |
+| `main/` | 应用入口、跨平台应用层、音频抽象、协议层 |
+| `main/board/` | 板级跨平台适配层（当前仅 `linux/`，ALSA 实现） |
 | `components/aosl/` | 跨平台系统抽象层（线程/内存/网络/日志） |
 | `components/agora_rtsa_sdk/` | Agora RTSA SDK v1.10.1 |
 | `components/ringbuf/` | 通用锁无关 SPSC 环缓冲 |
 | `components/http_client/` | 基于 AOSL HAL 的 HTTP 客户端 |
+| `components/cJSON/` | JSON 解析库 |
 
 ## 项目状态
 
