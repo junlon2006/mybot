@@ -17,6 +17,7 @@
 #define HTTP_DEFAULT_PORT   80
 #define HTTP_TIMEOUT_MS     5000   /* connect/recv timeout */
 #define RECV_BUF_SIZE       4096
+#define RECV_BUF_MAX        (32 * 1024)   /* hard cap on response buffer */
 #define MAX_URL_LEN         512
 
 /* ----------------------------------------------------------
@@ -185,9 +186,16 @@ static char *read_all(aosl_fd_t fd, size_t *out_len)
             len += (size_t)ret;
             buf[len] = '\0';
 
-            /* grow buffer if needed */
+            /* Grow the buffer if needed, bounded by RECV_BUF_MAX so a
+             * misbehaving server cannot cause unbounded memory growth. */
             if (cap - len < RECV_BUF_SIZE / 2) {
+                if (cap >= RECV_BUF_MAX) {
+                    break;   /* response exceeds the cap — stop reading */
+                }
                 cap *= 2;
+                if (cap > RECV_BUF_MAX) {
+                    cap = RECV_BUF_MAX;
+                }
                 char *nb = (char *)aosl_hal_realloc(buf, cap);
                 if (!nb) {
                     goto fail;
