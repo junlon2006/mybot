@@ -24,7 +24,8 @@ typedef struct {
     int             channels;
     int             bits_per_sample;
 
-    uint8_t         acc_buf[PCM_BYTES_20MS];
+    /* Holds partial reads across calls (up to one full frame + one read). */
+    uint8_t         acc_buf[PCM_BYTES_20MS * 2];
     int             acc_len;
 } alsa_cap_t;
 
@@ -199,35 +200,27 @@ static int alsa_capture_read(void *ctx, void *buf, int frames)
     alsa_cap_t *c = (alsa_cap_t *)ctx;
     int frame_bytes = c->bits_per_sample / 8 * c->channels;
     int want = frames * frame_bytes;
-    int total_bytes = 0;
     int got;
 
-    while (total_bytes < want) {
-        /* Hand out any bytes buffered by a previous partial read first. */
-        if (c->acc_len > 0) {
-            int copy = (want - total_bytes) < c->acc_len
-                           ? (want - total_bytes) : c->acc_len;
-            memcpy((uint8_t *)buf + total_bytes, c->acc_buf, copy);
-            total_bytes += copy;
-            c->acc_len -= copy;
-            if (c->acc_len > 0) {
-                memmove(c->acc_buf, c->acc_buf + copy, c->acc_len);
-            }
-            if (total_bytes >= want) {
-                break;
-            }
-        }
-
-        got = pcm_read(c->handle, c->acc_buf, PCM_FRAMES_20MS);
+    /* Accumulate until a full frame is available. Partial reads stay in
+     * acc_buf across calls, so short reads never lose audio. */
+    while (c->acc_len < want) {
+        got = pcm_read(c->handle, (char *)c->acc_buf + c->acc_len, PCM_FRAMES_20MS);
         if (got < 0) {
             return -1;
         }
         if (got == 0) {
-            return 0;   /* no new data within the wait window */
+            return 0;   /* no new data; keep whatever is already in acc_buf */
         }
-        c->acc_len = got * frame_bytes;
+        c->acc_len += got * frame_bytes;
     }
 
+    /* Hand out one full frame from the head of the accumulator. */
+    memcpy((uint8_t *)buf, c->acc_buf, want);
+    c->acc_len -= want;
+    if (c->acc_len > 0) {
+        memmove(c->acc_buf, c->acc_buf + want, c->acc_len);
+    }
     return frames;
 }
 
