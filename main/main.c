@@ -4,7 +4,6 @@
 #include <hal/aosl_hal_socket.h>
 #include <hal/aosl_hal_time.h>
 
-#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -34,33 +33,33 @@ static void handle_key(char ch)
 {
     switch (ch) {
     case 's':
-        fprintf(stdout, "[KEY] s -> start conversation\n");
+        AOSL_LOG_INF("[KEY] s -> start conversation");
         mybot_app_start_conversation();
         break;
     case 'q':
-        fprintf(stdout, "[KEY] q -> stop conversation\n");
+        AOSL_LOG_INF("[KEY] q -> stop conversation");
         mybot_app_stop_conversation();
         break;
     case 'p':
-        fprintf(stdout, "[KEY] p -> re-pair\n");
+        AOSL_LOG_INF("[KEY] p -> re-pair");
         mybot_app_pair();
         break;
     case 'e':
-        fprintf(stdout, "[KEY] e -> exit\n");
+        AOSL_LOG_INF("[KEY] e -> exit");
         mybot_app_request_exit();
         break;
     case '\n':
     case '\r':
         break;
     default:
-        fprintf(stdout, "[KEY] '%c' ignored (s=start, q=stop, p=pair, e=exit)\n", ch);
+        AOSL_LOG_INF("[KEY] '%c' ignored (s=start, q=stop, p=pair, e=exit)", ch);
         break;
     }
 }
 
 static void print_usage(const char *prog)
 {
-    fprintf(stderr,
+    AOSL_LOG_INF(
         "Usage: %s --server <URL> --device-id <ID> [options]\n"
         "\n"
         "Required:\n"
@@ -75,7 +74,7 @@ static void print_usage(const char *prog)
         "  -h, --help         Show this help\n"
         "\n"
         "Example:\n"
-        "  %s --server http://localhost:3001 --device-id AG-DEMO-001\n",
+        "  %s --server http://localhost:3001 --device-id AG-DEMO-001",
         prog, prog);
 }
 
@@ -98,23 +97,23 @@ int main(int argc, char **argv)
             print_usage(argv[0]);
             return 0;
         } else {
-            fprintf(stderr, "unknown option: %s\n", argv[i]);
+            AOSL_LOG_ERR("unknown option: %s", argv[i]);
             print_usage(argv[0]);
             return 1;
         }
     }
 
     if (cfg.server_base[0] == '\0' || cfg.device_id[0] == '\0') {
-        fprintf(stderr, "ERROR: --server and --device-id are required\n\n");
+        AOSL_LOG_ERR("--server and --device-id are required");
         print_usage(argv[0]);
         return 1;
     }
 
-    fprintf(stdout, "mybot v0.1.0 starting...\n");
-    fprintf(stdout, "  server   : %s\n", cfg.server_base);
-    fprintf(stdout, "  device-id: %s\n", cfg.device_id);
-    if (cfg.firmware_ver[0]) fprintf(stdout, "  fw-ver   : %s\n", cfg.firmware_ver);
-    if (cfg.hw_model[0])     fprintf(stdout, "  hw-model : %s\n", cfg.hw_model);
+    AOSL_LOG_INF("mybot v0.1.0 starting...");
+    AOSL_LOG_INF("  server   : %s", cfg.server_base);
+    AOSL_LOG_INF("  device-id: %s", cfg.device_id);
+    if (cfg.firmware_ver[0]) AOSL_LOG_INF("  fw-ver   : %s", cfg.firmware_ver);
+    if (cfg.hw_model[0])     AOSL_LOG_INF("  hw-model : %s", cfg.hw_model);
 
     /* ---- Register the platform audio backend (Linux: ALSA) ---- */
     mybot_audio_platform_register_alsa_capture();
@@ -126,7 +125,7 @@ int main(int argc, char **argv)
 
     /* ---- Start the application (non-blocking) ---- */
     if (mybot_app_start(&cfg) < 0) {
-        fprintf(stderr, "ERROR: mybot_app_start failed\n");
+        AOSL_LOG_ERR("mybot_app_start failed");
         mybot_app_stop();   /* release anything mybot_app_start allocated before failing */
         return 1;
     }
@@ -134,14 +133,12 @@ int main(int argc, char **argv)
     /* ---- Set stdin non-blocking for interactive keys ---- */
     aosl_hal_sk_set_nonblock((aosl_fd_t)0);
 
-    fprintf(stdout, "\n"
-        "=== mybot ready ===\n"
-        "  s - start conversation\n"
-        "  q - stop conversation\n"
-        "  p - re-pair device\n"
-        "  e - exit\n"
-        "  Ctrl+C - exit\n"
-        "\n");
+    AOSL_LOG_INF("=== mybot ready ===\n"
+                 "  s - start conversation\n"
+                 "  q - stop conversation\n"
+                 "  p - re-pair device\n"
+                 "  e - exit\n"
+                 "  Ctrl+C - exit");
 
     /* ---- Main loop: interactive keys only.
      * The app drives itself (device state machine etc.) from its own MPQ
