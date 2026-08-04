@@ -142,6 +142,13 @@ static aosl_fd_t tcp_connect(const char *host, int port)
         return AOSL_INVALID_FD;
     }
 
+    /* Non-blocking I/O so recv/send are interruptible and the HTTP timeout in
+     * read_all() is enforced even when the peer sends nothing. */
+    if (aosl_hal_sk_set_nonblock(fd) < 0) {
+        aosl_hal_sk_close(fd);
+        return AOSL_INVALID_FD;
+    }
+
     return fd;
 }
 
@@ -225,9 +232,13 @@ static char *read_all(aosl_fd_t fd, size_t *out_len)
         } else if (ret == 0) {
             /* connection closed */
             break;
-        } else {
-            /* error or EAGAIN — give it a short wait */
+        } else if (ret == AOSL_HAL_RET_EAGAIN) {
+            /* No data right now (non-blocking socket). Wait briefly and retry;
+             * the deadline bounds the total wait even if the peer is silent. */
             aosl_hal_msleep(10);
+        } else {
+            /* real error */
+            goto fail;
         }
     }
 
