@@ -156,8 +156,8 @@ static void action_poll_binding_pair(void)
         s_state.runtime_tick_counter  = 0;
     } else if (strcmp(resp.status, "expired") == 0) {
         AOSL_LOG_INF("pair code expired, re-pairing");
-        set_state(MYBOT_DEVICE_STATE_UNPROVISIONED);
-        /* auto-trigger re-pair */
+        /* The top-level pairing handler in tick() re-runs the pair-code
+         * request on the next tick. */
         s_state.start_pairing_flag = true;
     } else if (strcmp(resp.status, "unbound") == 0) {
         /* Shouldn't happen during pairing, but handle gracefully */
@@ -294,12 +294,24 @@ int mybot_device_state_init(const char *server_base, const char *device_id,
 
 void mybot_device_state_tick(void)
 {
-    if (s_state.state == MYBOT_DEVICE_STATE_UNPROVISIONED) {
-        if (s_state.start_pairing_flag) {
-            s_state.start_pairing_flag = false;
-            set_state(MYBOT_DEVICE_STATE_PAIRING);
-            action_create_pair_code();
+    /* A pending pairing request (first boot, expired pair code, or the user
+     * pressing 'p') starts a fresh pair-code request from ANY state. If a
+     * conversation is active, end it first so the RTC connection is torn down
+     * before the device is rebound. */
+    if (s_state.start_pairing_flag) {
+        s_state.start_pairing_flag = false;
+        if (s_state.state == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
+            action_stop_conversation("re-pair");
         }
+        s_state.device_token[0] = '\0';
+        s_state.conversation_id[0] = '\0';
+        set_state(MYBOT_DEVICE_STATE_PAIRING);
+        action_create_pair_code();
+        return;
+    }
+
+    if (s_state.state == MYBOT_DEVICE_STATE_UNPROVISIONED) {
+        /* Unprovisioned with no pending pairing request — wait for 'p'. */
         return;
     }
 
