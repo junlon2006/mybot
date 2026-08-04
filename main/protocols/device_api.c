@@ -113,6 +113,12 @@ static int parse_rtc_block(mybot_cJSON *root, mybot_device_conversation_t *resp)
         strncpy(resp->rtc_uid, item->valuestring, sizeof(resp->rtc_uid) - 1);
     }
 
+    /* Channel and UID are required to join RTC — without them the response is
+     * unusable. Token may legitimately be absent (no-auth channel). */
+    if (resp->rtc_channel[0] == '\0' || resp->rtc_uid[0] == '\0') {
+        return -1;
+    }
+
     return 0;
 }
 
@@ -383,8 +389,13 @@ int mybot_device_api_start_conversation(const char *base_url,
         strncpy(resp->conversation_id, item->valuestring, sizeof(resp->conversation_id) - 1);
     }
 
-    /* Parse nested "rtc":{...} block */
-    parse_rtc_block(data, resp);
+    /* Parse nested "rtc":{...} block — required to join RTC. */
+    if (parse_rtc_block(data, resp) < 0) {
+        AOSL_LOG_ERR("conversation response missing rtc block");
+        mybot_cJSON_Delete(root);
+        mybot_http_response_free(&raw);
+        return -1;
+    }
 
     AOSL_LOG_INF("conversation: id=%s channel=%s uid=%s",
                  resp->conversation_id, resp->rtc_channel, resp->rtc_uid);
