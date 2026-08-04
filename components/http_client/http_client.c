@@ -248,6 +248,72 @@ static int parse_status_line(const char *line)
 }
 
 /*
+ * Decode a "Transfer-Encoding: chunked" body into a contiguous buffer.
+ * Returns a malloc'd, NUL-terminated buffer (caller frees) and sets *out_len,
+ * or NULL if the body is malformed or truncated.
+ */
+static char *dechunk_body(const char *body, size_t body_len, size_t *out_len)
+{
+    const char *p = body;
+    const char *end = body + body_len;
+    size_t cap = body_len + 1;   /* decoded data never exceeds the raw body */
+    char *out = (char *)aosl_hal_malloc(cap);
+    size_t len = 0;
+
+    if (!out) {
+        return NULL;
+    }
+
+    while (p < end) {
+        /* Chunk size in hex (chunk extensions after ';' are ignored). */
+        size_t chunk_size = 0;
+        int has_digit = 0;
+        while (p < end && *p != '\r' && *p != '\n') {
+            char c = *p++;
+            int digit;
+            if (c >= '0' && c <= '9') {
+                digit = c - '0';
+            } else if (c >= 'a' && c <= 'f') {
+                digit = c - 'a' + 10;
+            } else if (c >= 'A' && c <= 'F') {
+                digit = c - 'A' + 10;
+            } else {
+                break;   /* e.g. ';' chunk extension — stop reading the size */
+            }
+            chunk_size = chunk_size * 16 + (size_t)digit;
+            has_digit = 1;
+        }
+
+        /* Skip to end of the size line. */
+        if (p < end && *p == '\r') { p++; }
+        if (p < end && *p == '\n') { p++; }
+
+        if (!has_digit) {
+            break;   /* malformed size line */
+        }
+        if (chunk_size == 0) {
+            break;   /* last chunk */
+        }
+        if (chunk_size > (size_t)(end - p) || len + chunk_size >= cap) {
+            aosl_hal_free(out);
+            return NULL;   /* truncated or over-long chunk data */
+        }
+
+        memcpy(out + len, p, chunk_size);
+        len += chunk_size;
+        p += chunk_size;
+
+        /* Skip CRLF after the chunk data. */
+        if (p < end && *p == '\r') { p++; }
+        if (p < end && *p == '\n') { p++; }
+    }
+
+    out[len] = '\0';
+    *out_len = len;
+    return out;
+}
+
+/*
  * Parse a complete HTTP response from raw data.
  * Returns the response struct (body will point into or be a copy from raw).
  */
@@ -270,6 +336,7 @@ static int parse_response(const char *raw, size_t raw_len, mybot_http_response_t
     /* headers */
     size_t body_offset = 0;
     int content_length = -1;
+    int chunked = 0;
 
     while (p < end) {
         nl = (const char *)memchr(p, '\n', (size_t)(end - p));
@@ -296,6 +363,19 @@ static int parse_response(const char *raw, size_t raw_len, mybot_http_response_t
             }
         }
 
+        /* parse Transfer-Encoding (takes precedence over Content-Length) */
+        if (hdr_len > 18 && strncasecmp(p, "Transfer-Encoding:", 18) == 0) {
+            const char *val = p + 18;
+            while (val < nl && *val == ' ') { val++; }
+            /* "chunked" may appear in a comma-separated list, e.g. "gzip, chunked" */
+            for (const char *v = val; v + 7 <= nl; v++) {
+                if (strncasecmp(v, "chunked", 7) == 0) {
+                    chunked = 1;
+                    break;
+                }
+            }
+        }
+
         p = nl + 1;
         if (p < end && *p == '\r') { p++; }
     }
@@ -304,22 +384,30 @@ static int parse_response(const char *raw, size_t raw_len, mybot_http_response_t
     if (body_offset < raw_len) {
         size_t avail = raw_len - body_offset;
 
-        if (content_length >= 0) {
-            resp->body_len = (size_t)content_length;
-            if (resp->body_len > avail) {
-                resp->body_len = avail;
-            }
-        } else {
-            resp->body_len = avail;
-        }
-
-        if (resp->body_len > 0) {
-            resp->body = (char *)aosl_hal_malloc(resp->body_len + 1);
+        if (chunked) {
+            /* Transfer-Encoding: chunked — decode before handing out. */
+            resp->body = dechunk_body(raw + body_offset, avail, &resp->body_len);
             if (!resp->body) {
                 return -1;
             }
-            memcpy(resp->body, raw + body_offset, resp->body_len);
-            resp->body[resp->body_len] = '\0';
+        } else {
+            if (content_length >= 0) {
+                resp->body_len = (size_t)content_length;
+                if (resp->body_len > avail) {
+                    resp->body_len = avail;
+                }
+            } else {
+                resp->body_len = avail;
+            }
+
+            if (resp->body_len > 0) {
+                resp->body = (char *)aosl_hal_malloc(resp->body_len + 1);
+                if (!resp->body) {
+                    return -1;
+                }
+                memcpy(resp->body, raw + body_offset, resp->body_len);
+                resp->body[resp->body_len] = '\0';
+            }
         }
     }
 
