@@ -28,14 +28,14 @@ static struct {
     int  runtime_poll_interval;
     int  runtime_tick_counter;
 
-    /* Conversation */
+    /* Conversation. The request flags are written by the main/SDK threads and
+     * read by the state_mpq thread, so they are volatile. */
     char conversation_id[MYBOT_DEVICE_API_MAX_ID];
-    bool conversation_requested;    /* user wants to start */
-    bool stop_requested;            /* user wants to stop */
-    bool pairing_requested;         /* user wants to pair */
+    volatile bool conversation_requested;    /* user wants to start */
+    volatile bool stop_requested;            /* user wants to stop */
 
-    /* One-shot action flags consumed by tick() */
-    bool start_pairing_flag;
+    /* One-shot action flag consumed by tick() */
+    volatile bool start_pairing_flag;
 } s_state;
 
 /* Reason reported to the server for the next conversation stop. Set by
