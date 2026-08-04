@@ -284,9 +284,14 @@ static char *dechunk_body(const char *body, size_t body_len, size_t *out_len)
             has_digit = 1;
         }
 
-        /* Skip to end of the size line. */
-        if (p < end && *p == '\r') { p++; }
-        if (p < end && *p == '\n') { p++; }
+        /* Skip the rest of the size line: chunk extensions (";ext=..") and
+         * the terminating CRLF. */
+        while (p < end && *p != '\n') {
+            p++;
+        }
+        if (p < end) {
+            p++;   /* skip '\n' */
+        }
 
         if (!has_digit) {
             break;   /* malformed size line */
