@@ -3,23 +3,31 @@
 
 #include "agora_rtc_api.h"
 #include <api/aosl_log.h>
+#include <hal/aosl_hal_thread.h>
 
 #include <string.h>
 #include <stdio.h>
 
 #define TAG "RTC"
 
-/* ---- internal state ---- */
-static struct {
+/* ---- internal state ----
+ * lock serializes SDK calls that touch the same connection: send_audio runs
+ * on the mybot_mpq thread while join/leave run on the state_mpq thread, so
+ * without it agora_rtc_send_audio_data() could race with
+ * agora_rtc_destroy_connection(). Created lazily by mybot_rtc_session_init();
+ * set_state() and the SDK callbacks intentionally do NOT take it (they run
+ * inside SDK threads and would deadlock). */
+typedef struct {
     mybot_rtc_state_t             state;
     mybot_rtc_session_callbacks_t cbs;
     connection_id_t               conn_id;
     bool                          initialized;
-} s_rtc = {
-    .state       = MYBOT_RTC_STATE_IDLE,
-    .conn_id     = 0,
-    .initialized = false,
-};
+    aosl_mutex_t                  lock;
+} rtc_priv_t;
+
+/* RTC session instance. Zero-init: state = MYBOT_RTC_STATE_IDLE (enum 0),
+ * conn_id = 0, initialized = false, lock = NULL. */
+static rtc_priv_t s_rtc = { 0 };
 
 static const char *state_str(mybot_rtc_state_t s)
 {
@@ -142,6 +150,14 @@ int mybot_rtc_session_init(const char *app_id, mybot_rtc_session_callbacks_t *cb
         return 0;
     }
 
+    if (!s_rtc.lock) {
+        s_rtc.lock = aosl_hal_mutex_create();
+        if (!s_rtc.lock) {
+            AOSL_LOG_ERR("rtc lock create failed");
+            return -1;
+        }
+    }
+
     if (cbs) {
         s_rtc.cbs = *cbs;
     }
@@ -186,52 +202,57 @@ int mybot_rtc_session_init(const char *app_id, mybot_rtc_session_callbacks_t *cb
 
 int mybot_rtc_session_join(const char *channel, const char *token, const char *user_account)
 {
+    int ret = 0;
+
+    aosl_hal_mutex_lock(s_rtc.lock);
+
     if (!s_rtc.initialized) {
         AOSL_LOG_ERR("[RTC] not initialized");
-        return -1;
+        ret = -1;
+        goto out;
     }
     if (s_rtc.state == MYBOT_RTC_STATE_CONNECTED || s_rtc.state == MYBOT_RTC_STATE_CONNECTING) {
         AOSL_LOG_ERR("[RTC] already joining/joined");
-        return -1;
+        ret = -1;
+        goto out;
     }
 
     /* Create connection */
-    int ret = agora_rtc_create_connection(&s_rtc.conn_id);
+    ret = agora_rtc_create_connection(&s_rtc.conn_id);
     if (ret < 0) {
         AOSL_LOG_ERR("[RTC] create_connection failed: %s", agora_rtc_err_2_str(ret));
-        return -1;
+        goto out;
     }
 
     /* BWE parameters (defaults) */
     agora_rtc_set_bwe_param(s_rtc.conn_id, 16000, 256000, 64000);
 
     /* Channel options: PCM input → SDK encodes to G.722 */
-    rtc_channel_options_t ch_opt;
-    memset(&ch_opt, 0, sizeof(ch_opt));
-    ch_opt.auto_subscribe_audio     = true;
-    ch_opt.auto_subscribe_video     = false;
+    rtc_channel_options_t ch_opt = {0};
+    ch_opt.auto_subscribe_audio       = true;
+    ch_opt.auto_subscribe_video       = false;
     ch_opt.enable_audio_jitter_buffer = true;
-    ch_opt.enable_audio_mixer       = false;  /* per-user audio callback */
-    ch_opt.enable_audio_decode      = true;
+    ch_opt.enable_audio_mixer         = false;  /* per-user audio callback */
+    ch_opt.enable_audio_decode        = true;
 #if MYBOT_CLOUD_AEC
-    ch_opt.enable_audio_downlink_aec = true;
+    ch_opt.enable_audio_downlink_aec  = true;
 #endif
 #if MYBOT_AI_QOS
-    ch_opt.enable_audio_ai_qos      = true;
+    ch_opt.enable_audio_ai_qos        = true;
 #endif
 
     /* Tell SDK we'll send PCM; it will encode to G.722 */
-    ch_opt.audio_codec_opt.audio_codec_type  = AUDIO_CODEC_TYPE_G722;
-    ch_opt.audio_codec_opt.pcm_sample_rate   = 16000;
-    ch_opt.audio_codec_opt.pcm_channel_num   = 1;
-    ch_opt.audio_codec_opt.pcm_duration      = 20;  /* ms */
+    ch_opt.audio_codec_opt.audio_codec_type = AUDIO_CODEC_TYPE_G722;
+    ch_opt.audio_codec_opt.pcm_sample_rate  = 16000;
+    ch_opt.audio_codec_opt.pcm_channel_num  = 1;
+    ch_opt.audio_codec_opt.pcm_duration     = 20;  /* ms */
 
     const char *p_token = (token && token[0]) ? token : NULL;
     const char *p_user  = (user_account && user_account[0]) ? user_account : "default_user";
 
     AOSL_LOG_INF("joining channel: conn_id=%u, channel=%s, user=%s, has_token=%d",
                  s_rtc.conn_id, channel, p_user, p_token ? 1 : 0);
-    AOSL_LOG_INF("  audio_codec=%d, pcm_rate=%d, pcm_chan=%d, pcm_duration=%d",
+    AOSL_LOG_INF("audio_codec=%d, pcm_rate=%d, pcm_chan=%d, pcm_duration=%d",
                  ch_opt.audio_codec_opt.audio_codec_type,
                  ch_opt.audio_codec_opt.pcm_sample_rate,
                  ch_opt.audio_codec_opt.pcm_channel_num,
@@ -240,22 +261,34 @@ int mybot_rtc_session_join(const char *channel, const char *token, const char *u
     set_state(MYBOT_RTC_STATE_CONNECTING);
 
     ret = agora_rtc_join_channel_with_user_account(s_rtc.conn_id, channel,
-                                                    p_user, p_token, &ch_opt);
+                                                   p_user, p_token, &ch_opt);
     if (ret < 0) {
         AOSL_LOG_ERR("join_channel failed: %s", agora_rtc_err_2_str(ret));
         agora_rtc_destroy_connection(s_rtc.conn_id);
         s_rtc.conn_id = 0;
         set_state(MYBOT_RTC_STATE_ERROR);
-        return -1;
+        goto out;
     }
 
     AOSL_LOG_INF("join_channel request sent, waiting for callback...");
-    return 0;
+
+out:
+    aosl_hal_mutex_unlock(s_rtc.lock);
+    return ret;
 }
 
 int mybot_rtc_session_leave(void)
 {
+    /* Pre-check without the lock: leave may be called (e.g. from mpq_fini at
+     * shutdown) before mybot_rtc_session_init() ever created the lock. */
     if (!s_rtc.initialized || s_rtc.conn_id == 0) {
+        return 0;
+    }
+
+    aosl_hal_mutex_lock(s_rtc.lock);
+
+    if (!s_rtc.initialized || s_rtc.conn_id == 0) {
+        aosl_hal_mutex_unlock(s_rtc.lock);
         return 0;
     }
 
@@ -276,6 +309,8 @@ int mybot_rtc_session_leave(void)
     }
 
     s_rtc.conn_id = 0;
+    aosl_hal_mutex_unlock(s_rtc.lock);
+
     set_state(MYBOT_RTC_STATE_INITIALIZED);
     return 0;
 }
@@ -293,31 +328,56 @@ void mybot_rtc_session_fini(void)
     agora_rtc_fini();
     s_rtc.initialized = false;
     set_state(MYBOT_RTC_STATE_IDLE);
+
+    if (s_rtc.lock) {
+        aosl_hal_mutex_destroy(s_rtc.lock);
+        s_rtc.lock = NULL;
+    }
 }
 
 int mybot_rtc_session_send_audio(const void *data, size_t len)
 {
+    int ret;
+
+    aosl_hal_mutex_lock(s_rtc.lock);
+
     if (s_rtc.state != MYBOT_RTC_STATE_CONNECTED || s_rtc.conn_id == 0) {
-        return -1;
+        ret = -1;
+        goto out;
     }
 
     audio_frame_info_t info;
     info.data_type = AUDIO_DATA_TYPE_PCM;
 
-    int ret = agora_rtc_send_audio_data(s_rtc.conn_id, (void *)data, len, &info);
+    ret = agora_rtc_send_audio_data(s_rtc.conn_id, (void *)data, len, &info);
     if (ret < 0) {
         AOSL_LOG_ERR("[RTC] send_audio failed: %s", agora_rtc_err_2_str(ret));
-        return -1;
+        goto out;
     }
-    return 0;
+
+out:
+    aosl_hal_mutex_unlock(s_rtc.lock);
+    return ret;
 }
 
 mybot_rtc_state_t mybot_rtc_session_get_state(void)
 {
-    return s_rtc.state;
+    if (!s_rtc.lock) {
+        return s_rtc.state;
+    }
+    aosl_hal_mutex_lock(s_rtc.lock);
+    mybot_rtc_state_t st = s_rtc.state;
+    aosl_hal_mutex_unlock(s_rtc.lock);
+    return st;
 }
 
 bool mybot_rtc_session_is_connected(void)
 {
-    return s_rtc.state == MYBOT_RTC_STATE_CONNECTED;
+    if (!s_rtc.lock) {
+        return s_rtc.state == MYBOT_RTC_STATE_CONNECTED;
+    }
+    aosl_hal_mutex_lock(s_rtc.lock);
+    bool connected = s_rtc.state == MYBOT_RTC_STATE_CONNECTED;
+    aosl_hal_mutex_unlock(s_rtc.lock);
+    return connected;
 }

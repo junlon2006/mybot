@@ -282,6 +282,11 @@ static void dev_on_conversation_stop(void)
     AOSL_LOG_INF("==== CONVERSATION STOP ====");
     AOSL_LOG_INF("  channel: %s, uid: %s", s_app.rtc_channel, s_app.rtc_uid);
 
+    /* Stop the sender/capturer first so send_audio_timer stops attempting
+     * sends before the connection is torn down. mybot_rtc_session_leave() is
+     * additionally serialized against sends by an internal lock. */
+    s_app.rtc_connected = false;
+
     int ret = mybot_rtc_session_leave();
     if (ret < 0) {
         AOSL_LOG_ERR("mybot_rtc_session_leave failed");
@@ -289,7 +294,6 @@ static void dev_on_conversation_stop(void)
         AOSL_LOG_INF("mybot_rtc_session_leave ok");
     }
 
-    s_app.rtc_connected = false;
     AOSL_LOG_INF("==== CONVERSATION ENDED ====");
 }
 

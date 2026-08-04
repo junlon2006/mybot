@@ -38,7 +38,7 @@ void mybot_device_api_json_free(void *ptr);
 
 #define MYBOT_DEVICE_API_MAX_URL      256
 #define MYBOT_DEVICE_API_MAX_TOKEN    512
-#define MYBOT_DEVICE_API_MAX_ID      128
+#define MYBOT_DEVICE_API_MAX_ID       128
 
 /** Response from POST /devices/pair-codes */
 typedef struct {
