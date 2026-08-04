@@ -70,12 +70,11 @@ static int suspend_recover(snd_pcm_t *handle)
     return 0;
 }
 
-static int pcm_read(snd_pcm_t *handle, char *buf, size_t frames)
+static int pcm_read(snd_pcm_t *handle, char *buf, size_t frames, size_t frame_bytes)
 {
     ssize_t r;
     size_t  count = frames;
     size_t  result = 0;
-    int     frame_bytes = 2;
 
     while (count > 0) {
         r = snd_pcm_readi(handle, buf + result * frame_bytes, count);
@@ -205,7 +204,8 @@ static int alsa_capture_read(void *ctx, void *buf, int frames)
     /* Accumulate until a full frame is available. Partial reads stay in
      * acc_buf across calls, so short reads never lose audio. */
     while (c->acc_len < want) {
-        got = pcm_read(c->handle, (char *)c->acc_buf + c->acc_len, PCM_FRAMES_20MS);
+        got = pcm_read(c->handle, (char *)c->acc_buf + c->acc_len,
+                       PCM_FRAMES_20MS, (size_t)frame_bytes);
         if (got < 0) {
             return -1;
         }

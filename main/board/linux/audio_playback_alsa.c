@@ -54,12 +54,11 @@ static int suspend_recover(snd_pcm_t *handle)
     return 0;
 }
 
-static int pcm_write(snd_pcm_t *handle, const char *buf, size_t frames)
+static int pcm_write(snd_pcm_t *handle, const char *buf, size_t frames, size_t frame_bytes)
 {
     ssize_t r;
     size_t  count = frames;
     size_t  result = 0;
-    int     frame_bytes = 2;
 
     while (count > 0) {
         r = snd_pcm_writei(handle, buf + result * frame_bytes, count);
@@ -188,7 +187,8 @@ static int alsa_playback_start(void *ctx)
 static int alsa_playback_write(void *ctx, const void *buf, int frames)
 {
     alsa_pb_t *p = (alsa_pb_t *)ctx;
-    return pcm_write(p->handle, (const char *)buf, (size_t)frames);
+    size_t frame_bytes = (size_t)(p->bits_per_sample / 8 * p->channels);
+    return pcm_write(p->handle, (const char *)buf, (size_t)frames, frame_bytes);
 }
 
 static int alsa_playback_stop(void *ctx)
