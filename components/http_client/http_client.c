@@ -197,13 +197,22 @@ fail:
  */
 static int parse_status_line(const char *line)
 {
-    if (strncmp(line, "HTTP/1.", 7) != 0) {
+    /* Expect "HTTP/1.x <CODE> <reason>", e.g. "HTTP/1.1 200 OK". */
+    if (strncmp(line, "HTTP/", 5) != 0) {
         return 0;
     }
-    line += 7;
+    line += 5;   /* skip "HTTP/" */
+
+    /* Skip the version ("1.0", "1.1", ...). */
+    while (*line == '.' || (*line >= '0' && *line <= '9')) {
+        line++;
+    }
+
+    /* Skip whitespace before the status code. */
     while (*line == ' ') {
         line++;
     }
+
     int code = 0;
     while (*line >= '0' && *line <= '9') {
         code = code * 10 + (*line++ - '0');

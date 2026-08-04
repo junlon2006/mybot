@@ -120,6 +120,12 @@ static int parse_rtc_block(mybot_cJSON *root, mybot_device_conversation_t *resp)
  * Device API — server communication
  * ---------------------------------------------------------- */
 
+/* True if the HTTP response status is a 2xx success. */
+static bool http_response_ok(const mybot_http_response_t *resp)
+{
+    return resp->status_code >= 200 && resp->status_code < 300;
+}
+
 int mybot_device_api_create_pair_code(const char *base_url,
                                       const char *device_id,
                                       const char *firmware_ver,
@@ -163,6 +169,12 @@ int mybot_device_api_create_pair_code(const char *base_url,
     AOSL_LOG_INF("POST %s -> status=%d, body: %s",
                  url, raw.status_code,
                  raw.body ? raw.body : "(empty)");
+
+    if (!http_response_ok(&raw)) {
+        AOSL_LOG_ERR("POST %s -> HTTP error %d", url, raw.status_code);
+        mybot_http_response_free(&raw);
+        return -1;
+    }
 
     /* Parse with mybot_cJSON */
     mybot_cJSON *root = raw.body ? mybot_cJSON_Parse(raw.body) : NULL;
@@ -233,6 +245,12 @@ int mybot_device_api_get_binding_status(const char *base_url,
     AOSL_LOG_INF("GET %s -> status=%d, body: %s",
                  url, raw.status_code,
                  raw.body ? raw.body : "(empty)");
+
+    if (!http_response_ok(&raw)) {
+        AOSL_LOG_ERR("GET %s -> HTTP error %d", url, raw.status_code);
+        mybot_http_response_free(&raw);
+        return -1;
+    }
 
     /* Parse with mybot_cJSON */
     mybot_cJSON *root = raw.body ? mybot_cJSON_Parse(raw.body) : NULL;
@@ -345,6 +363,12 @@ int mybot_device_api_start_conversation(const char *base_url,
                  url, raw.status_code,
                  raw.body ? raw.body : "(empty)");
 
+    if (!http_response_ok(&raw)) {
+        AOSL_LOG_ERR("POST %s -> HTTP error %d", url, raw.status_code);
+        mybot_http_response_free(&raw);
+        return -1;
+    }
+
     /* Parse with mybot_cJSON */
     mybot_cJSON *root = raw.body ? mybot_cJSON_Parse(raw.body) : NULL;
     if (!root) { mybot_http_response_free(&raw); return -1; }
@@ -410,6 +434,10 @@ int mybot_device_api_stop_conversation(const char *base_url,
         AOSL_LOG_INF("POST %s -> status=%d, body: %s",
                      url, raw.status_code,
                      raw.body ? raw.body : "(empty)");
+        if (!http_response_ok(&raw)) {
+            AOSL_LOG_ERR("POST %s -> HTTP error %d", url, raw.status_code);
+            ret = -1;
+        }
     } else {
         AOSL_LOG_ERR("POST %s failed (http)", url);
     }
