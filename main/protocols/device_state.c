@@ -38,6 +38,11 @@ static struct {
     bool start_pairing_flag;
 } s_state;
 
+/* Reason reported to the server for the next conversation stop. Set by
+ * mybot_device_state_request_stop() (user hangup) or
+ * mybot_device_state_notify_conversation_ended() (RTC drop). */
+static const char *s_pending_stop_reason = "device_hangup";
+
 /* ----------------------------------------------------------
  * Helpers
  * ---------------------------------------------------------- */
@@ -336,7 +341,7 @@ void mybot_device_state_tick(void)
     if (s_state.state == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
         if (s_state.stop_requested) {
             s_state.stop_requested = false;
-            action_stop_conversation("device_hangup");
+            action_stop_conversation(s_pending_stop_reason);
         }
         return;
     }
@@ -363,11 +368,17 @@ void mybot_device_state_request_stop(void)
         return;
     }
     s_state.stop_requested = true;
+    s_pending_stop_reason = "device_hangup";
 }
 
 void mybot_device_state_notify_conversation_ended(void)
 {
+    /* Called from an RTC SDK callback thread on connection loss/error. Only
+     * flag the stop here — the actual teardown (HTTP stop + RTC leave) runs
+     * on the state_mpq thread via mybot_device_state_tick(), avoiding
+     * re-entrant SDK calls from inside an SDK callback. */
     if (s_state.state == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
-        action_stop_conversation("error");
+        s_state.stop_requested = true;
+        s_pending_stop_reason = "error";
     }
 }
