@@ -8,11 +8,10 @@
 #include <string.h>
 #include <stdio.h>
 
-
 #define MYBOT_DEVICE_AUTH_FLASH_KEY "device_auth"
-#define MYBOT_DEVICE_AUTH_VERSION          1U
-#define MYBOT_PAIR_RETRY_INITIAL_TICKS     30
-#define MYBOT_PAIR_RETRY_MAX_TICKS         600
+#define MYBOT_DEVICE_AUTH_VERSION 1U
+#define MYBOT_PAIR_RETRY_INITIAL_TICKS 30
+#define MYBOT_PAIR_RETRY_MAX_TICKS 600
 
 typedef struct {
     uint32_t version;
@@ -30,25 +29,25 @@ static struct {
     char hw_model[64];
     mybot_device_state_callbacks_t cbs;
 
-    aosl_atomic_t state;   /* atomic: also read by the main/SDK threads */
+    aosl_atomic_t state; /* atomic: also read by the main/SDK threads */
 
     /* Pairing phase */
     char pair_token[MYBOT_DEVICE_API_MAX_TOKEN];
-    int  pair_poll_interval;    /* seconds between polls */
-    int  pair_tick_counter;     /* counts tick() calls (100ms each) */
-    int  pair_retry_delay_ticks;
-    int  pair_retry_ticks_remaining;
+    int pair_poll_interval; /* seconds between polls */
+    int pair_tick_counter;  /* counts tick() calls (100ms each) */
+    int pair_retry_delay_ticks;
+    int pair_retry_ticks_remaining;
 
     /* Runtime phase */
     char device_token[MYBOT_DEVICE_API_MAX_TOKEN];
-    int  runtime_poll_interval;
-    int  runtime_tick_counter;
+    int runtime_poll_interval;
+    int runtime_tick_counter;
 
     /* Requests are atomically published by the main/SDK threads and consumed
      * by the state_mpq thread. */
     char conversation_id[MYBOT_DEVICE_API_MAX_ID];
-    aosl_atomic_t conversation_requested;    /* user wants to start */
-    aosl_atomic_t stop_request;              /* mybot_stop_request_t */
+    aosl_atomic_t conversation_requested; /* user wants to start */
+    aosl_atomic_t stop_request;           /* mybot_stop_request_t */
 
     /* One-shot action flag consumed by tick() */
     aosl_atomic_t start_pairing_flag;
@@ -65,25 +64,21 @@ typedef enum {
  * Helpers
  * ---------------------------------------------------------- */
 
-static const char *s_name[] = {
-    "unprovisioned", "pairing", "awaiting_claim", "runtime", "in_conversation"
-};
+static const char *s_name[] = {"unprovisioned", "pairing", "awaiting_claim", "runtime",
+                               "in_conversation"};
 
-const char *mybot_device_state_name(mybot_device_state_t s)
-{
+const char *mybot_device_state_name(mybot_device_state_t s) {
     if ((size_t)s >= sizeof(s_name) / sizeof(s_name[0])) {
         return "?";
     }
     return s_name[s];
 }
 
-static mybot_device_state_t current_state(void)
-{
+static mybot_device_state_t current_state(void) {
     return (mybot_device_state_t)aosl_atomic_read(&s_state.state);
 }
 
-static void set_state(mybot_device_state_t new_state)
-{
+static void set_state(mybot_device_state_t new_state) {
     if (current_state() == new_state) {
         return;
     }
@@ -94,45 +89,35 @@ static void set_state(mybot_device_state_t new_state)
     }
 }
 
-static bool api_rejected_device_auth(int ret)
-{
+static bool api_rejected_device_auth(int ret) {
     return ret == 401 || ret == 403 || ret == 409;
 }
 
-static int persist_device_auth(void)
-{
+static int persist_device_auth(void) {
     mybot_device_auth_record_t record;
     memset(&record, 0, sizeof(record));
     record.version = MYBOT_DEVICE_AUTH_VERSION;
-    strncpy(record.server_base, s_state.server_base,
-            sizeof(record.server_base) - 1);
-    strncpy(record.device_id, s_state.device_id,
-            sizeof(record.device_id) - 1);
-    strncpy(record.device_token, s_state.device_token,
-            sizeof(record.device_token) - 1);
-    return mybot_flash_write(MYBOT_DEVICE_AUTH_FLASH_KEY, &record,
-                             sizeof(record));
+    strncpy(record.server_base, s_state.server_base, sizeof(record.server_base) - 1);
+    strncpy(record.device_id, s_state.device_id, sizeof(record.device_id) - 1);
+    strncpy(record.device_token, s_state.device_token, sizeof(record.device_token) - 1);
+    return mybot_flash_write(MYBOT_DEVICE_AUTH_FLASH_KEY, &record, sizeof(record));
 }
 
-static bool load_device_auth(void)
-{
+static bool load_device_auth(void) {
     mybot_device_auth_record_t record;
     size_t len = 0;
     memset(&record, 0, sizeof(record));
 
-    int ret = mybot_flash_read(MYBOT_DEVICE_AUTH_FLASH_KEY, &record,
-                               sizeof(record), &len);
+    int ret = mybot_flash_read(MYBOT_DEVICE_AUTH_FLASH_KEY, &record, sizeof(record), &len);
     if (ret == MYBOT_FLASH_NOT_FOUND) {
         return false;
     }
-    if (ret < 0 || len != sizeof(record) ||
-        record.version != MYBOT_DEVICE_AUTH_VERSION ||
+    if (ret < 0 || len != sizeof(record) || record.version != MYBOT_DEVICE_AUTH_VERSION ||
         record.server_base[sizeof(record.server_base) - 1] != '\0' ||
         record.device_id[sizeof(record.device_id) - 1] != '\0' ||
         record.device_token[sizeof(record.device_token) - 1] != '\0' ||
         strcmp(record.server_base, s_state.server_base) != 0 ||
-        strcmp(record.device_id, s_state.device_id) != 0 ||
-        record.device_token[0] == '\0') {
+        strcmp(record.device_id, s_state.device_id) != 0 || record.device_token[0] == '\0') {
         if (ret < 0) {
             AOSL_LOG_ERR("failed to read persisted device credential");
         }
@@ -140,60 +125,52 @@ static bool load_device_auth(void)
         return false;
     }
 
-    strncpy(s_state.device_token, record.device_token,
-            sizeof(s_state.device_token) - 1);
+    strncpy(s_state.device_token, record.device_token, sizeof(s_state.device_token) - 1);
     return true;
 }
 
-static void clear_device_auth(void)
-{
+static void clear_device_auth(void) {
     s_state.device_token[0] = '\0';
     if (mybot_flash_erase(MYBOT_DEVICE_AUTH_FLASH_KEY) < 0) {
         AOSL_LOG_ERR("failed to erase persisted device credential");
     }
 }
 
-static void restart_pairing_after_auth_rejection(void)
-{
+static void restart_pairing_after_auth_rejection(void) {
     clear_device_auth();
     set_state(MYBOT_DEVICE_STATE_UNPROVISIONED);
     aosl_atomic_set(&s_state.start_pairing_flag, true);
 }
 
-const char *mybot_device_state_get_token(void)
-{
+const char *mybot_device_state_get_token(void) {
     return (current_state() == MYBOT_DEVICE_STATE_RUNTIME ||
             current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION)
-           ? s_state.device_token : NULL;
+               ? s_state.device_token
+               : NULL;
 }
 
-mybot_device_state_t mybot_device_state_get(void)
-{
+mybot_device_state_t mybot_device_state_get(void) {
     return current_state();
 }
 
 /* ----------------------------------------------------------
  * Action: POST /devices/pair-codes
  * ---------------------------------------------------------- */
-static void action_create_pair_code(void)
-{
+static void action_create_pair_code(void) {
     mybot_device_pair_code_t resp;
     memset(&resp, 0, sizeof(resp));
 
-    int ret = mybot_device_api_create_pair_code(
-        s_state.server_base, s_state.device_id,
-        s_state.firmware_ver, s_state.hw_model, &resp);
+    int ret = mybot_device_api_create_pair_code(s_state.server_base, s_state.device_id,
+                                                s_state.firmware_ver, s_state.hw_model, &resp);
     if (ret != 0) {
         if (s_state.pair_retry_delay_ticks == 0) {
             s_state.pair_retry_delay_ticks = MYBOT_PAIR_RETRY_INITIAL_TICKS;
-        } else if (s_state.pair_retry_delay_ticks <
-                   MYBOT_PAIR_RETRY_MAX_TICKS / 2) {
+        } else if (s_state.pair_retry_delay_ticks < MYBOT_PAIR_RETRY_MAX_TICKS / 2) {
             s_state.pair_retry_delay_ticks *= 2;
         } else {
             s_state.pair_retry_delay_ticks = MYBOT_PAIR_RETRY_MAX_TICKS;
         }
-        s_state.pair_retry_ticks_remaining =
-            s_state.pair_retry_delay_ticks;
+        s_state.pair_retry_ticks_remaining = s_state.pair_retry_delay_ticks;
         AOSL_LOG_ERR("pair-code request failed, retrying in %d seconds",
                      s_state.pair_retry_delay_ticks / 10);
         set_state(MYBOT_DEVICE_STATE_UNPROVISIONED);
@@ -203,16 +180,14 @@ static void action_create_pair_code(void)
     s_state.pair_retry_delay_ticks = 0;
     s_state.pair_retry_ticks_remaining = 0;
 
-    AOSL_LOG_INF("pair-code obtained: code=%s, poll=%ds",
-                 resp.code, resp.poll_after_seconds);
+    AOSL_LOG_INF("pair-code obtained: code=%s, poll=%ds", resp.code, resp.poll_after_seconds);
 
     /* Save pair token and poll settings */
     strncpy(s_state.pair_token, resp.pair_token, sizeof(s_state.pair_token) - 1);
     /* Enforce a minimum 3 s poll interval even if the server omits or
      * undershoots poll_after_seconds (otherwise the device would busy-poll). */
-    s_state.pair_poll_interval = resp.poll_after_seconds >= 3
-                                     ? resp.poll_after_seconds : 3;
-    s_state.pair_tick_counter  = 0;
+    s_state.pair_poll_interval = resp.poll_after_seconds >= 3 ? resp.poll_after_seconds : 3;
+    s_state.pair_tick_counter = 0;
 
     /* Clear any old device token */
     s_state.device_token[0] = '\0';
@@ -228,16 +203,15 @@ static void action_create_pair_code(void)
 /* ----------------------------------------------------------
  * Action: poll binding-status (pairing phase)
  * ---------------------------------------------------------- */
-static void action_poll_binding_pair(void)
-{
+static void action_poll_binding_pair(void) {
     char auth[MYBOT_DEVICE_API_MAX_TOKEN + 16];
     snprintf(auth, sizeof(auth), "Pair %s", s_state.pair_token);
 
     mybot_device_binding_t resp;
     memset(&resp, 0, sizeof(resp));
 
-    int ret = mybot_device_api_get_binding_status(
-        s_state.server_base, s_state.device_id, auth, &resp);
+    int ret =
+        mybot_device_api_get_binding_status(s_state.server_base, s_state.device_id, auth, &resp);
     if (api_rejected_device_auth(ret)) {
         AOSL_LOG_WRN("pair credential rejected (HTTP %d), requesting a new pair code", ret);
         aosl_atomic_set(&s_state.start_pairing_flag, true);
@@ -251,13 +225,11 @@ static void action_poll_binding_pair(void)
     AOSL_LOG_INF("bind poll -> status=%s", resp.status);
 
     if (strcmp(resp.status, "pending") == 0) {
-        s_state.pair_poll_interval = resp.poll_after_seconds >= 3
-                                         ? resp.poll_after_seconds : 3;
+        s_state.pair_poll_interval = resp.poll_after_seconds >= 3 ? resp.poll_after_seconds : 3;
         /* stay in awaiting_claim */
     } else if (strcmp(resp.status, "bound") == 0) {
         if (resp.device_token[0]) {
-            strncpy(s_state.device_token, resp.device_token,
-                    sizeof(s_state.device_token) - 1);
+            strncpy(s_state.device_token, resp.device_token, sizeof(s_state.device_token) - 1);
         }
         if (!s_state.device_token[0]) {
             AOSL_LOG_ERR("bound response did not include the one-time device credential");
@@ -269,9 +241,8 @@ static void action_poll_binding_pair(void)
         }
         AOSL_LOG_INF("device credential persisted");
         set_state(MYBOT_DEVICE_STATE_RUNTIME);
-        s_state.runtime_poll_interval = resp.poll_after_seconds > 0
-                                            ? resp.poll_after_seconds : 30;
-        s_state.runtime_tick_counter  = 0;
+        s_state.runtime_poll_interval = resp.poll_after_seconds > 0 ? resp.poll_after_seconds : 30;
+        s_state.runtime_tick_counter = 0;
     } else if (strcmp(resp.status, "expired") == 0) {
         AOSL_LOG_INF("pair code expired, re-pairing");
         /* The top-level pairing handler in tick() re-runs the pair-code
@@ -290,16 +261,15 @@ static void action_poll_binding_pair(void)
 /* ----------------------------------------------------------
  * Action: poll binding-status (runtime phase)
  * ---------------------------------------------------------- */
-static void action_poll_binding_runtime(void)
-{
+static void action_poll_binding_runtime(void) {
     char auth[MYBOT_DEVICE_API_MAX_TOKEN + 16];
     snprintf(auth, sizeof(auth), "Device %s", s_state.device_token);
 
     mybot_device_binding_t resp;
     memset(&resp, 0, sizeof(resp));
 
-    int ret = mybot_device_api_get_binding_status(
-        s_state.server_base, s_state.device_id, auth, &resp);
+    int ret =
+        mybot_device_api_get_binding_status(s_state.server_base, s_state.device_id, auth, &resp);
     if (api_rejected_device_auth(ret)) {
         AOSL_LOG_WRN("device credential rejected (HTTP %d), re-pairing", ret);
         restart_pairing_after_auth_rejection();
@@ -311,8 +281,7 @@ static void action_poll_binding_runtime(void)
     }
 
     if (strcmp(resp.status, "bound") == 0) {
-        s_state.runtime_poll_interval = resp.poll_after_seconds > 0
-                                            ? resp.poll_after_seconds : 30;
+        s_state.runtime_poll_interval = resp.poll_after_seconds > 0 ? resp.poll_after_seconds : 30;
     } else if (strcmp(resp.status, "unbound") == 0) {
         AOSL_LOG_INF("device unbound by user");
         restart_pairing_after_auth_rejection();
@@ -324,14 +293,12 @@ static void action_poll_binding_runtime(void)
 /* ----------------------------------------------------------
  * Action: start conversation
  * ---------------------------------------------------------- */
-static void action_start_conversation(void)
-{
+static void action_start_conversation(void) {
     mybot_device_conversation_t resp;
     memset(&resp, 0, sizeof(resp));
 
-    int ret = mybot_device_api_start_conversation(
-        s_state.server_base, s_state.device_id,
-        s_state.device_token, NULL, &resp);
+    int ret = mybot_device_api_start_conversation(s_state.server_base, s_state.device_id,
+                                                  s_state.device_token, NULL, &resp);
     if (api_rejected_device_auth(ret)) {
         AOSL_LOG_WRN("device credential rejected while starting conversation (HTTP %d)", ret);
         restart_pairing_after_auth_rejection();
@@ -342,11 +309,10 @@ static void action_start_conversation(void)
         return;
     }
 
-    strncpy(s_state.conversation_id, resp.conversation_id,
-            sizeof(s_state.conversation_id) - 1);
+    strncpy(s_state.conversation_id, resp.conversation_id, sizeof(s_state.conversation_id) - 1);
 
-    AOSL_LOG_INF("conversation started: %s, channel=%s, uid=%s",
-                 s_state.conversation_id, resp.rtc_channel, resp.rtc_uid);
+    AOSL_LOG_INF("conversation started: %s, channel=%s, uid=%s", s_state.conversation_id,
+                 resp.rtc_channel, resp.rtc_uid);
 
     set_state(MYBOT_DEVICE_STATE_IN_CONVERSATION);
 
@@ -366,15 +332,14 @@ static void action_start_conversation(void)
 /* ----------------------------------------------------------
  * Action: stop conversation
  * ---------------------------------------------------------- */
-static void action_stop_conversation(const char *reason)
-{
+static void action_stop_conversation(const char *reason) {
     if (!s_state.conversation_id[0]) {
         return;
     }
 
-    int ret = mybot_device_api_stop_conversation(
-        s_state.server_base, s_state.device_id,
-        s_state.device_token, s_state.conversation_id, reason);
+    int ret =
+        mybot_device_api_stop_conversation(s_state.server_base, s_state.device_id,
+                                           s_state.device_token, s_state.conversation_id, reason);
 
     AOSL_LOG_INF("conversation stopped");
     s_state.conversation_id[0] = '\0';
@@ -396,9 +361,8 @@ static void action_stop_conversation(const char *reason)
  * ---------------------------------------------------------- */
 
 int mybot_device_state_init(const char *server_base, const char *device_id,
-                      const char *firmware_ver, const char *hw_model,
-                      mybot_device_state_callbacks_t *cbs)
-{
+                            const char *firmware_ver, const char *hw_model,
+                            mybot_device_state_callbacks_t *cbs) {
     if (!server_base || !device_id) {
         return -1;
     }
@@ -429,8 +393,7 @@ int mybot_device_state_init(const char *server_base, const char *device_id,
     return 0;
 }
 
-void mybot_device_state_tick(void)
-{
+void mybot_device_state_tick(void) {
     if (aosl_atomic_read(&s_state.shutting_down)) {
         return;
     }
@@ -451,8 +414,7 @@ void mybot_device_state_tick(void)
     }
 
     if (current_state() == MYBOT_DEVICE_STATE_UNPROVISIONED) {
-        if (s_state.pair_retry_ticks_remaining > 0 &&
-            --s_state.pair_retry_ticks_remaining == 0) {
+        if (s_state.pair_retry_ticks_remaining > 0 && --s_state.pair_retry_ticks_remaining == 0) {
             set_state(MYBOT_DEVICE_STATE_PAIRING);
             action_create_pair_code();
         }
@@ -495,20 +457,17 @@ void mybot_device_state_tick(void)
 
     if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
         mybot_stop_request_t request =
-            (mybot_stop_request_t)aosl_atomic_xchg(
-                &s_state.stop_request, MYBOT_STOP_REQUEST_NONE);
+            (mybot_stop_request_t)aosl_atomic_xchg(&s_state.stop_request, MYBOT_STOP_REQUEST_NONE);
         if (request != MYBOT_STOP_REQUEST_NONE) {
             const char *reason =
-                request == MYBOT_STOP_REQUEST_DEVICE_HANGUP
-                    ? "device_hangup" : "error";
+                request == MYBOT_STOP_REQUEST_DEVICE_HANGUP ? "device_hangup" : "error";
             action_stop_conversation(reason);
         }
         return;
     }
 }
 
-void mybot_device_state_shutdown(void)
-{
+void mybot_device_state_shutdown(void) {
     aosl_atomic_set(&s_state.shutting_down, true);
     aosl_atomic_set(&s_state.start_pairing_flag, false);
     aosl_atomic_set(&s_state.conversation_requested, false);
@@ -519,16 +478,14 @@ void mybot_device_state_shutdown(void)
     }
 }
 
-void mybot_device_state_request_pair(void)
-{
+void mybot_device_state_request_pair(void) {
     if (aosl_atomic_read(&s_state.shutting_down)) {
         return;
     }
     aosl_atomic_set(&s_state.start_pairing_flag, true);
 }
 
-void mybot_device_state_request_start(void)
-{
+void mybot_device_state_request_start(void) {
     if (aosl_atomic_read(&s_state.shutting_down)) {
         return;
     }
@@ -539,8 +496,7 @@ void mybot_device_state_request_start(void)
     aosl_atomic_set(&s_state.conversation_requested, true);
 }
 
-void mybot_device_state_request_stop(void)
-{
+void mybot_device_state_request_stop(void) {
     if (aosl_atomic_read(&s_state.shutting_down)) {
         return;
     }
@@ -551,8 +507,7 @@ void mybot_device_state_request_stop(void)
     aosl_atomic_set(&s_state.stop_request, MYBOT_STOP_REQUEST_DEVICE_HANGUP);
 }
 
-void mybot_device_state_notify_conversation_ended(void)
-{
+void mybot_device_state_notify_conversation_ended(void) {
     if (aosl_atomic_read(&s_state.shutting_down)) {
         return;
     }

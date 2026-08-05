@@ -10,10 +10,10 @@ extern "C" {
 
 /** Application configuration (parsed from the command line). */
 typedef struct {
-    char  server_base[128];   /* device API server base URL */
-    char  device_id[64];      /* unique device identifier */
-    char  firmware_ver[32];   /* firmware version (optional) */
-    char  hw_model[32];       /* hardware model (optional) */
+    char server_base[128]; /* device API server base URL */
+    char device_id[64];    /* unique device identifier */
+    char firmware_ver[32]; /* firmware version (optional) */
+    char hw_model[32];     /* hardware model (optional) */
 } mybot_app_config_t;
 
 /**

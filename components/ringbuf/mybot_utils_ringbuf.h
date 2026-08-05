@@ -1,5 +1,5 @@
-#ifndef MYBOT_RINGBUF_H_
-#define MYBOT_RINGBUF_H_
+#ifndef MYBOT_UTILS_RINGBUF_H_
+#define MYBOT_UTILS_RINGBUF_H_
 
 #include <stddef.h>
 
@@ -14,31 +14,31 @@ extern "C" {
  * All operations are non-blocking (no locks).
  */
 
-typedef void *mybot_ringbuf_t;
+typedef void *mybot_utils_ringbuf_t;
 
 /** Create a ring buffer with given capacity (bytes). Returns NULL on failure. */
-mybot_ringbuf_t mybot_ringbuf_create(int size);
+mybot_utils_ringbuf_t mybot_utils_ringbuf_create(int size);
 
 /** Destroy the ring buffer. */
-int mybot_ringbuf_destroy(mybot_ringbuf_t handle);
+int mybot_utils_ringbuf_destroy(mybot_utils_ringbuf_t handle);
 
 /** Reset to empty. */
-int mybot_ringbuf_clear(mybot_ringbuf_t handle);
+int mybot_utils_ringbuf_clear(mybot_utils_ringbuf_t handle);
 
 /** Number of free bytes available for writing. */
-int mybot_ringbuf_get_free_size(mybot_ringbuf_t handle);
+int mybot_utils_ringbuf_get_free_size(mybot_utils_ringbuf_t handle);
 
 /** Number of bytes available for reading. */
-int mybot_ringbuf_get_data_size(mybot_ringbuf_t handle);
+int mybot_utils_ringbuf_get_data_size(mybot_utils_ringbuf_t handle);
 
 /** Write data (non-blocking). Returns bytes written, or -1 if full. */
-int mybot_ringbuf_write(mybot_ringbuf_t handle, const char *src, int writelen);
+int mybot_utils_ringbuf_write(mybot_utils_ringbuf_t handle, const char *src, int writelen);
 
 /** Read data (non-blocking). Returns bytes read, or -1 if empty. */
-int mybot_ringbuf_read(char *dst, int readlen, mybot_ringbuf_t handle);
+int mybot_utils_ringbuf_read(char *dst, int readlen, mybot_utils_ringbuf_t handle);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* MYBOT_RINGBUF_H_ */
+#endif /* MYBOT_UTILS_RINGBUF_H_ */

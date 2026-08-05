@@ -14,11 +14,11 @@ extern "C" {
  * Device lifecycle states (DEVICE_API.md §2.1)
  * ---------------------------------------------------------- */
 typedef enum {
-    MYBOT_DEVICE_STATE_UNPROVISIONED,     /* no device_token, need pairing */
-    MYBOT_DEVICE_STATE_PAIRING,           /* POST /pair-codes in progress */
-    MYBOT_DEVICE_STATE_AWAITING_CLAIM,    /* polling binding-status with pair_token */
-    MYBOT_DEVICE_STATE_RUNTIME,           /* have device_token, idle */
-    MYBOT_DEVICE_STATE_IN_CONVERSATION,   /* active RTC call */
+    MYBOT_DEVICE_STATE_UNPROVISIONED,   /* no device_token, need pairing */
+    MYBOT_DEVICE_STATE_PAIRING,         /* POST /pair-codes in progress */
+    MYBOT_DEVICE_STATE_AWAITING_CLAIM,  /* polling binding-status with pair_token */
+    MYBOT_DEVICE_STATE_RUNTIME,         /* have device_token, idle */
+    MYBOT_DEVICE_STATE_IN_CONVERSATION, /* active RTC call */
 } mybot_device_state_t;
 
 /* Conversation parameters (from server response) */
@@ -26,7 +26,7 @@ typedef struct {
     char conversation_id[MYBOT_DEVICE_API_MAX_ID];
     char rtc_app_id[64];
     char rtc_channel[128];
-    char rtc_uid[64];           /* string UID assigned by server */
+    char rtc_uid[64]; /* string UID assigned by server */
     char rtc_token[MYBOT_DEVICE_API_MAX_TOKEN];
 } mybot_conversation_params_t;
 

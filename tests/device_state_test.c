@@ -23,15 +23,13 @@ static int s_stop_call_count;
 static int s_conversation_start_count;
 static int s_conversation_stop_count;
 
-static int mock_flash_init(void **ctx)
-{
+static int mock_flash_init(void **ctx) {
     *ctx = s_flash_data;
     return 0;
 }
 
-static int mock_flash_read(void *ctx, const char *key, void *data,
-                           size_t capacity, size_t *out_len)
-{
+static int mock_flash_read(void *ctx, const char *key, void *data, size_t capacity,
+                           size_t *out_len) {
     (void)ctx;
     (void)key;
     if (!s_flash_present) {
@@ -45,9 +43,7 @@ static int mock_flash_read(void *ctx, const char *key, void *data,
     return 0;
 }
 
-static int mock_flash_write(void *ctx, const char *key, const void *data,
-                            size_t len)
-{
+static int mock_flash_write(void *ctx, const char *key, const void *data, size_t len) {
     (void)ctx;
     (void)key;
     if (s_flash_write_fails || len > sizeof(s_flash_data)) {
@@ -59,8 +55,7 @@ static int mock_flash_write(void *ctx, const char *key, const void *data,
     return 0;
 }
 
-static int mock_flash_erase(void *ctx, const char *key)
-{
+static int mock_flash_erase(void *ctx, const char *key) {
     (void)ctx;
     (void)key;
     s_flash_present = false;
@@ -68,8 +63,7 @@ static int mock_flash_erase(void *ctx, const char *key)
     return 0;
 }
 
-static void mock_flash_destroy(void *ctx)
-{
+static void mock_flash_destroy(void *ctx) {
     (void)ctx;
 }
 
@@ -82,12 +76,9 @@ static const mybot_flash_ops_t s_mock_flash_ops = {
     .destroy = mock_flash_destroy,
 };
 
-int mybot_device_api_create_pair_code(const char *base_url,
-                                      const char *device_id,
-                                      const char *firmware_ver,
-                                      const char *hw_model,
-                                      mybot_device_pair_code_t *resp)
-{
+int mybot_device_api_create_pair_code(const char *base_url, const char *device_id,
+                                      const char *firmware_ver, const char *hw_model,
+                                      mybot_device_pair_code_t *resp) {
     (void)base_url;
     (void)device_id;
     (void)firmware_ver;
@@ -103,11 +94,8 @@ int mybot_device_api_create_pair_code(const char *base_url,
     return 0;
 }
 
-int mybot_device_api_get_binding_status(const char *base_url,
-                                        const char *device_id,
-                                        const char *auth_header,
-                                        mybot_device_binding_t *resp)
-{
+int mybot_device_api_get_binding_status(const char *base_url, const char *device_id,
+                                        const char *auth_header, mybot_device_binding_t *resp) {
     (void)base_url;
     (void)device_id;
     (void)auth_header;
@@ -118,12 +106,9 @@ int mybot_device_api_get_binding_status(const char *base_url,
     return s_binding_result;
 }
 
-int mybot_device_api_start_conversation(const char *base_url,
-                                        const char *device_id,
-                                        const char *device_token,
-                                        const char *body_params,
-                                        mybot_device_conversation_t *resp)
-{
+int mybot_device_api_start_conversation(const char *base_url, const char *device_id,
+                                        const char *device_token, const char *body_params,
+                                        mybot_device_conversation_t *resp) {
     (void)base_url;
     (void)device_id;
     (void)device_token;
@@ -140,12 +125,9 @@ int mybot_device_api_start_conversation(const char *base_url,
     return 0;
 }
 
-int mybot_device_api_stop_conversation(const char *base_url,
-                                       const char *device_id,
-                                       const char *device_token,
-                                       const char *conversation_id,
-                                       const char *reason)
-{
+int mybot_device_api_stop_conversation(const char *base_url, const char *device_id,
+                                       const char *device_token, const char *conversation_id,
+                                       const char *reason) {
     (void)base_url;
     (void)device_id;
     (void)device_token;
@@ -155,42 +137,35 @@ int mybot_device_api_stop_conversation(const char *base_url,
     return 0;
 }
 
-static void on_conversation_start(const mybot_conversation_params_t *params)
-{
+static void on_conversation_start(const mybot_conversation_params_t *params) {
     assert(strcmp(params->conversation_id, "conversation-1") == 0);
     s_conversation_start_count++;
 }
 
-static void on_conversation_stop(void)
-{
+static void on_conversation_stop(void) {
     s_conversation_stop_count++;
 }
 
-static void tick_many(int count)
-{
+static void tick_many(int count) {
     for (int i = 0; i < count; i++) {
         mybot_device_state_tick();
     }
 }
 
-static void begin_pairing(void)
-{
-    assert(mybot_device_state_init("http://server", "device-1", NULL, NULL,
-                                   NULL) == 0);
+static void begin_pairing(void) {
+    assert(mybot_device_state_init("http://server", "device-1", NULL, NULL, NULL) == 0);
     assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_UNPROVISIONED);
     mybot_device_state_tick();
     assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
 }
 
-int main(void)
-{
+int main(void) {
     aosl_ctor();
     assert(mybot_flash_register(&s_mock_flash_ops) == 0);
     assert(mybot_flash_init() == 0);
 
     s_pair_result = -1;
-    assert(mybot_device_state_init("http://server", "device-1", NULL, NULL,
-                                   NULL) == 0);
+    assert(mybot_device_state_init("http://server", "device-1", NULL, NULL, NULL) == 0);
     mybot_device_state_tick();
     assert(s_pair_call_count == 1);
     assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_UNPROVISIONED);
@@ -211,8 +186,7 @@ int main(void)
     assert(strcmp(mybot_device_state_get_token(), "device-token") == 0);
     assert(s_flash_present);
 
-    assert(mybot_device_state_init("http://server", "device-1", NULL, NULL,
-                                   NULL) == 0);
+    assert(mybot_device_state_init("http://server", "device-1", NULL, NULL, NULL) == 0);
     assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_RUNTIME);
     assert(strcmp(mybot_device_state_get_token(), "device-token") == 0);
 
@@ -246,8 +220,7 @@ int main(void)
         .on_conversation_start = on_conversation_start,
         .on_conversation_stop = on_conversation_stop,
     };
-    assert(mybot_device_state_init("http://server", "device-1", NULL, NULL,
-                                   &callbacks) == 0);
+    assert(mybot_device_state_init("http://server", "device-1", NULL, NULL, &callbacks) == 0);
     mybot_device_state_request_start();
     mybot_device_state_tick();
     assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_IN_CONVERSATION);

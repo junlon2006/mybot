@@ -12,13 +12,12 @@
 /* Bounded wait for poll-based (non-blocking) PCM I/O. Keeps read/write
  * interruptible so worker threads can observe stop conditions and exit
  * promptly instead of blocking forever inside the driver. */
-#define PCM_POLL_TIMEOUT_MS    50
-#define PCM_RESUME_TIMEOUT_MS  500
-#define PCM_RESUME_RETRY_MS    1
+#define PCM_POLL_TIMEOUT_MS 50
+#define PCM_RESUME_TIMEOUT_MS 500
+#define PCM_RESUME_RETRY_MS 1
 
 /* ---- ALSA error recovery helpers ---- */
-static int xrun_recover(snd_pcm_t *handle)
-{
+static int xrun_recover(snd_pcm_t *handle) {
     snd_pcm_status_t *status;
     snd_pcm_status_alloca(&status);
 
@@ -41,8 +40,7 @@ prepare:
     return 0;
 }
 
-static int suspend_recover(snd_pcm_t *handle)
-{
+static int suspend_recover(snd_pcm_t *handle) {
     int err;
     uint64_t deadline = aosl_hal_get_tick_ms() + PCM_RESUME_TIMEOUT_MS;
 
@@ -62,11 +60,10 @@ static int suspend_recover(snd_pcm_t *handle)
     return 0;
 }
 
-static int pcm_write(snd_pcm_t *handle, const char *buf, size_t frames, size_t frame_bytes)
-{
+static int pcm_write(snd_pcm_t *handle, const char *buf, size_t frames, size_t frame_bytes) {
     ssize_t r;
-    size_t  count = frames;
-    size_t  result = 0;
+    size_t count = frames;
+    size_t result = 0;
 
     while (count > 0) {
         r = snd_pcm_writei(handle, buf + result * frame_bytes, count);
@@ -89,7 +86,7 @@ static int pcm_write(snd_pcm_t *handle, const char *buf, size_t frames, size_t f
             return -1;
         } else if (r > 0) {
             result += (size_t)r;
-            count  -= (size_t)r;
+            count -= (size_t)r;
         } else {
             break;
         }
@@ -100,15 +97,14 @@ static int pcm_write(snd_pcm_t *handle, const char *buf, size_t frames, size_t f
 /* ---- internal context ---- */
 typedef struct {
     snd_pcm_t *handle;
-    int        rate;
-    int        channels;
-    int        bits_per_sample;
+    int rate;
+    int channels;
+    int bits_per_sample;
 } alsa_pb_t;
 
 /* ---- playback ops implementation ---- */
 
-static int alsa_playback_init(void **ctx, int rate, int channels, int bits)
-{
+static int alsa_playback_init(void **ctx, int rate, int channels, int bits) {
     if (!ctx) {
         return -1;
     }
@@ -118,8 +114,8 @@ static int alsa_playback_init(void **ctx, int rate, int channels, int bits)
         return -1;
     }
 
-    p->rate            = rate;
-    p->channels        = channels;
+    p->rate = rate;
+    p->channels = channels;
     p->bits_per_sample = bits;
 
     AOSL_LOG_INF("init: rate=%d channels=%d bits=%d", rate, channels, bits);
@@ -171,8 +167,8 @@ static int alsa_playback_init(void **ctx, int rate, int channels, int bits)
         goto fail;
     }
 
-    AOSL_LOG_DBG("init: hw_params ok (rate=%u, buf=%lu, period=%lu)",
-                 actual_rate, (unsigned long)buf_frames, (unsigned long)period_frames);
+    AOSL_LOG_DBG("init: hw_params ok (rate=%u, buf=%lu, period=%lu)", actual_rate,
+                 (unsigned long)buf_frames, (unsigned long)period_frames);
 
     /* SW params: start only when buffer is full */
     snd_pcm_sw_params_alloca(&sw);
@@ -190,27 +186,26 @@ static int alsa_playback_init(void **ctx, int rate, int channels, int bits)
     return 0;
 
 fail:
-    if (p->handle) { snd_pcm_close(p->handle); }
+    if (p->handle) {
+        snd_pcm_close(p->handle);
+    }
     free(p);
     return -1;
 }
 
-static int alsa_playback_start(void *ctx)
-{
+static int alsa_playback_start(void *ctx) {
     (void)ctx;
     AOSL_LOG_INF("start");
     return 0;
 }
 
-static int alsa_playback_write(void *ctx, const void *buf, int frames)
-{
+static int alsa_playback_write(void *ctx, const void *buf, int frames) {
     alsa_pb_t *p = (alsa_pb_t *)ctx;
     size_t frame_bytes = (size_t)(p->bits_per_sample / 8 * p->channels);
     return pcm_write(p->handle, (const char *)buf, (size_t)frames, frame_bytes);
 }
 
-static int alsa_playback_stop(void *ctx)
-{
+static int alsa_playback_stop(void *ctx) {
     AOSL_LOG_INF("stop");
     if (ctx) {
         alsa_pb_t *p = (alsa_pb_t *)ctx;
@@ -221,8 +216,7 @@ static int alsa_playback_stop(void *ctx)
     return 0;
 }
 
-static void alsa_playback_destroy(void *ctx)
-{
+static void alsa_playback_destroy(void *ctx) {
     AOSL_LOG_INF("destroy");
     if (!ctx) {
         return;
@@ -236,16 +230,15 @@ static void alsa_playback_destroy(void *ctx)
 }
 
 static const mybot_audio_playback_ops_t g_alsa_playback_ops = {
-    .name    = "alsa",
-    .init    = alsa_playback_init,
-    .start   = alsa_playback_start,
-    .write   = alsa_playback_write,
-    .stop    = alsa_playback_stop,
+    .name = "alsa",
+    .init = alsa_playback_init,
+    .start = alsa_playback_start,
+    .write = alsa_playback_write,
+    .stop = alsa_playback_stop,
     .destroy = alsa_playback_destroy,
 };
 
-void mybot_audio_platform_register_alsa_playback(void)
-{
+void mybot_audio_platform_register_alsa_playback(void) {
     mybot_audio_device_register_playback(&g_alsa_playback_ops);
     AOSL_LOG_INF("platform registered");
 }

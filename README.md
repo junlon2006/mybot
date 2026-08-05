@@ -24,9 +24,16 @@ mybot/
 └── components/
     ├── aosl/                       # AOSL 跨平台系统库
     ├── agora_rtsa_sdk/             # Agora RTSA SDK
-    ├── ringbuf/                    # 通用锁无关 SPSC 环缓冲
-    ├── http_client/                # 阻塞式 HTTP 客户端（AOSL HAL）
-    └── cJSON/                      # JSON 解析库（以 mybot_cJSON_* 前缀导出）
+    ├── ringbuf/                    # SPSC 环缓冲（mybot_utils_ringbuf_*）
+    ├── http_client/                # HTTP 客户端（mybot_utils_http_*）
+    └── cJSON/                      # JSON 解析库（以 mybot_utils_cJSON_* 前缀导出）
+```
+
+仓库根目录的 `.clang-format` 是唯一的 C 代码格式规范。格式化自研源码时执行：
+
+```bash
+find main tests components/ringbuf components/http_client components/cJSON \\
+    -type f \\( -name '*.c' -o -name '*.h' \\) -exec clang-format -i {} +
 ```
 
 ### 生命周期

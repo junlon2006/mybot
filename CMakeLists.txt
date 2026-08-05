@@ -41,9 +41,9 @@ set(MYBOT_SRC
     main/app.c
     main/flash/flash_device.c
     main/board/linux/flash_file.c
-    components/ringbuf/ringbuf.c
-    components/http_client/http_client.c
-    components/cJSON/cJSON.c
+    components/ringbuf/mybot_utils_ringbuf.c
+    components/http_client/mybot_utils_http_client.c
+    components/cJSON/mybot_utils_cJSON.c
     main/protocols/device_api.c
     main/audio/audio_device.c
     main/board/linux/audio_capture_alsa.c
@@ -96,17 +96,17 @@ if(BUILD_TESTING)
     )
     add_test(NAME mybot_device_state_test COMMAND mybot_device_state_test)
 
-    add_executable(mybot_http_client_test tests/http_client_test.c)
-    target_include_directories(mybot_http_client_test PRIVATE
+    add_executable(mybot_utils_http_client_test tests/http_client_test.c)
+    target_include_directories(mybot_utils_http_client_test PRIVATE
         ${AOSL_DIR}/include
         ${AOSL_DIR}/platform/include
     )
-    target_link_libraries(mybot_http_client_test PRIVATE
+    target_link_libraries(mybot_utils_http_client_test PRIVATE
         aosl
         pthread
         dl
         rt
         m
     )
-    add_test(NAME mybot_http_client_test COMMAND mybot_http_client_test)
+    add_test(NAME mybot_utils_http_client_test COMMAND mybot_utils_http_client_test)
 endif()
