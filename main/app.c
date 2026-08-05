@@ -36,6 +36,7 @@
  * ---------------------------------------------------------- */
 static struct {
     aosl_atomic_t  running;
+    bool           aosl_active;
 
     /* Audio capture */
     void           *cap_ctx;
@@ -445,6 +446,7 @@ int mybot_app_start(const mybot_app_config_t *cfg)
 
     /* ---- 1. Initialize AOSL ---- */
     aosl_ctor();
+    s_app.aosl_active = true;
 
     /* ---- 2. Initialize audio devices via the registered platform ops ----
      * The platform backend (e.g. ALSA on Linux) must have registered itself
@@ -586,6 +588,11 @@ void mybot_app_pair(void)
 
 void mybot_app_stop(void)
 {
+    /* Keep stop idempotent without touching AOSL after a previous stop. */
+    if (!s_app.aosl_active) {
+        return;
+    }
+
     AOSL_LOG_INF("stopping app...");
 
     /* ---- 1. Signal workers to stop ----
@@ -639,28 +646,27 @@ void mybot_app_stop(void)
         s_app.cap_started = false;
     }
 
-    /* ---- 6. Stop the RTC session ----
-     * Also stops the SDK threads that feed the playback ring buffer. NOTE:
-     * agora_rtc_fini() finalizes AOSL internally, so only AOSL-independent
-     * teardown (devices, ring buffers) may follow. */
-    mybot_rtc_session_fini();
-
-    /* ---- 7. Destroy devices (no AOSL dependency) ---- */
+    /* ---- 6. Destroy devices while AOSL logging is still available ---- */
     if (cap_ops && s_app.cap_ctx) { cap_ops->destroy(s_app.cap_ctx); s_app.cap_ctx = NULL; }
     if (pb_ops  && s_app.pb_ctx)  { pb_ops->destroy(s_app.pb_ctx);   s_app.pb_ctx  = NULL; }
 
+    /* ---- 7. Finalize RTC ----
+     * The SDK waits for its callback queue before returning, so no callback can
+     * access pb_ringbuf after this point. It also finalizes AOSL when active. */
+    AOSL_LOG_INF("app stopped cleanly");
+    s_app.aosl_active = false;
+    bool rtc_finalized_aosl = mybot_rtc_session_fini();
+
     /* ---- 8. Destroy ring buffers ----
-     * aosl_hal_free() maps to the system allocator on all platforms, so this
-     * stays safe even after AOSL has been finalized by the RTC SDK. */
+     * The AOSL HAL allocator is independent of the AOSL global lifecycle. */
     if (s_app.cap_ringbuf) { mybot_ringbuf_destroy(s_app.cap_ringbuf); s_app.cap_ringbuf = NULL; }
     if (s_app.pb_ringbuf)  { mybot_ringbuf_destroy(s_app.pb_ringbuf);  s_app.pb_ringbuf  = NULL; }
 #if MYBOT_CLOUD_AEC
     if (s_app.ref_ringbuf) { mybot_ringbuf_destroy(s_app.ref_ringbuf); s_app.ref_ringbuf = NULL; }
 #endif
 
-    /* ---- 9. Finalize AOSL ----
-     * No-op if the RTC SDK already finalized AOSL in mybot_rtc_session_fini();
-     * kept so the app also works when no SDK is involved. */
-    aosl_dtor();
-    AOSL_LOG_INF("app stopped cleanly");
+    /* ---- 9. Finalize AOSL when RTC never owned it ---- */
+    if (!rtc_finalized_aosl) {
+        aosl_dtor();
+    }
 }

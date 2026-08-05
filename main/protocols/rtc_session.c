@@ -319,16 +319,17 @@ int mybot_rtc_session_leave(void)
     return 0;
 }
 
-void mybot_rtc_session_fini(void)
+bool mybot_rtc_session_fini(void)
 {
     if (!aosl_atomic_read(&s_rtc.initialized)) {
-        return;
+        return false;
     }
 
     /* leave() is idempotent and checks conn_id while holding the mutex. */
     mybot_rtc_session_leave();
 
-    agora_rtc_fini();
+    /* agora_rtc_fini() destroys the SDK queues and then calls aosl_dtor().
+     * Complete all session-side AOSL operations before entering it. */
     aosl_atomic_set(&s_rtc.initialized, false);
     set_state(MYBOT_RTC_STATE_IDLE);
 
@@ -336,6 +337,9 @@ void mybot_rtc_session_fini(void)
         aosl_hal_mutex_destroy(s_rtc.lock);
         s_rtc.lock = NULL;
     }
+
+    agora_rtc_fini();
+    return true;
 }
 
 int mybot_rtc_session_send_audio(const void *data, size_t len)
