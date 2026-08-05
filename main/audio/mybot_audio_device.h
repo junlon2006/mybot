@@ -27,20 +27,20 @@ typedef struct {
      *  @param bits      bits per sample (e.g. 16)
      *  @return 0 on success, -1 on error.
      */
-    int  (*init)(void **ctx, int rate, int channels, int bits);
+    int (*init)(void **ctx, int rate, int channels, int bits);
 
     /** Start capture stream (unblock capture_read). */
-    int  (*start)(void *ctx);
+    int (*start)(void *ctx);
 
     /** Read one PCM frame (blocking).
      *  @param buf    destination buffer (size = frames * channels * bits/8)
      *  @param frames number of frames to read
      *  @return frames actually read, or -1 on error.
      */
-    int  (*read)(void *ctx, void *buf, int frames);
+    int (*read)(void *ctx, void *buf, int frames);
 
     /** Stop capture stream. */
-    int  (*stop)(void *ctx);
+    int (*stop)(void *ctx);
 
     /** Destroy and close the device. */
     void (*destroy)(void *ctx);
@@ -51,16 +51,16 @@ typedef struct {
     const char *name;
 
     /** Allocate and open the playback device. */
-    int  (*init)(void **ctx, int rate, int channels, int bits);
+    int (*init)(void **ctx, int rate, int channels, int bits);
 
     /** Start playback stream. */
-    int  (*start)(void *ctx);
+    int (*start)(void *ctx);
 
     /** Write one PCM frame (blocking). */
-    int  (*write)(void *ctx, const void *buf, int frames);
+    int (*write)(void *ctx, const void *buf, int frames);
 
     /** Stop playback stream. */
-    int  (*stop)(void *ctx);
+    int (*stop)(void *ctx);
 
     /** Destroy and close the device. */
     void (*destroy)(void *ctx);

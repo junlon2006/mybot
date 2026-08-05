@@ -4,6 +4,16 @@ project(mybot VERSION 0.1.0 LANGUAGES C)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+option(MYBOT_ENABLE_ASAN "Enable AddressSanitizer for runtime memory diagnostics" ON)
+if(MYBOT_ENABLE_ASAN)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
+        add_link_options(-fsanitize=address)
+    else()
+        message(FATAL_ERROR "MYBOT_ENABLE_ASAN requires a GNU or Clang compatible compiler")
+    endif()
+endif()
+
 # ------------------------------------------------------------
 # AOSL subsystem
 # ------------------------------------------------------------
@@ -27,17 +37,19 @@ set_target_properties(agora-rtc-sdk PROPERTIES
 # mybot executable
 # ------------------------------------------------------------
 set(MYBOT_SRC
-    main/main.c
-    main/app.c
-    components/ringbuf/ringbuf.c
-    components/http_client/http_client.c
-    components/cJSON/cJSON.c
-    main/protocols/device_api.c
-    main/audio/audio_device.c
-    main/board/linux/audio_capture_alsa.c
-    main/board/linux/audio_playback_alsa.c
-    main/protocols/rtc_session.c
-    main/protocols/device_state.c
+    main/mybot_main.c
+    main/mybot_app.c
+    main/flash/mybot_flash_device.c
+    main/board/linux/mybot_flash_file.c
+    components/ringbuf/mybot_utils_ringbuf.c
+    components/http_client/mybot_utils_http_client.c
+    components/cJSON/mybot_utils_cJSON.c
+    main/protocols/mybot_device_api.c
+    main/audio/mybot_audio_device.c
+    main/board/linux/mybot_audio_capture_alsa.c
+    main/board/linux/mybot_audio_playback_alsa.c
+    main/protocols/mybot_rtc_session.c
+    main/protocols/mybot_device_state.c
 )
 
 add_executable(mybot ${MYBOT_SRC})
@@ -63,3 +75,38 @@ target_link_libraries(mybot PRIVATE
     rt
     m
 )
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(mybot_device_state_test
+        tests/device_state_test.c
+        main/protocols/mybot_device_state.c
+        main/flash/mybot_flash_device.c
+    )
+    target_include_directories(mybot_device_state_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/main
+        ${AOSL_DIR}/include
+        ${AOSL_DIR}/platform/include
+    )
+    target_link_libraries(mybot_device_state_test PRIVATE
+        aosl
+        pthread
+        dl
+        rt
+        m
+    )
+    add_test(NAME mybot_device_state_test COMMAND mybot_device_state_test)
+
+    add_executable(mybot_utils_http_client_test tests/http_client_test.c)
+    target_include_directories(mybot_utils_http_client_test PRIVATE
+        ${AOSL_DIR}/include
+        ${AOSL_DIR}/platform/include
+    )
+    target_link_libraries(mybot_utils_http_client_test PRIVATE
+        aosl
+        pthread
+        dl
+        rt
+        m
+    )
+    add_test(NAME mybot_utils_http_client_test COMMAND mybot_utils_http_client_test)
+endif()

@@ -1,7 +1,7 @@
 #ifndef MYBOT_DEVICE_STATE_H_
 #define MYBOT_DEVICE_STATE_H_
 
-#include "device_api.h"
+#include "mybot_device_api.h"
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -14,11 +14,11 @@ extern "C" {
  * Device lifecycle states (DEVICE_API.md §2.1)
  * ---------------------------------------------------------- */
 typedef enum {
-    MYBOT_DEVICE_STATE_UNPROVISIONED,     /* no device_token, need pairing */
-    MYBOT_DEVICE_STATE_PAIRING,           /* POST /pair-codes in progress */
-    MYBOT_DEVICE_STATE_AWAITING_CLAIM,    /* polling binding-status with pair_token */
-    MYBOT_DEVICE_STATE_RUNTIME,           /* have device_token, idle */
-    MYBOT_DEVICE_STATE_IN_CONVERSATION,   /* active RTC call */
+    MYBOT_DEVICE_STATE_UNPROVISIONED,   /* no device_token, need pairing */
+    MYBOT_DEVICE_STATE_PAIRING,         /* POST /pair-codes in progress */
+    MYBOT_DEVICE_STATE_AWAITING_CLAIM,  /* polling binding-status with pair_token */
+    MYBOT_DEVICE_STATE_RUNTIME,         /* have device_token, idle */
+    MYBOT_DEVICE_STATE_IN_CONVERSATION, /* active RTC call */
 } mybot_device_state_t;
 
 /* Conversation parameters (from server response) */
@@ -26,7 +26,7 @@ typedef struct {
     char conversation_id[MYBOT_DEVICE_API_MAX_ID];
     char rtc_app_id[64];
     char rtc_channel[128];
-    char rtc_uid[64];           /* string UID assigned by server */
+    char rtc_uid[64]; /* string UID assigned by server */
     char rtc_token[MYBOT_DEVICE_API_MAX_TOKEN];
 } mybot_conversation_params_t;
 
@@ -64,6 +64,10 @@ int mybot_device_state_init(const char *server_base, const char *device_id,
 /** Must be called periodically from the main loop (e.g., every 100ms).
  *  Drives polling and state transitions. */
 void mybot_device_state_tick(void);
+
+/** Stop state-machine activity and close any active conversation.
+ *  Must be called from the same thread that calls mybot_device_state_tick(). */
+void mybot_device_state_shutdown(void);
 
 /** Get current state. */
 mybot_device_state_t mybot_device_state_get(void);

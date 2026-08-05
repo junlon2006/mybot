@@ -1,4 +1,4 @@
-#include "app.h"
+#include "mybot_app.h"
 
 #include "api/aosl_log.h"
 #include <hal/aosl_hal_socket.h>
@@ -15,22 +15,23 @@
  * ---------------------------------------------------------- */
 void mybot_audio_platform_register_alsa_capture(void);
 void mybot_audio_platform_register_alsa_playback(void);
+void mybot_flash_platform_register_file(void);
+
+static volatile sig_atomic_t s_exit_requested;
 
 /* ----------------------------------------------------------
  * Signal handling — POSIX. Request a graceful app exit.
  * ---------------------------------------------------------- */
-static void signal_handler(int sig)
-{
+static void signal_handler(int sig) {
     (void)sig;
-    AOSL_LOG_INF("caught signal, stopping...");
-    mybot_app_request_exit();
+    /* Only sig_atomic_t access is performed in the signal handler. */
+    s_exit_requested = 1;
 }
 
 /* ----------------------------------------------------------
  * Interactive keys (stdin) — maps to app-level requests.
  * ---------------------------------------------------------- */
-static void handle_key(char ch)
-{
+static void handle_key(char ch) {
     switch (ch) {
     case 's':
         AOSL_LOG_INF("[KEY] s -> start conversation");
@@ -57,29 +58,26 @@ static void handle_key(char ch)
     }
 }
 
-static void print_usage(const char *prog)
-{
-    AOSL_LOG_INF(
-        "Usage: %s --server <URL> --device-id <ID> [options]\n"
-        "\n"
-        "Required:\n"
-        "  --server <url>     Device API server base URL\n"
-        "                     e.g. http://localhost:3001\n"
-        "  --device-id <id>   Unique device identifier\n"
-        "                     e.g. AG-A1B2C3\n"
-        "\n"
-        "Options:\n"
-        "  --fw-ver <str>     Firmware version string (optional)\n"
-        "  --hw-model <str>   Hardware model string (optional)\n"
-        "  -h, --help         Show this help\n"
-        "\n"
-        "Example:\n"
-        "  %s --server http://localhost:3001 --device-id AG-DEMO-001",
-        prog, prog);
+static void print_usage(const char *prog) {
+    AOSL_LOG_INF("Usage: %s --server <URL> --device-id <ID> [options]\n"
+                 "\n"
+                 "Required:\n"
+                 "  --server <url>     Device API server base URL\n"
+                 "                     e.g. http://localhost:3001\n"
+                 "  --device-id <id>   Unique device identifier\n"
+                 "                     e.g. AG-A1B2C3\n"
+                 "\n"
+                 "Options:\n"
+                 "  --fw-ver <str>     Firmware version string (optional)\n"
+                 "  --hw-model <str>   Hardware model string (optional)\n"
+                 "  -h, --help         Show this help\n"
+                 "\n"
+                 "Example:\n"
+                 "  %s --server http://localhost:3001 --device-id AG-DEMO-001",
+                 prog, prog);
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     mybot_app_config_t cfg;
     memset(&cfg, 0, sizeof(cfg));
 
@@ -114,21 +112,24 @@ int main(int argc, char **argv)
     AOSL_LOG_INF("mybot v0.1.0 starting...");
     AOSL_LOG_INF("  server   : %s", cfg.server_base);
     AOSL_LOG_INF("  device-id: %s", cfg.device_id);
-    if (cfg.firmware_ver[0]) { AOSL_LOG_INF("  fw-ver   : %s", cfg.firmware_ver); }
-    if (cfg.hw_model[0]) { AOSL_LOG_INF("  hw-model : %s", cfg.hw_model); }
+    if (cfg.firmware_ver[0]) {
+        AOSL_LOG_INF("  fw-ver   : %s", cfg.firmware_ver);
+    }
+    if (cfg.hw_model[0]) {
+        AOSL_LOG_INF("  hw-model : %s", cfg.hw_model);
+    }
 
     /* ---- Register the platform audio backend (Linux: ALSA) ---- */
     mybot_audio_platform_register_alsa_capture();
     mybot_audio_platform_register_alsa_playback();
+    mybot_flash_platform_register_file();
 
     /* ---- Install signal handlers ---- */
-    signal(SIGINT,  signal_handler);
+    signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
     /* ---- Start the application (non-blocking) ---- */
     if (mybot_app_start(&cfg) < 0) {
-        AOSL_LOG_ERR("mybot_app_start failed");
-        mybot_app_stop();   /* release anything mybot_app_start allocated before failing */
         return 1;
     }
 
@@ -146,6 +147,11 @@ int main(int argc, char **argv)
      * The app drives itself (device state machine etc.) from its own MPQ
      * timers, so main() only needs to poll stdin here. ---- */
     while (mybot_app_is_running()) {
+        if (s_exit_requested) {
+            mybot_app_request_exit();
+            continue;
+        }
+
         char ch;
         if (aosl_hal_sk_read((aosl_fd_t)0, &ch, 1) == 1) {
             handle_key(ch);

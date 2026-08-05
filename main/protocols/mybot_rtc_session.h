@@ -14,7 +14,7 @@ typedef enum {
     MYBOT_RTC_STATE_IDLE,
     MYBOT_RTC_STATE_INITIALIZED,
     MYBOT_RTC_STATE_CONNECTING,
-    MYBOT_RTC_STATE_CONNECTED,      /* joined channel successfully */
+    MYBOT_RTC_STATE_CONNECTED, /* joined channel successfully */
     MYBOT_RTC_STATE_RECONNECTING,
     MYBOT_RTC_STATE_DISCONNECTED,
     MYBOT_RTC_STATE_ERROR,
@@ -55,8 +55,11 @@ int mybot_rtc_session_join(const char *channel, const char *token, const char *u
 /** Leave the current channel. */
 int mybot_rtc_session_leave(void);
 
-/** Finalize the RTC session (calls agora_rtc_fini). */
-void mybot_rtc_session_fini(void);
+/** Finalize the RTC session.
+ *  @return true if agora_rtc_fini() was called and finalized AOSL; false if
+ *          the RTC session was not initialized.
+ */
+bool mybot_rtc_session_fini(void);
 
 /** Send PCM audio data to the channel.
  *  @param data  PCM buffer (16-bit, 16 kHz, mono)
