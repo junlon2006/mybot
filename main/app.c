@@ -118,6 +118,7 @@ static int cap_mpq_init(void *arg)
     s_app.cap_timer = aosl_mpq_set_timer(AUDIO_TICK_MS, capture_timer, NULL, 0);
     if (aosl_mpq_timer_invalid(s_app.cap_timer)) {
         AOSL_LOG_ERR("failed to create capture timer");
+        return -1;
     }
 
     return 0;
@@ -201,6 +202,7 @@ static int pb_mpq_init(void *arg)
     s_app.pb_timer = aosl_mpq_set_timer(AUDIO_TICK_MS, playback_timer, NULL, 0);
     if (aosl_mpq_timer_invalid(s_app.pb_timer)) {
         AOSL_LOG_ERR("failed to create playback timer");
+        return -1;
     }
 
     return 0;
@@ -384,6 +386,7 @@ static int state_mpq_init(void *arg)
     s_app.state_timer = aosl_mpq_set_timer(STATE_TICK_MS, state_tick_timer, NULL, 0);
     if (aosl_mpq_timer_invalid(s_app.state_timer)) {
         AOSL_LOG_ERR("failed to create state timer");
+        return -1;
     }
 
     return 0;
@@ -411,6 +414,7 @@ static int mpq_init(void *arg)
     s_app.send_timer = aosl_mpq_set_timer(20, send_audio_timer, NULL, 0);
     if (aosl_mpq_timer_invalid(s_app.send_timer)) {
         AOSL_LOG_ERR("failed to create send timer");
+        return -1;
     }
 
     return 0;
