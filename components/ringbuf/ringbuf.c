@@ -2,27 +2,33 @@
 
 #include <string.h>
 
-/* AOSL HAL — cross-platform system interface */
+/* AOSL cross-platform interfaces */
+#include <api/aosl_atomic.h>
 #include <hal/aosl_hal_memory.h>
 
 /* Keep one byte unfilled to distinguish full from empty */
 #define RINGBUF_GUARD_BYTE 1
 
 typedef struct {
-    int   size;
-    char *buf;
-    int   head;  /* write position */
-    int   tail;  /* read position */
+    int           size;
+    char         *buf;
+    aosl_atomic_t head;  /* write position, published by the producer */
+    aosl_atomic_t tail;  /* read position, published by the consumer */
 } ringbuf_internal_t;
 
 static inline int data_size(ringbuf_internal_t *rb)
 {
-    return (rb->head + rb->size - rb->tail) % rb->size;
+    int head = (int)aosl_atomic_read(&rb->head);
+    int tail = (int)aosl_atomic_read(&rb->tail);
+    return (head + rb->size - tail) % rb->size;
 }
 
 static inline int free_size(ringbuf_internal_t *rb)
 {
-    return rb->size - data_size(rb) - RINGBUF_GUARD_BYTE;
+    int head = (int)aosl_atomic_read(&rb->head);
+    int tail = (int)aosl_atomic_read(&rb->tail);
+    int used = (head + rb->size - tail) % rb->size;
+    return rb->size - used - RINGBUF_GUARD_BYTE;
 }
 
 mybot_ringbuf_t mybot_ringbuf_create(int size)
@@ -42,7 +48,8 @@ mybot_ringbuf_t mybot_ringbuf_create(int size)
         aosl_hal_free(rb);
         return NULL;
     }
-    rb->head = rb->tail = 0;
+    aosl_atomic_set(&rb->head, 0);
+    aosl_atomic_set(&rb->tail, 0);
     return (mybot_ringbuf_t)rb;
 }
 
@@ -63,7 +70,8 @@ int mybot_ringbuf_clear(mybot_ringbuf_t handle)
         return -1;
     }
     ringbuf_internal_t *rb = (ringbuf_internal_t *)handle;
-    rb->head = rb->tail = 0;
+    aosl_atomic_set(&rb->head, 0);
+    aosl_atomic_set(&rb->tail, 0);
     return 0;
 }
 
@@ -90,19 +98,22 @@ int mybot_ringbuf_write(mybot_ringbuf_t handle, const char *src, int writelen)
     }
 
     ringbuf_internal_t *rb = (ringbuf_internal_t *)handle;
-    if (free_size(rb) < writelen) {
+    int head = (int)aosl_atomic_read(&rb->head);
+    int tail = (int)aosl_atomic_read(&rb->tail);
+    int used = (head + rb->size - tail) % rb->size;
+    if (rb->size - used - RINGBUF_GUARD_BYTE < writelen) {
         return -1;
     }
 
-    int pos = (rb->head + writelen) % rb->size;
-    if (pos >= rb->head) {
-        memcpy(rb->buf + rb->head, src, writelen);
+    int pos = (head + writelen) % rb->size;
+    if (pos >= head) {
+        memcpy(rb->buf + head, src, writelen);
     } else {
-        int remain = rb->size - rb->head;
-        memcpy(rb->buf + rb->head, src, remain);
+        int remain = rb->size - head;
+        memcpy(rb->buf + head, src, remain);
         memcpy(rb->buf, src + remain, writelen - remain);
     }
-    rb->head = pos;
+    aosl_atomic_set(&rb->head, pos);
     return writelen;
 }
 
@@ -113,18 +124,21 @@ int mybot_ringbuf_read(char *dst, int readlen, mybot_ringbuf_t handle)
     }
 
     ringbuf_internal_t *rb = (ringbuf_internal_t *)handle;
-    if (data_size(rb) < readlen) {
+    int head = (int)aosl_atomic_read(&rb->head);
+    int tail = (int)aosl_atomic_read(&rb->tail);
+    int used = (head + rb->size - tail) % rb->size;
+    if (used < readlen) {
         return -1;
     }
 
-    int pos = (rb->tail + readlen) % rb->size;
-    if (pos >= rb->tail) {
-        memcpy(dst, rb->buf + rb->tail, readlen);
+    int pos = (tail + readlen) % rb->size;
+    if (pos >= tail) {
+        memcpy(dst, rb->buf + tail, readlen);
     } else {
-        int remain = rb->size - rb->tail;
-        memcpy(dst, rb->buf + rb->tail, remain);
+        int remain = rb->size - tail;
+        memcpy(dst, rb->buf + tail, remain);
         memcpy(dst + remain, rb->buf, readlen - remain);
     }
-    rb->tail = pos;
+    aosl_atomic_set(&rb->tail, pos);
     return readlen;
 }
