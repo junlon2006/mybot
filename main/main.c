@@ -15,6 +15,7 @@
  * ---------------------------------------------------------- */
 void mybot_audio_platform_register_alsa_capture(void);
 void mybot_audio_platform_register_alsa_playback(void);
+void mybot_flash_platform_register_file(void);
 
 static volatile sig_atomic_t s_exit_requested;
 
@@ -122,6 +123,7 @@ int main(int argc, char **argv)
     /* ---- Register the platform audio backend (Linux: ALSA) ---- */
     mybot_audio_platform_register_alsa_capture();
     mybot_audio_platform_register_alsa_playback();
+    mybot_flash_platform_register_file();
 
     /* ---- Install signal handlers ---- */
     signal(SIGINT,  signal_handler);

@@ -39,6 +39,8 @@ set_target_properties(agora-rtc-sdk PROPERTIES
 set(MYBOT_SRC
     main/main.c
     main/app.c
+    main/flash/flash_device.c
+    main/board/linux/flash_file.c
     components/ringbuf/ringbuf.c
     components/http_client/http_client.c
     components/cJSON/cJSON.c
@@ -73,3 +75,24 @@ target_link_libraries(mybot PRIVATE
     rt
     m
 )
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(mybot_device_state_test
+        tests/device_state_test.c
+        main/protocols/device_state.c
+        main/flash/flash_device.c
+    )
+    target_include_directories(mybot_device_state_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/main
+        ${AOSL_DIR}/include
+        ${AOSL_DIR}/platform/include
+    )
+    target_link_libraries(mybot_device_state_test PRIVATE
+        aosl
+        pthread
+        dl
+        rt
+        m
+    )
+    add_test(NAME mybot_device_state_test COMMAND mybot_device_state_test)
+endif()

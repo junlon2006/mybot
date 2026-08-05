@@ -46,7 +46,8 @@ typedef struct {
 } mybot_device_conversation_t;
 
 /* ----------------------------------------------------------
- * API calls — all return 0 on success, -1 on error.
+ * API calls — return 0 on success, a positive HTTP status code for a
+ * non-2xx response, or -1 for transport/parsing/local failures.
  * Base URL examples: "http://localhost:3001", "https://mybot.sh3t.agoralab.co/api"
  * ---------------------------------------------------------- */
 

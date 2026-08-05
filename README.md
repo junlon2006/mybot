@@ -13,6 +13,8 @@ mybot/
 │   ├── app.h / app.c               # 跨平台应用层：音频/MPQ/状态机，非阻塞启动
 │   ├── audio/
 │   │   └── audio_device.h / .c     # 音频平台抽象（ops 函数指针注册表）
+│   ├── flash/
+│   │   └── flash_device.h / .c     # 持久化存储抽象（设备凭证等）
 │   ├── board/
 │   │   └── linux/                  # 板级适配层：Linux ALSA 采集/播放实现
 │   └── protocols/
@@ -80,6 +82,9 @@ make -j$(nproc)
 # 需要先启动设备端 API 服务（参考 DEVICE_API.md）
 ./mybot --server http://localhost:3001 --device-id AG-DEMO-001
 ```
+
+Linux 文件型 flash 默认将设备凭证保存在当前目录的 `.mybot-flash/`。
+可通过 `MYBOT_FLASH_DIR` 指定其他持久化目录；部署时应选择仅设备进程可访问的位置。
 
 ### 命令行参数
 

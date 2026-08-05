@@ -4,6 +4,7 @@
 #include "protocols/rtc_session.h"
 #include "protocols/device_state.h"
 #include "ringbuf.h"
+#include "flash/flash_device.h"
 
 #include "api/aosl.h"
 #include "api/aosl_atomic.h"
@@ -37,6 +38,7 @@
 static struct {
     aosl_atomic_t  running;
     bool           aosl_active;
+    bool           flash_active;
 
     /* Audio capture */
     void           *cap_ctx;
@@ -459,6 +461,12 @@ int mybot_app_start(const mybot_app_config_t *cfg)
     aosl_ctor();
     s_app.aosl_active = true;
 
+    if (mybot_flash_init() < 0) {
+        AOSL_LOG_ERR("flash init failed");
+        goto fail;
+    }
+    s_app.flash_active = true;
+
     /* ---- 2. Initialize audio devices via the registered platform ops ----
      * The platform backend (e.g. ALSA on Linux) must have registered itself
      * through audio_device_register_*() before mybot_app_start() is called. */
@@ -638,6 +646,11 @@ void mybot_app_stop(void)
     if (!aosl_mpq_invalid(s_app.state_mpq)) {
         aosl_mpq_destroy_wait(s_app.state_mpq);
         s_app.state_mpq = AOSL_MPQ_INVALID;
+    }
+
+    if (s_app.flash_active) {
+        mybot_flash_deinit();
+        s_app.flash_active = false;
     }
 
     /* ---- 5. Stop audio devices ----

@@ -103,9 +103,10 @@ int mybot_device_api_create_pair_code(const char *base_url,
                  raw.body ? raw.body : "(empty)");
 
     if (!http_response_ok(&raw)) {
+        int status = raw.status_code;
         AOSL_LOG_ERR("POST %s -> HTTP error %d", url, raw.status_code);
         mybot_http_response_free(&raw);
-        return -1;
+        return status > 0 ? status : -1;
     }
 
     /* Parse with mybot_cJSON */
@@ -179,9 +180,10 @@ int mybot_device_api_get_binding_status(const char *base_url,
                  raw.body ? raw.body : "(empty)");
 
     if (!http_response_ok(&raw)) {
+        int status = raw.status_code;
         AOSL_LOG_ERR("GET %s -> HTTP error %d", url, raw.status_code);
         mybot_http_response_free(&raw);
-        return -1;
+        return status > 0 ? status : -1;
     }
 
     /* Parse with mybot_cJSON */
@@ -296,9 +298,10 @@ int mybot_device_api_start_conversation(const char *base_url,
                  raw.body ? raw.body : "(empty)");
 
     if (!http_response_ok(&raw)) {
+        int status = raw.status_code;
         AOSL_LOG_ERR("POST %s -> HTTP error %d", url, raw.status_code);
         mybot_http_response_free(&raw);
-        return -1;
+        return status > 0 ? status : -1;
     }
 
     /* Parse with mybot_cJSON */
@@ -373,7 +376,7 @@ int mybot_device_api_stop_conversation(const char *base_url,
                      raw.body ? raw.body : "(empty)");
         if (!http_response_ok(&raw)) {
             AOSL_LOG_ERR("POST %s -> HTTP error %d", url, raw.status_code);
-            ret = -1;
+            ret = raw.status_code > 0 ? raw.status_code : -1;
         }
     } else {
         AOSL_LOG_ERR("POST %s failed (http)", url);
