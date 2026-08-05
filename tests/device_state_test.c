@@ -16,6 +16,8 @@ static bool s_flash_write_fails;
 static int s_binding_result;
 static char s_binding_status[16];
 static char s_binding_token[MYBOT_DEVICE_API_MAX_TOKEN];
+static int s_pair_result;
+static int s_pair_call_count;
 
 static int mock_flash_init(void **ctx)
 {
@@ -86,6 +88,10 @@ int mybot_device_api_create_pair_code(const char *base_url,
     (void)device_id;
     (void)firmware_ver;
     (void)hw_model;
+    s_pair_call_count++;
+    if (s_pair_result != 0) {
+        return s_pair_result;
+    }
     memset(resp, 0, sizeof(*resp));
     strcpy(resp->code, "123456");
     strcpy(resp->pair_token, "pair-token");
@@ -157,6 +163,21 @@ int main(void)
     aosl_ctor();
     assert(mybot_flash_register(&s_mock_flash_ops) == 0);
     assert(mybot_flash_init() == 0);
+
+    s_pair_result = -1;
+    assert(mybot_device_state_init("http://server", "device-1", NULL, NULL,
+                                   NULL) == 0);
+    mybot_device_state_tick();
+    assert(s_pair_call_count == 1);
+    assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_UNPROVISIONED);
+
+    s_pair_result = 0;
+    tick_many(29);
+    assert(s_pair_call_count == 1);
+    assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_UNPROVISIONED);
+    mybot_device_state_tick();
+    assert(s_pair_call_count == 2);
+    assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
 
     strcpy(s_binding_status, "bound");
     strcpy(s_binding_token, "device-token");

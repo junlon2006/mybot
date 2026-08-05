@@ -10,7 +10,9 @@
 
 
 #define MYBOT_DEVICE_AUTH_FLASH_KEY "device_auth"
-#define MYBOT_DEVICE_AUTH_VERSION   1U
+#define MYBOT_DEVICE_AUTH_VERSION          1U
+#define MYBOT_PAIR_RETRY_INITIAL_TICKS     30
+#define MYBOT_PAIR_RETRY_MAX_TICKS         600
 
 typedef struct {
     uint32_t version;
@@ -34,6 +36,8 @@ static struct {
     char pair_token[MYBOT_DEVICE_API_MAX_TOKEN];
     int  pair_poll_interval;    /* seconds between polls */
     int  pair_tick_counter;     /* counts tick() calls (100ms each) */
+    int  pair_retry_delay_ticks;
+    int  pair_retry_ticks_remaining;
 
     /* Runtime phase */
     char device_token[MYBOT_DEVICE_API_MAX_TOKEN];
@@ -179,10 +183,24 @@ static void action_create_pair_code(void)
         s_state.server_base, s_state.device_id,
         s_state.firmware_ver, s_state.hw_model, &resp);
     if (ret != 0) {
-        AOSL_LOG_ERR("pair-code request failed");
+        if (s_state.pair_retry_delay_ticks == 0) {
+            s_state.pair_retry_delay_ticks = MYBOT_PAIR_RETRY_INITIAL_TICKS;
+        } else if (s_state.pair_retry_delay_ticks <
+                   MYBOT_PAIR_RETRY_MAX_TICKS / 2) {
+            s_state.pair_retry_delay_ticks *= 2;
+        } else {
+            s_state.pair_retry_delay_ticks = MYBOT_PAIR_RETRY_MAX_TICKS;
+        }
+        s_state.pair_retry_ticks_remaining =
+            s_state.pair_retry_delay_ticks;
+        AOSL_LOG_ERR("pair-code request failed, retrying in %d seconds",
+                     s_state.pair_retry_delay_ticks / 10);
         set_state(MYBOT_DEVICE_STATE_UNPROVISIONED);
         return;
     }
+
+    s_state.pair_retry_delay_ticks = 0;
+    s_state.pair_retry_ticks_remaining = 0;
 
     AOSL_LOG_INF("pair-code obtained: code=%s, poll=%ds",
                  resp.code, resp.poll_after_seconds);
@@ -428,7 +446,11 @@ void mybot_device_state_tick(void)
     }
 
     if (current_state() == MYBOT_DEVICE_STATE_UNPROVISIONED) {
-        /* Unprovisioned with no pending pairing request — wait for 'p'. */
+        if (s_state.pair_retry_ticks_remaining > 0 &&
+            --s_state.pair_retry_ticks_remaining == 0) {
+            set_state(MYBOT_DEVICE_STATE_PAIRING);
+            action_create_pair_code();
+        }
         return;
     }
 
