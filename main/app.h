@@ -24,9 +24,9 @@ typedef struct {
  * its MPQ timers; the caller must call mybot_app_stop() before exiting to release
  * all resources.
  *
- * @param cfg configuration; must remain valid for the application lifetime.
- * @return 0 on success, -1 on error. mybot_app_stop() may still be called to
- *         release any resources allocated before the failure.
+ * @param cfg application configuration.
+ * @return 0 on success, -1 on error. On error, all partially initialized
+ *         resources have already been released.
  */
 int mybot_app_start(const mybot_app_config_t *cfg);
 
@@ -48,8 +48,7 @@ void mybot_app_pair(void);
 /**
  * @brief Stop the application and release all resources.
  *
- * Blocks until all worker threads have exited. Idempotent, and safe to call
- * even if mybot_app_start() failed partway through initialization.
+ * Blocks until all worker threads have exited. Idempotent.
  */
 void mybot_app_stop(void);
 

@@ -129,8 +129,6 @@ int main(int argc, char **argv)
 
     /* ---- Start the application (non-blocking) ---- */
     if (mybot_app_start(&cfg) < 0) {
-        AOSL_LOG_ERR("mybot_app_start failed");
-        mybot_app_stop();   /* release anything mybot_app_start allocated before failing */
         return 1;
     }
 

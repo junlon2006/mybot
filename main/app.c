@@ -39,12 +39,14 @@ static struct {
 
     /* Audio capture */
     void           *cap_ctx;
+    bool            cap_started;
     aosl_mpq_t      cap_mpq;      /* capture worker thread (aosl_mpq_create) */
     aosl_timer_t    cap_timer;    /* drives the capture read loop */
     mybot_ringbuf_t cap_ringbuf;
 
     /* Audio playback */
     void           *pb_ctx;
+    bool            pb_started;
     aosl_mpq_t      pb_mpq;       /* playback worker thread (aosl_mpq_create) */
     aosl_timer_t    pb_timer;     /* drives the playback write loop */
     mybot_ringbuf_t pb_ringbuf;
@@ -451,16 +453,16 @@ int mybot_app_start(const mybot_app_config_t *cfg)
     const mybot_audio_playback_ops_t *pb_ops  = mybot_audio_device_get_playback();
     if (!cap_ops || !pb_ops) {
         AOSL_LOG_ERR("no audio platform registered");
-        return -1;
+        goto fail;
     }
 
     if (cap_ops->init(&s_app.cap_ctx, SAMPLE_RATE, CHANNELS, BITS_PER_SAMPLE) < 0) {
         AOSL_LOG_ERR("capture init failed");
-        return -1;
+        goto fail;
     }
     if (pb_ops->init(&s_app.pb_ctx, SAMPLE_RATE, CHANNELS, BITS_PER_SAMPLE) < 0) {
         AOSL_LOG_ERR("playback init failed");
-        return -1;
+        goto fail;
     }
 
     /* ---- 3. Create ring buffers ---- */
@@ -468,20 +470,29 @@ int mybot_app_start(const mybot_app_config_t *cfg)
     s_app.pb_ringbuf  = mybot_ringbuf_create(RINGBUF_SIZE);
     if (!s_app.cap_ringbuf || !s_app.pb_ringbuf) {
         AOSL_LOG_ERR("ringbuf creation failed");
-        return -1;
+        goto fail;
     }
 #if MYBOT_CLOUD_AEC
     s_app.ref_ringbuf = mybot_ringbuf_create(RINGBUF_SIZE);
     if (!s_app.ref_ringbuf) {
         AOSL_LOG_ERR("ref ringbuf creation failed");
-        return -1;
+        goto fail;
     }
     AOSL_LOG_INF("cloud AEC enabled, ref ringbuf created");
 #endif
 
     /* ---- 4. Start audio devices ---- */
-    cap_ops->start(s_app.cap_ctx);
-    pb_ops->start(s_app.pb_ctx);
+    if (!cap_ops->start || cap_ops->start(s_app.cap_ctx) < 0) {
+        AOSL_LOG_ERR("capture start failed");
+        goto fail;
+    }
+    s_app.cap_started = true;
+
+    if (!pb_ops->start || pb_ops->start(s_app.pb_ctx) < 0) {
+        AOSL_LOG_ERR("playback start failed");
+        goto fail;
+    }
+    s_app.pb_started = true;
 
     /* ---- 5. Create the capture/playback worker MPQs ----
      * Each worker is an MPQ created with aosl_mpq_create(), which spawns the
@@ -493,14 +504,14 @@ int mybot_app_start(const mybot_app_config_t *cfg)
                                     cap_mpq_init, cap_mpq_fini, NULL);
     if (aosl_mpq_invalid(s_app.cap_mpq)) {
         AOSL_LOG_ERR("cap_mpq create failed");
-        return -1;
+        goto fail;
     }
 
     s_app.pb_mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MPQ_STACK_SIZE, 1000, "pb_mpq",
                                    pb_mpq_init, pb_mpq_fini, NULL);
     if (aosl_mpq_invalid(s_app.pb_mpq)) {
         AOSL_LOG_ERR("pb_mpq create failed");
-        return -1;
+        goto fail;
     }
 
     /* ---- 6. Initialize the device state machine ---- */
@@ -515,7 +526,7 @@ int mybot_app_start(const mybot_app_config_t *cfg)
                           cfg->firmware_ver, cfg->hw_model,
                           &dev_cbs) < 0) {
         AOSL_LOG_ERR("device state init failed");
-        return -1;
+        goto fail;
     }
 
     /* ---- 7. Create the MPQ and run its loop in a dedicated thread ----
@@ -527,7 +538,7 @@ int mybot_app_start(const mybot_app_config_t *cfg)
     s_app.mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MPQ_STACK_SIZE, 10000, "mybot_mpq", mpq_init, mpq_fini, NULL);
     if (aosl_mpq_invalid(s_app.mpq)) {
         AOSL_LOG_ERR("aosl_mpq_create failed");
-        return -1;
+        goto fail;
     }
 
     /* ---- 8. Create the device-state MPQ ----
@@ -537,11 +548,15 @@ int mybot_app_start(const mybot_app_config_t *cfg)
                                       state_mpq_init, state_mpq_fini, NULL);
     if (aosl_mpq_invalid(s_app.state_mpq)) {
         AOSL_LOG_ERR("state_mpq create failed");
-        return -1;
+        goto fail;
     }
 
     AOSL_LOG_INF("app started");
     return 0;
+
+fail:
+    mybot_app_stop();
+    return -1;
 }
 
 bool mybot_app_is_running(void)
@@ -607,19 +622,34 @@ void mybot_app_stop(void)
         s_app.state_mpq = AOSL_MPQ_INVALID;
     }
 
-    /* ---- 5. Stop the RTC session ----
+    /* ---- 5. Stop audio devices ----
+     * Their worker MPQs have exited, so no read/write can race with stop. */
+    const mybot_audio_capture_ops_t  *cap_ops = mybot_audio_device_get_capture();
+    const mybot_audio_playback_ops_t *pb_ops  = mybot_audio_device_get_playback();
+    if (s_app.pb_started) {
+        if (pb_ops && pb_ops->stop && pb_ops->stop(s_app.pb_ctx) < 0) {
+            AOSL_LOG_ERR("playback stop failed");
+        }
+        s_app.pb_started = false;
+    }
+    if (s_app.cap_started) {
+        if (cap_ops && cap_ops->stop && cap_ops->stop(s_app.cap_ctx) < 0) {
+            AOSL_LOG_ERR("capture stop failed");
+        }
+        s_app.cap_started = false;
+    }
+
+    /* ---- 6. Stop the RTC session ----
      * Also stops the SDK threads that feed the playback ring buffer. NOTE:
      * agora_rtc_fini() finalizes AOSL internally, so only AOSL-independent
      * teardown (devices, ring buffers) may follow. */
     mybot_rtc_session_fini();
 
-    /* ---- 6. Destroy devices (no AOSL dependency) ---- */
-    const mybot_audio_capture_ops_t  *cap_ops = mybot_audio_device_get_capture();
-    const mybot_audio_playback_ops_t *pb_ops  = mybot_audio_device_get_playback();
+    /* ---- 7. Destroy devices (no AOSL dependency) ---- */
     if (cap_ops && s_app.cap_ctx) { cap_ops->destroy(s_app.cap_ctx); s_app.cap_ctx = NULL; }
     if (pb_ops  && s_app.pb_ctx)  { pb_ops->destroy(s_app.pb_ctx);   s_app.pb_ctx  = NULL; }
 
-    /* ---- 7. Destroy ring buffers ----
+    /* ---- 8. Destroy ring buffers ----
      * aosl_hal_free() maps to the system allocator on all platforms, so this
      * stays safe even after AOSL has been finalized by the RTC SDK. */
     if (s_app.cap_ringbuf) { mybot_ringbuf_destroy(s_app.cap_ringbuf); s_app.cap_ringbuf = NULL; }
@@ -628,7 +658,7 @@ void mybot_app_stop(void)
     if (s_app.ref_ringbuf) { mybot_ringbuf_destroy(s_app.ref_ringbuf); s_app.ref_ringbuf = NULL; }
 #endif
 
-    /* ---- 8. Finalize AOSL ----
+    /* ---- 9. Finalize AOSL ----
      * No-op if the RTC SDK already finalized AOSL in mybot_rtc_session_fini();
      * kept so the app also works when no SDK is involved. */
     aosl_dtor();
