@@ -95,4 +95,18 @@ if(BUILD_TESTING)
         m
     )
     add_test(NAME mybot_device_state_test COMMAND mybot_device_state_test)
+
+    add_executable(mybot_http_client_test tests/http_client_test.c)
+    target_include_directories(mybot_http_client_test PRIVATE
+        ${AOSL_DIR}/include
+        ${AOSL_DIR}/platform/include
+    )
+    target_link_libraries(mybot_http_client_test PRIVATE
+        aosl
+        pthread
+        dl
+        rt
+        m
+    )
+    add_test(NAME mybot_http_client_test COMMAND mybot_http_client_test)
 endif()

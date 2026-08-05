@@ -259,11 +259,13 @@ static int send_all(aosl_fd_t fd, const char *data, size_t len,
  * Read everything from the socket into a dynamic buffer.
  * Uses a simple loop with recv until connection closes or timeout.
  */
-static char *read_all(aosl_fd_t fd, size_t *out_len, uint64_t deadline)
+static char *read_all(aosl_fd_t fd, size_t *out_len, int *out_closed,
+                      uint64_t deadline)
 {
     size_t cap = RECV_BUF_SIZE;
     size_t len = 0;
     char  *buf = (char *)aosl_hal_malloc(cap);
+    *out_closed = 0;
     if (!buf) {
         return NULL;
     }
@@ -291,7 +293,7 @@ static char *read_all(aosl_fd_t fd, size_t *out_len, uint64_t deadline)
                 buf = nb;
             }
         } else if (ret == 0) {
-            /* connection closed */
+            *out_closed = 1;
             break;
         } else if (ret == AOSL_HAL_RET_EAGAIN) {
             /* No data right now (non-blocking socket). Wait briefly and retry;
@@ -470,7 +472,8 @@ static int parse_content_length(const char *value, const char *end,
  * Parse a complete HTTP response from raw data.
  * Returns the response struct (body will point into or be a copy from raw).
  */
-static int parse_response(const char *raw, size_t raw_len, mybot_http_response_t *resp)
+static int parse_response(const char *raw, size_t raw_len, int stream_closed,
+                          mybot_http_response_t *resp)
 {
     memset(resp, 0, sizeof(*resp));
 
@@ -491,6 +494,7 @@ static int parse_response(const char *raw, size_t raw_len, mybot_http_response_t
     size_t content_length = 0;
     int has_content_length = 0;
     int chunked = 0;
+    int headers_complete = 0;
 
     while (p < end) {
         nl = (const char *)memchr(p, '\n', (size_t)(end - p));
@@ -502,6 +506,7 @@ static int parse_response(const char *raw, size_t raw_len, mybot_http_response_t
             p = nl + 1;
             if (p < end && *p == '\r') { p++; }
             body_offset = (size_t)(p - raw);
+            headers_complete = 1;
             break;
         }
 
@@ -534,35 +539,35 @@ static int parse_response(const char *raw, size_t raw_len, mybot_http_response_t
         if (p < end && *p == '\r') { p++; }
     }
 
-    /* body */
-    if (body_offset < raw_len) {
-        size_t avail = raw_len - body_offset;
+    if (!headers_complete || resp->status_code == 0) {
+        return -1;
+    }
 
-        if (chunked) {
-            /* Transfer-Encoding: chunked — decode before handing out. */
-            resp->body = dechunk_body(raw + body_offset, avail, &resp->body_len);
-            if (!resp->body) {
-                return -1;
-            }
-        } else {
-            if (has_content_length) {
-                resp->body_len = content_length;
-                if (resp->body_len > avail) {
-                    resp->body_len = avail;
-                }
-            } else {
-                resp->body_len = avail;
-            }
+    size_t avail = raw_len - body_offset;
+    if (chunked) {
+        resp->body = dechunk_body(raw + body_offset, avail, &resp->body_len);
+        return resp->body ? 0 : -1;
+    }
 
-            if (resp->body_len > 0) {
-                resp->body = (char *)aosl_hal_malloc(resp->body_len + 1);
-                if (!resp->body) {
-                    return -1;
-                }
-                memcpy(resp->body, raw + body_offset, resp->body_len);
-                resp->body[resp->body_len] = '\0';
-            }
+    if (has_content_length) {
+        if (content_length > avail) {
+            return -1;
         }
+        resp->body_len = content_length;
+    } else {
+        if (!stream_closed) {
+            return -1;
+        }
+        resp->body_len = avail;
+    }
+
+    if (resp->body_len > 0) {
+        resp->body = (char *)aosl_hal_malloc(resp->body_len + 1);
+        if (!resp->body) {
+            return -1;
+        }
+        memcpy(resp->body, raw + body_offset, resp->body_len);
+        resp->body[resp->body_len] = '\0';
     }
 
     return 0;
@@ -632,7 +637,8 @@ static int http_request(const char *method, const char *url,
 
     /* Read response */
     size_t raw_len = 0;
-    char *raw = read_all(fd, &raw_len, deadline);
+    int stream_closed = 0;
+    char *raw = read_all(fd, &raw_len, &stream_closed, deadline);
     aosl_hal_sk_close(fd);
 
     if (!raw) {
@@ -640,7 +646,7 @@ static int http_request(const char *method, const char *url,
     }
 
     /* Parse */
-    ret = parse_response(raw, raw_len, resp);
+    ret = parse_response(raw, raw_len, stream_closed, resp);
     aosl_hal_free(raw);
 
     return ret;
