@@ -4,6 +4,16 @@ project(mybot VERSION 0.1.0 LANGUAGES C)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+option(MYBOT_ENABLE_ASAN "Enable AddressSanitizer for runtime memory diagnostics" ON)
+if(MYBOT_ENABLE_ASAN)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
+        add_link_options(-fsanitize=address)
+    else()
+        message(FATAL_ERROR "MYBOT_ENABLE_ASAN requires a GNU or Clang compatible compiler")
+    endif()
+endif()
+
 # ------------------------------------------------------------
 # AOSL subsystem
 # ------------------------------------------------------------
