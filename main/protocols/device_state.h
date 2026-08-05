@@ -65,6 +65,10 @@ int mybot_device_state_init(const char *server_base, const char *device_id,
  *  Drives polling and state transitions. */
 void mybot_device_state_tick(void);
 
+/** Stop state-machine activity and close any active conversation.
+ *  Must be called from the same thread that calls mybot_device_state_tick(). */
+void mybot_device_state_shutdown(void);
+
 /** Get current state. */
 mybot_device_state_t mybot_device_state_get(void);
 

@@ -306,6 +306,12 @@ static void dev_on_pair_code(const char *code)
 
 static void dev_on_conversation_start(const mybot_conversation_params_t *params)
 {
+    if (!aosl_atomic_read(&s_app.running)) {
+        AOSL_LOG_INF("ignoring conversation start during shutdown");
+        mybot_device_state_notify_conversation_ended();
+        return;
+    }
+
     AOSL_LOG_INF("==== CONVERSATION START ====");
     AOSL_LOG_INF("  conversation_id: %s", params->conversation_id);
     AOSL_LOG_INF("  rtc channel    : %s", params->rtc_channel);
@@ -377,6 +383,9 @@ static void state_tick_timer(aosl_timer_t id, const aosl_ts_t *now,
                              uintptr_t argc, uintptr_t argv[])
 {
     (void)id; (void)now; (void)argc; (void)argv;
+    if (!aosl_atomic_read(&s_app.running)) {
+        return;
+    }
     mybot_device_state_tick();
 }
 
@@ -403,6 +412,8 @@ static void state_mpq_fini(void *arg)
         aosl_mpq_kill_timer(s_app.state_timer);
         s_app.state_timer = AOSL_MPQ_TIMER_INVALID;
     }
+
+    mybot_device_state_shutdown();
 }
 
 /* ----------------------------------------------------------
@@ -620,7 +631,16 @@ void mybot_app_stop(void)
      * exits within a bounded time even when the device yields no data. */
     aosl_atomic_set(&s_app.running, false);
 
-    /* ---- 2. Stop the MPQ loop ----
+    /* ---- 2. Stop device-state activity ----
+     * Wait for any in-flight HTTP operation, prevent further state-machine
+     * actions, and close an active server conversation before RTC/audio
+     * resources are dismantled. */
+    if (!aosl_mpq_invalid(s_app.state_mpq)) {
+        aosl_mpq_destroy_wait(s_app.state_mpq);
+        s_app.state_mpq = AOSL_MPQ_INVALID;
+    }
+
+    /* ---- 3. Stop the MPQ loop ----
      * Its fini callback kills the send timer and leaves the RTC channel.
      * Must happen before mybot_rtc_session_fini(): the RTC SDK finalizes AOSL
      * itself in agora_rtc_fini(), after which no AOSL call may be made. */
@@ -629,7 +649,7 @@ void mybot_app_stop(void)
         s_app.mpq = AOSL_MPQ_INVALID;
     }
 
-    /* ---- 3. Stop the capture/playback MPQ threads ----
+    /* ---- 4. Stop the capture/playback MPQ threads ----
      * aosl_mpq_destroy_wait() destroys the queue and joins its thread in one
      * call, replacing the thread-HAL join that is not portable. These must be
      * torn down before mybot_rtc_session_fini() (which finalizes AOSL). */
@@ -640,12 +660,6 @@ void mybot_app_stop(void)
     if (!aosl_mpq_invalid(s_app.pb_mpq)) {
         aosl_mpq_destroy_wait(s_app.pb_mpq);
         s_app.pb_mpq = AOSL_MPQ_INVALID;
-    }
-
-    /* ---- 4. Stop the device-state MPQ ---- */
-    if (!aosl_mpq_invalid(s_app.state_mpq)) {
-        aosl_mpq_destroy_wait(s_app.state_mpq);
-        s_app.state_mpq = AOSL_MPQ_INVALID;
     }
 
     if (s_app.flash_active) {

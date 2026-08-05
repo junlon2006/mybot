@@ -52,6 +52,7 @@ static struct {
 
     /* One-shot action flag consumed by tick() */
     aosl_atomic_t start_pairing_flag;
+    aosl_atomic_t shutting_down;
 } s_state;
 
 typedef enum {
@@ -430,6 +431,10 @@ int mybot_device_state_init(const char *server_base, const char *device_id,
 
 void mybot_device_state_tick(void)
 {
+    if (aosl_atomic_read(&s_state.shutting_down)) {
+        return;
+    }
+
     /* A pending pairing request (first boot, expired pair code, or the user
      * pressing 'p') starts a fresh pair-code request from ANY state. If a
      * conversation is active, end it first so the RTC connection is torn down
@@ -502,13 +507,31 @@ void mybot_device_state_tick(void)
     }
 }
 
+void mybot_device_state_shutdown(void)
+{
+    aosl_atomic_set(&s_state.shutting_down, true);
+    aosl_atomic_set(&s_state.start_pairing_flag, false);
+    aosl_atomic_set(&s_state.conversation_requested, false);
+    aosl_atomic_set(&s_state.stop_request, MYBOT_STOP_REQUEST_NONE);
+
+    if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
+        action_stop_conversation("device_hangup");
+    }
+}
+
 void mybot_device_state_request_pair(void)
 {
+    if (aosl_atomic_read(&s_state.shutting_down)) {
+        return;
+    }
     aosl_atomic_set(&s_state.start_pairing_flag, true);
 }
 
 void mybot_device_state_request_start(void)
 {
+    if (aosl_atomic_read(&s_state.shutting_down)) {
+        return;
+    }
     if (current_state() != MYBOT_DEVICE_STATE_RUNTIME) {
         AOSL_LOG_ERR("cannot start: not in runtime");
         return;
@@ -518,6 +541,9 @@ void mybot_device_state_request_start(void)
 
 void mybot_device_state_request_stop(void)
 {
+    if (aosl_atomic_read(&s_state.shutting_down)) {
+        return;
+    }
     if (current_state() != MYBOT_DEVICE_STATE_IN_CONVERSATION) {
         AOSL_LOG_ERR("cannot stop: not in conversation");
         return;
@@ -527,6 +553,9 @@ void mybot_device_state_request_stop(void)
 
 void mybot_device_state_notify_conversation_ended(void)
 {
+    if (aosl_atomic_read(&s_state.shutting_down)) {
+        return;
+    }
     /* Called from an RTC SDK callback thread on connection loss/error. Only
      * flag the stop here — the actual teardown (HTTP stop + RTC leave) runs
      * on the state_mpq thread via mybot_device_state_tick(), avoiding

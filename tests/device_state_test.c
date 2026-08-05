@@ -18,6 +18,10 @@ static char s_binding_status[16];
 static char s_binding_token[MYBOT_DEVICE_API_MAX_TOKEN];
 static int s_pair_result;
 static int s_pair_call_count;
+static int s_start_result;
+static int s_stop_call_count;
+static int s_conversation_start_count;
+static int s_conversation_stop_count;
 
 static int mock_flash_init(void **ctx)
 {
@@ -124,8 +128,16 @@ int mybot_device_api_start_conversation(const char *base_url,
     (void)device_id;
     (void)device_token;
     (void)body_params;
-    (void)resp;
-    return -1;
+    if (s_start_result != 0) {
+        return s_start_result;
+    }
+    memset(resp, 0, sizeof(*resp));
+    strcpy(resp->conversation_id, "conversation-1");
+    strcpy(resp->rtc_app_id, "rtc-app-id");
+    strcpy(resp->rtc_channel, "rtc-channel");
+    strcpy(resp->rtc_uid, "rtc-uid");
+    strcpy(resp->rtc_token, "rtc-token");
+    return 0;
 }
 
 int mybot_device_api_stop_conversation(const char *base_url,
@@ -137,9 +149,21 @@ int mybot_device_api_stop_conversation(const char *base_url,
     (void)base_url;
     (void)device_id;
     (void)device_token;
-    (void)conversation_id;
-    (void)reason;
+    assert(strcmp(conversation_id, "conversation-1") == 0);
+    assert(strcmp(reason, "device_hangup") == 0);
+    s_stop_call_count++;
     return 0;
+}
+
+static void on_conversation_start(const mybot_conversation_params_t *params)
+{
+    assert(strcmp(params->conversation_id, "conversation-1") == 0);
+    s_conversation_start_count++;
+}
+
+static void on_conversation_stop(void)
+{
+    s_conversation_stop_count++;
 }
 
 static void tick_many(int count)
@@ -217,6 +241,26 @@ int main(void)
     assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_RUNTIME);
     assert(strcmp(mybot_device_state_get_token(), "one-time-token") == 0);
     assert(s_flash_present);
+
+    mybot_device_state_callbacks_t callbacks = {
+        .on_conversation_start = on_conversation_start,
+        .on_conversation_stop = on_conversation_stop,
+    };
+    assert(mybot_device_state_init("http://server", "device-1", NULL, NULL,
+                                   &callbacks) == 0);
+    mybot_device_state_request_start();
+    mybot_device_state_tick();
+    assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_IN_CONVERSATION);
+    assert(s_conversation_start_count == 1);
+
+    mybot_device_state_shutdown();
+    assert(s_stop_call_count == 1);
+    assert(s_conversation_stop_count == 1);
+    assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_RUNTIME);
+
+    mybot_device_state_request_start();
+    mybot_device_state_tick();
+    assert(s_conversation_start_count == 1);
 
     mybot_flash_deinit();
     aosl_dtor();
