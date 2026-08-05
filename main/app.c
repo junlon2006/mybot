@@ -93,11 +93,18 @@ static void capture_timer(aosl_timer_t id, const aosl_ts_t *now,
 
     int frames = ops->read(s_app.cap_ctx, pcm, FRAMES_20MS);
     if (frames <= 0) { return; }
+    if (frames > FRAMES_20MS) {
+        AOSL_LOG_ERR("capture backend returned invalid frame count: %d > %d",
+                     frames, FRAMES_20MS);
+        return;
+    }
 
     /* Discard until RTC join succeeds (avoid filling ringbuf with stale data) */
     if (!aosl_atomic_read(&s_app.rtc_connected)) { return; }
 
-    if (mybot_ringbuf_write(s_app.cap_ringbuf, (char *)pcm, BYTES_20MS) < 0) {
+    const int frame_bytes = CHANNELS * BITS_PER_SAMPLE / 8;
+    const int bytes_read = frames * frame_bytes;
+    if (mybot_ringbuf_write(s_app.cap_ringbuf, (char *)pcm, bytes_read) < 0) {
         static int dc = 0;
         if (++dc % 100 == 0) { AOSL_LOG_WRN("cap ringbuf full, dropped %d", dc); }
     }
