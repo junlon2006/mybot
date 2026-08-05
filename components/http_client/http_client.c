@@ -1,6 +1,7 @@
 #include "http_client.h"
 
 #include <hal/aosl_hal_socket.h>
+#include <hal/aosl_hal_iomp.h>
 #include <hal/aosl_hal_memory.h>
 #include <hal/aosl_hal_time.h>
 #include <hal/aosl_hal_errno.h>
@@ -11,15 +12,27 @@
 #include <strings.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <limits.h>
 
 /* ----------------------------------------------------------
  * Constants
  * ---------------------------------------------------------- */
 #define HTTP_DEFAULT_PORT   80
-#define HTTP_TIMEOUT_MS     5000   /* connect/recv timeout */
+#define HTTP_TIMEOUT_MS     5000   /* deadline for the socket request stages */
 #define RECV_BUF_SIZE       4096
 #define RECV_BUF_MAX        (32 * 1024)   /* hard cap on response buffer */
 #define MAX_URL_LEN         512
+
+static int deadline_remaining_ms(uint64_t deadline)
+{
+    uint64_t now = aosl_hal_get_tick_ms();
+    if (now >= deadline) {
+        return 0;
+    }
+
+    uint64_t remaining = deadline - now;
+    return remaining > INT_MAX ? INT_MAX : (int)remaining;
+}
 
 /* ----------------------------------------------------------
  * Internal: URL parts
@@ -102,12 +115,56 @@ static int parse_url(const char *url, url_parts_t *parts)
  * Create a TCP socket and connect to host:port.
  * Returns socket fd, or AOSL_INVALID_FD on error.
  */
-static aosl_fd_t tcp_connect(const char *host, int port)
+static int wait_for_connect(aosl_fd_t fd, uint64_t deadline)
+{
+    fd_set_t write_fds = aosl_hal_fdset_create();
+    fd_set_t error_fds = aosl_hal_fdset_create();
+    if (!write_fds || !error_fds) {
+        if (write_fds) { aosl_hal_fdset_destroy(write_fds); }
+        if (error_fds) { aosl_hal_fdset_destroy(error_fds); }
+        return -1;
+    }
+
+    int result = -1;
+    for (;;) {
+        int timeout_ms = deadline_remaining_ms(deadline);
+        if (timeout_ms <= 0) {
+            break;
+        }
+
+        aosl_hal_fdset_zero(write_fds);
+        aosl_hal_fdset_zero(error_fds);
+        aosl_hal_fdset_set(write_fds, fd);
+        aosl_hal_fdset_set(error_fds, fd);
+
+        int ret = aosl_hal_select((int)fd + 1, NULL, write_fds,
+                                  error_fds, timeout_ms);
+        if (ret == AOSL_HAL_RET_EINTR) {
+            continue;
+        }
+        if (ret <= 0 || aosl_hal_fdset_isset(error_fds, fd)) {
+            break;
+        }
+        if (aosl_hal_fdset_isset(write_fds, fd)) {
+            /* A writable socket may still carry a deferred connect error.
+             * AOSL does not expose portable SO_ERROR querying, so let the
+             * first real send report that error. */
+            result = 0;
+            break;
+        }
+    }
+
+    aosl_hal_fdset_destroy(write_fds);
+    aosl_hal_fdset_destroy(error_fds);
+    return result;
+}
+
+static aosl_fd_t tcp_connect(const char *host, int port, uint64_t deadline)
 {
     aosl_sockaddr_t addrs[8];
     int count = aosl_hal_gethostbyname(host, addrs,
                                        (int)(sizeof(addrs) / sizeof(addrs[0])));
-    if (count < 1) {
+    if (count < 1 || deadline_remaining_ms(deadline) <= 0) {
         return AOSL_INVALID_FD;
     }
 
@@ -137,14 +194,20 @@ static aosl_fd_t tcp_connect(const char *host, int port)
         return AOSL_INVALID_FD;
     }
 
-    if (aosl_hal_sk_connect(fd, &target) < 0) {
+    /* Non-blocking must be enabled before connect so the request deadline also
+     * bounds the TCP handshake. */
+    if (aosl_hal_sk_set_nonblock(fd) < 0) {
         aosl_hal_sk_close(fd);
         return AOSL_INVALID_FD;
     }
 
-    /* Non-blocking I/O so recv/send are interruptible and the HTTP timeout in
-     * read_all() is enforced even when the peer sends nothing. */
-    if (aosl_hal_sk_set_nonblock(fd) < 0) {
+    int ret = aosl_hal_sk_connect(fd, &target);
+    if (ret < 0 && ret != AOSL_HAL_RET_EINPROGRESS &&
+        ret != AOSL_HAL_RET_EAGAIN) {
+        aosl_hal_sk_close(fd);
+        return AOSL_INVALID_FD;
+    }
+    if (ret < 0 && wait_for_connect(fd, deadline) < 0) {
         aosl_hal_sk_close(fd);
         return AOSL_INVALID_FD;
     }
@@ -156,11 +219,14 @@ static aosl_fd_t tcp_connect(const char *host, int port)
  * Send all bytes (retry on short send).
  * Returns 0 on success, -1 on error.
  */
-static int send_all(aosl_fd_t fd, const char *data, size_t len)
+static int send_all(aosl_fd_t fd, const char *data, size_t len,
+                    uint64_t deadline)
 {
-    int eagain_retries = 0;
-
     while (len > 0) {
+        if (deadline_remaining_ms(deadline) <= 0) {
+            return -1;
+        }
+
         int n = aosl_hal_sk_send(fd, data, len, 0);
 
         if (n == AOSL_HAL_RET_EINTR) {
@@ -170,11 +236,7 @@ static int send_all(aosl_fd_t fd, const char *data, size_t len)
             continue;
         }
         if (n == AOSL_HAL_RET_EAGAIN) {
-            /* Would block (e.g. a non-blocking RTOS socket). Wait briefly and
-             * retry, bounded so a stalled peer cannot spin forever. */
-            if (++eagain_retries > 100) {
-                return -1;
-            }
+            /* Would block. The shared request deadline bounds retries. */
             aosl_hal_msleep(1);
             continue;
         }
@@ -196,7 +258,7 @@ static int send_all(aosl_fd_t fd, const char *data, size_t len)
  * Read everything from the socket into a dynamic buffer.
  * Uses a simple loop with recv until connection closes or timeout.
  */
-static char *read_all(aosl_fd_t fd, size_t *out_len)
+static char *read_all(aosl_fd_t fd, size_t *out_len, uint64_t deadline)
 {
     size_t cap = RECV_BUF_SIZE;
     size_t len = 0;
@@ -205,9 +267,7 @@ static char *read_all(aosl_fd_t fd, size_t *out_len)
         return NULL;
     }
 
-    uint64_t deadline = aosl_hal_get_tick_ms() + HTTP_TIMEOUT_MS;
-
-    while (aosl_hal_get_tick_ms() < deadline) {
+    while (deadline_remaining_ms(deadline) > 0) {
         int ret = aosl_hal_sk_recv(fd, buf + len, (int)(cap - len - 1), 0);
         if (ret > 0) {
             len += (size_t)ret;
@@ -458,12 +518,14 @@ static int http_request(const char *method, const char *url,
                         const char *extra_headers,
                         mybot_http_response_t *resp)
 {
+    uint64_t deadline = aosl_hal_get_tick_ms() + HTTP_TIMEOUT_MS;
+
     url_parts_t parts;
     if (parse_url(url, &parts) < 0) {
         return -1;
     }
 
-    aosl_fd_t fd = tcp_connect(parts.host, parts.port);
+    aosl_fd_t fd = tcp_connect(parts.host, parts.port, deadline);
     if (aosl_fd_invalid(fd)) {
         return -1;
     }
@@ -504,7 +566,7 @@ static int http_request(const char *method, const char *url,
     }
 
     /* Send request */
-    int ret = send_all(fd, req, (size_t)req_len);
+    int ret = send_all(fd, req, (size_t)req_len, deadline);
     if (ret < 0) {
         aosl_hal_sk_close(fd);
         return -1;
@@ -512,7 +574,7 @@ static int http_request(const char *method, const char *url,
 
     /* Read response */
     size_t raw_len = 0;
-    char *raw = read_all(fd, &raw_len);
+    char *raw = read_all(fd, &raw_len, deadline);
     aosl_hal_sk_close(fd);
 
     if (!raw) {
