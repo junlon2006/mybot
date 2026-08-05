@@ -29,20 +29,21 @@ static struct {
     int  runtime_poll_interval;
     int  runtime_tick_counter;
 
-    /* Conversation. The request flags are written by the main/SDK threads and
-     * read by the state_mpq thread, so they are volatile. */
+    /* Requests are atomically published by the main/SDK threads and consumed
+     * by the state_mpq thread. */
     char conversation_id[MYBOT_DEVICE_API_MAX_ID];
-    volatile bool conversation_requested;    /* user wants to start */
-    volatile bool stop_requested;            /* user wants to stop */
+    aosl_atomic_t conversation_requested;    /* user wants to start */
+    aosl_atomic_t stop_request;              /* mybot_stop_request_t */
 
     /* One-shot action flag consumed by tick() */
-    volatile bool start_pairing_flag;
+    aosl_atomic_t start_pairing_flag;
 } s_state;
 
-/* Reason reported to the server for the next conversation stop. Set by
- * mybot_device_state_request_stop() (user hangup) or
- * mybot_device_state_notify_conversation_ended() (RTC drop). */
-static volatile const char *s_pending_stop_reason = "device_hangup";
+typedef enum {
+    MYBOT_STOP_REQUEST_NONE = 0,
+    MYBOT_STOP_REQUEST_DEVICE_HANGUP,
+    MYBOT_STOP_REQUEST_ERROR,
+} mybot_stop_request_t;
 
 /* ----------------------------------------------------------
  * Helpers
@@ -167,7 +168,7 @@ static void action_poll_binding_pair(void)
         AOSL_LOG_INF("pair code expired, re-pairing");
         /* The top-level pairing handler in tick() re-runs the pair-code
          * request on the next tick. */
-        s_state.start_pairing_flag = true;
+        aosl_atomic_set(&s_state.start_pairing_flag, true);
     } else if (strcmp(resp.status, "unbound") == 0) {
         /* Shouldn't happen during pairing, but handle gracefully */
         AOSL_LOG_INF("unexpected unbound during pairing");
@@ -296,7 +297,7 @@ int mybot_device_state_init(const char *server_base, const char *device_id,
 
     /* Start in pairing mode */
     set_state(MYBOT_DEVICE_STATE_UNPROVISIONED);
-    s_state.start_pairing_flag = true;
+    aosl_atomic_set(&s_state.start_pairing_flag, true);
 
     return 0;
 }
@@ -307,8 +308,7 @@ void mybot_device_state_tick(void)
      * pressing 'p') starts a fresh pair-code request from ANY state. If a
      * conversation is active, end it first so the RTC connection is torn down
      * before the device is rebound. */
-    if (s_state.start_pairing_flag) {
-        s_state.start_pairing_flag = false;
+    if (aosl_atomic_xchg(&s_state.start_pairing_flag, false)) {
         if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
             action_stop_conversation("re-pair");
         }
@@ -342,9 +342,8 @@ void mybot_device_state_tick(void)
 
     if (current_state() == MYBOT_DEVICE_STATE_RUNTIME) {
         /* Check for user requests */
-        if (s_state.conversation_requested) {
-            s_state.conversation_requested = false;
-            s_state.stop_requested = false;
+        if (aosl_atomic_xchg(&s_state.conversation_requested, false)) {
+            aosl_atomic_set(&s_state.stop_request, MYBOT_STOP_REQUEST_NONE);
             action_start_conversation();
             return;
         }
@@ -360,9 +359,14 @@ void mybot_device_state_tick(void)
     }
 
     if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
-        if (s_state.stop_requested) {
-            s_state.stop_requested = false;
-            action_stop_conversation((const char *)s_pending_stop_reason);
+        mybot_stop_request_t request =
+            (mybot_stop_request_t)aosl_atomic_xchg(
+                &s_state.stop_request, MYBOT_STOP_REQUEST_NONE);
+        if (request != MYBOT_STOP_REQUEST_NONE) {
+            const char *reason =
+                request == MYBOT_STOP_REQUEST_DEVICE_HANGUP
+                    ? "device_hangup" : "error";
+            action_stop_conversation(reason);
         }
         return;
     }
@@ -370,7 +374,7 @@ void mybot_device_state_tick(void)
 
 void mybot_device_state_request_pair(void)
 {
-    s_state.start_pairing_flag = true;
+    aosl_atomic_set(&s_state.start_pairing_flag, true);
 }
 
 void mybot_device_state_request_start(void)
@@ -379,7 +383,7 @@ void mybot_device_state_request_start(void)
         AOSL_LOG_ERR("cannot start: not in runtime");
         return;
     }
-    s_state.conversation_requested = true;
+    aosl_atomic_set(&s_state.conversation_requested, true);
 }
 
 void mybot_device_state_request_stop(void)
@@ -388,8 +392,7 @@ void mybot_device_state_request_stop(void)
         AOSL_LOG_ERR("cannot stop: not in conversation");
         return;
     }
-    s_state.stop_requested = true;
-    s_pending_stop_reason = "device_hangup";
+    aosl_atomic_set(&s_state.stop_request, MYBOT_STOP_REQUEST_DEVICE_HANGUP);
 }
 
 void mybot_device_state_notify_conversation_ended(void)
@@ -399,7 +402,6 @@ void mybot_device_state_notify_conversation_ended(void)
      * on the state_mpq thread via mybot_device_state_tick(), avoiding
      * re-entrant SDK calls from inside an SDK callback. */
     if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
-        s_state.stop_requested = true;
-        s_pending_stop_reason = "error";
+        aosl_atomic_set(&s_state.stop_request, MYBOT_STOP_REQUEST_ERROR);
     }
 }

@@ -6,6 +6,7 @@
 #include "ringbuf.h"
 
 #include "api/aosl.h"
+#include "api/aosl_atomic.h"
 #include "api/aosl_mpq.h"
 #include "api/aosl_mpq_timer.h"
 #include "api/aosl_log.h"
@@ -34,7 +35,7 @@
  * Global app state
  * ---------------------------------------------------------- */
 static struct {
-    volatile bool            running;
+    aosl_atomic_t  running;
 
     /* Audio capture */
     void           *cap_ctx;
@@ -54,7 +55,7 @@ static struct {
 #endif
 
     /* RTC session state */
-    volatile bool   rtc_connected;
+    aosl_atomic_t   rtc_connected;
     char            rtc_app_id[64];
     char            rtc_channel[128];
     char            rtc_token[512];
@@ -79,7 +80,7 @@ static void capture_timer(aosl_timer_t id, const aosl_ts_t *now,
                           uintptr_t argc, uintptr_t argv[])
 {
     (void)id; (void)now; (void)argc; (void)argv;
-    if (!s_app.running) { return; }
+    if (!aosl_atomic_read(&s_app.running)) { return; }
 
     const mybot_audio_capture_ops_t *ops = mybot_audio_device_get_capture();
     uint8_t pcm[BYTES_20MS];
@@ -88,7 +89,7 @@ static void capture_timer(aosl_timer_t id, const aosl_ts_t *now,
     if (frames <= 0) { return; }
 
     /* Discard until RTC join succeeds (avoid filling ringbuf with stale data) */
-    if (!s_app.rtc_connected) { return; }
+    if (!aosl_atomic_read(&s_app.rtc_connected)) { return; }
 
     if (mybot_ringbuf_write(s_app.cap_ringbuf, (char *)pcm, BYTES_20MS) < 0) {
         static int dc = 0;
@@ -129,7 +130,7 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now,
                            uintptr_t argc, uintptr_t argv[])
 {
     (void)id; (void)now; (void)argc; (void)argv;
-    if (!s_app.running) { return; }
+    if (!aosl_atomic_read(&s_app.running)) { return; }
 
     const mybot_audio_playback_ops_t *ops = mybot_audio_device_get_playback();
     uint8_t pcm[BYTES_20MS];
@@ -173,7 +174,7 @@ static void pb_mpq_fini(void *arg)
 static void on_remote_audio(uint32_t uid, const void *data, size_t len)
 {
     (void)uid;
-    if (!s_app.running) { return; }
+    if (!aosl_atomic_read(&s_app.running)) { return; }
 
     if (mybot_ringbuf_write(s_app.pb_ringbuf, (const char *)data, (int)len) < 0) {
         static int dc = 0;
@@ -186,7 +187,8 @@ static void on_remote_audio(uint32_t uid, const void *data, size_t len)
  * ---------------------------------------------------------- */
 static void on_rtc_state_changed(mybot_rtc_state_t state)
 {
-    s_app.rtc_connected = (state == MYBOT_RTC_STATE_CONNECTED);
+    aosl_atomic_set(&s_app.rtc_connected,
+                    state == MYBOT_RTC_STATE_CONNECTED);
     AOSL_LOG_INF("rtc -> %s", state == MYBOT_RTC_STATE_CONNECTED ? "connected" : "disconnected");
 
     /* Unexpected RTC drop (connection lost / error): end the conversation.
@@ -208,7 +210,7 @@ static void send_audio_timer(aosl_timer_t id, const aosl_ts_t *now,
 {
     (void)id; (void)now; (void)argc; (void)argv;
 
-    if (!s_app.rtc_connected) { return; }
+    if (!aosl_atomic_read(&s_app.rtc_connected)) { return; }
 
     uint8_t pcm[BYTES_20MS];
     if (mybot_ringbuf_get_data_size(s_app.cap_ringbuf) < BYTES_20MS) { return; }
@@ -300,7 +302,7 @@ static void dev_on_conversation_stop(void)
     /* Stop the sender/capturer first so send_audio_timer stops attempting
      * sends before the connection is torn down. mybot_rtc_session_leave() is
      * additionally serialized against sends by an internal lock. */
-    s_app.rtc_connected = false;
+    aosl_atomic_set(&s_app.rtc_connected, false);
 
     int ret = mybot_rtc_session_leave();
     if (ret < 0) {
@@ -391,7 +393,7 @@ int mybot_app_start(const mybot_app_config_t *cfg)
     if (!cfg) { return -1; }
 
     memset(&s_app, 0, sizeof(s_app));
-    s_app.running    = true;
+    aosl_atomic_set(&s_app.running, true);
     s_app.mpq         = AOSL_MPQ_INVALID;
     s_app.send_timer  = AOSL_MPQ_TIMER_INVALID;
     s_app.cap_mpq     = AOSL_MPQ_INVALID;
@@ -506,12 +508,12 @@ int mybot_app_start(const mybot_app_config_t *cfg)
 
 bool mybot_app_is_running(void)
 {
-    return s_app.running;
+    return aosl_atomic_read(&s_app.running) != 0;
 }
 
 void mybot_app_request_exit(void)
 {
-    s_app.running = false;
+    aosl_atomic_set(&s_app.running, false);
 }
 
 void mybot_app_start_conversation(void)
@@ -537,7 +539,7 @@ void mybot_app_stop(void)
      * Set BEFORE any AOSL/audio teardown so the MPQ timer callbacks return
      * early. The ALSA read/write paths are poll-with-timeout, so each worker
      * exits within a bounded time even when the device yields no data. */
-    s_app.running = false;
+    aosl_atomic_set(&s_app.running, false);
 
     /* ---- 2. Stop the MPQ loop ----
      * Its fini callback kills the send timer and leaves the RTC channel.

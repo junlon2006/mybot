@@ -16,17 +16,16 @@
 void mybot_audio_platform_register_alsa_capture(void);
 void mybot_audio_platform_register_alsa_playback(void);
 
+static volatile sig_atomic_t s_exit_requested;
+
 /* ----------------------------------------------------------
  * Signal handling — POSIX. Request a graceful app exit.
  * ---------------------------------------------------------- */
 static void signal_handler(int sig)
 {
     (void)sig;
-    /* Only set the stop flag here. AOSL_LOG is not async-signal-safe and
-     * could deadlock on the logging lock if the signal interrupts a thread
-     * that is currently logging. The shutdown itself is logged by
-     * mybot_app_stop(). */
-    mybot_app_request_exit();
+    /* Only sig_atomic_t access is performed in the signal handler. */
+    s_exit_requested = 1;
 }
 
 /* ----------------------------------------------------------
@@ -149,6 +148,11 @@ int main(int argc, char **argv)
      * The app drives itself (device state machine etc.) from its own MPQ
      * timers, so main() only needs to poll stdin here. ---- */
     while (mybot_app_is_running()) {
+        if (s_exit_requested) {
+            mybot_app_request_exit();
+            continue;
+        }
+
         char ch;
         if (aosl_hal_sk_read((aosl_fd_t)0, &ch, 1) == 1) {
             handle_key(ch);

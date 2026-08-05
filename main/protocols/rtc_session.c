@@ -22,7 +22,7 @@ typedef struct {
     aosl_atomic_t                 state;   /* atomic: written by SDK callbacks */
     mybot_rtc_session_callbacks_t cbs;
     connection_id_t               conn_id;
-    volatile bool                 initialized;   /* read/written across threads */
+    aosl_atomic_t                 initialized;
     aosl_mutex_t                  lock;
 } rtc_priv_t;
 
@@ -147,7 +147,7 @@ static void __on_rtc_stats(connection_id_t conn_id, rtc_stats_t stats)
 
 int mybot_rtc_session_init(const char *app_id, mybot_rtc_session_callbacks_t *cbs)
 {
-    if (s_rtc.initialized) {
+    if (aosl_atomic_read(&s_rtc.initialized)) {
         return 0;
     }
 
@@ -196,7 +196,7 @@ int mybot_rtc_session_init(const char *app_id, mybot_rtc_session_callbacks_t *cb
 
     AOSL_LOG_INF("agora_rtc_init ok (sdk v%s)", agora_rtc_get_version());
 
-    s_rtc.initialized = true;
+    aosl_atomic_set(&s_rtc.initialized, true);
     set_state(MYBOT_RTC_STATE_INITIALIZED);
     return 0;
 }
@@ -207,7 +207,7 @@ int mybot_rtc_session_join(const char *channel, const char *token, const char *u
 
     aosl_hal_mutex_lock(s_rtc.lock);
 
-    if (!s_rtc.initialized) {
+    if (!aosl_atomic_read(&s_rtc.initialized)) {
         AOSL_LOG_ERR("[RTC] not initialized");
         ret = -1;
         goto out;
@@ -283,13 +283,13 @@ int mybot_rtc_session_leave(void)
 {
     /* Pre-check without the lock: leave may be called (e.g. from mpq_fini at
      * shutdown) before mybot_rtc_session_init() ever created the lock. */
-    if (!s_rtc.initialized || s_rtc.conn_id == 0) {
+    if (!aosl_atomic_read(&s_rtc.initialized) || s_rtc.conn_id == 0) {
         return 0;
     }
 
     aosl_hal_mutex_lock(s_rtc.lock);
 
-    if (!s_rtc.initialized || s_rtc.conn_id == 0) {
+    if (!aosl_atomic_read(&s_rtc.initialized) || s_rtc.conn_id == 0) {
         aosl_hal_mutex_unlock(s_rtc.lock);
         return 0;
     }
@@ -319,7 +319,7 @@ int mybot_rtc_session_leave(void)
 
 void mybot_rtc_session_fini(void)
 {
-    if (!s_rtc.initialized) {
+    if (!aosl_atomic_read(&s_rtc.initialized)) {
         return;
     }
 
@@ -328,7 +328,7 @@ void mybot_rtc_session_fini(void)
     }
 
     agora_rtc_fini();
-    s_rtc.initialized = false;
+    aosl_atomic_set(&s_rtc.initialized, false);
     set_state(MYBOT_RTC_STATE_IDLE);
 
     if (s_rtc.lock) {
