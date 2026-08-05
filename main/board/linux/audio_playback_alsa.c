@@ -7,11 +7,14 @@
 #include <stdio.h>
 
 #include <api/aosl_log.h>
+#include <hal/aosl_hal_time.h>
 
 /* Bounded wait for poll-based (non-blocking) PCM I/O. Keeps read/write
  * interruptible so worker threads can observe stop conditions and exit
  * promptly instead of blocking forever inside the driver. */
-#define PCM_POLL_TIMEOUT_MS  50
+#define PCM_POLL_TIMEOUT_MS    50
+#define PCM_RESUME_TIMEOUT_MS  500
+#define PCM_RESUME_RETRY_MS    1
 
 /* ---- ALSA error recovery helpers ---- */
 static int xrun_recover(snd_pcm_t *handle)
@@ -41,8 +44,13 @@ prepare:
 static int suspend_recover(snd_pcm_t *handle)
 {
     int err;
+    uint64_t deadline = aosl_hal_get_tick_ms() + PCM_RESUME_TIMEOUT_MS;
+
     while ((err = snd_pcm_resume(handle)) == -EAGAIN) {
-        usleep(1000);
+        if (aosl_hal_get_tick_ms() >= deadline) {
+            break;
+        }
+        aosl_hal_msleep(PCM_RESUME_RETRY_MS);
     }
     if (err < 0) {
         err = snd_pcm_prepare(handle);

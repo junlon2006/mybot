@@ -48,6 +48,9 @@ static struct {
     aosl_mpq_t      pb_mpq;       /* playback worker thread (aosl_mpq_create) */
     aosl_timer_t    pb_timer;     /* drives the playback write loop */
     mybot_ringbuf_t pb_ringbuf;
+    uint8_t         pb_pending[BYTES_20MS];
+    int             pb_pending_offset;  /* frames already written */
+    int             pb_pending_frames;  /* frames still to write */
 
 #if MYBOT_CLOUD_AEC
     /* AEC reference ringbuf: holds downlink PCM fed to the speaker */
@@ -133,15 +136,51 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now,
     if (!aosl_atomic_read(&s_app.running)) { return; }
 
     const mybot_audio_playback_ops_t *ops = mybot_audio_device_get_playback();
-    uint8_t pcm[BYTES_20MS];
 
-    if (mybot_ringbuf_get_data_size(s_app.pb_ringbuf) < BYTES_20MS) { return; }
-    if (mybot_ringbuf_read((char *)pcm, BYTES_20MS, s_app.pb_ringbuf) != BYTES_20MS) { return; }
+    if (s_app.pb_pending_frames == 0) {
+        if (mybot_ringbuf_get_data_size(s_app.pb_ringbuf) < BYTES_20MS) { return; }
+        if (mybot_ringbuf_read((char *)s_app.pb_pending, BYTES_20MS,
+                               s_app.pb_ringbuf) != BYTES_20MS) {
+            return;
+        }
+        s_app.pb_pending_offset = 0;
+        s_app.pb_pending_frames = FRAMES_20MS;
 #if MYBOT_CLOUD_AEC
-    /* Feed a copy to the AEC reference ringbuf before sending to speaker */
-    mybot_ringbuf_write(s_app.ref_ringbuf, (char *)pcm, BYTES_20MS);
+        /* Preserve the existing AEC reference timing: publish once when the
+         * playback frame is first dequeued. */
+        mybot_ringbuf_write(s_app.ref_ringbuf, (char *)s_app.pb_pending,
+                            BYTES_20MS);
 #endif
-    ops->write(s_app.pb_ctx, pcm, FRAMES_20MS);
+    }
+
+    const int frame_bytes = CHANNELS * BITS_PER_SAMPLE / 8;
+    int written = ops->write(s_app.pb_ctx,
+                             s_app.pb_pending +
+                                 s_app.pb_pending_offset * frame_bytes,
+                             s_app.pb_pending_frames);
+    if (written < 0) {
+        AOSL_LOG_ERR("playback write failed, dropping %d pending frames",
+                     s_app.pb_pending_frames);
+        s_app.pb_pending_offset = 0;
+        s_app.pb_pending_frames = 0;
+        return;
+    }
+    if (written == 0) {
+        return;
+    }
+    if (written > s_app.pb_pending_frames) {
+        AOSL_LOG_ERR("playback backend returned invalid frame count: %d > %d",
+                     written, s_app.pb_pending_frames);
+        s_app.pb_pending_offset = 0;
+        s_app.pb_pending_frames = 0;
+        return;
+    }
+
+    s_app.pb_pending_offset += written;
+    s_app.pb_pending_frames -= written;
+    if (s_app.pb_pending_frames == 0) {
+        s_app.pb_pending_offset = 0;
+    }
 }
 
 static int pb_mpq_init(void *arg)
@@ -177,8 +216,7 @@ static void on_remote_audio(uint32_t uid, const void *data, size_t len)
     if (!aosl_atomic_read(&s_app.running)) { return; }
 
     if (mybot_ringbuf_write(s_app.pb_ringbuf, (const char *)data, (int)len) < 0) {
-        static int dc = 0;
-        if (++dc % 100 == 0) { AOSL_LOG_WRN("pb ringbuf full, dropped %d", dc); }
+        AOSL_LOG_WRN("pb ringbuf full, dropped");
     }
 }
 
