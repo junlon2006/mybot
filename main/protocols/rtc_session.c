@@ -191,6 +191,8 @@ int mybot_rtc_session_init(const char *app_id, mybot_rtc_session_callbacks_t *cb
     int ret = agora_rtc_init((void *)app_id, &handler, &opt);
     if (ret < 0) {
         AOSL_LOG_ERR("agora_rtc_init failed: %s", agora_rtc_err_2_str(ret));
+        aosl_hal_mutex_destroy(s_rtc.lock);
+        s_rtc.lock = NULL;
         return -1;
     }
 
