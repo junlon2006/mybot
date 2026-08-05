@@ -281,9 +281,9 @@ out:
 
 int mybot_rtc_session_leave(void)
 {
-    /* Pre-check without the lock: leave may be called (e.g. from mpq_fini at
-     * shutdown) before mybot_rtc_session_init() ever created the lock. */
-    if (!aosl_atomic_read(&s_rtc.initialized) || s_rtc.conn_id == 0) {
+    /* initialized is published only after the mutex is created. conn_id is
+     * deliberately checked only while holding that mutex. */
+    if (!aosl_atomic_read(&s_rtc.initialized)) {
         return 0;
     }
 
@@ -323,9 +323,8 @@ void mybot_rtc_session_fini(void)
         return;
     }
 
-    if (s_rtc.conn_id != 0) {
-        mybot_rtc_session_leave();
-    }
+    /* leave() is idempotent and checks conn_id while holding the mutex. */
+    mybot_rtc_session_leave();
 
     agora_rtc_fini();
     aosl_atomic_set(&s_rtc.initialized, false);
