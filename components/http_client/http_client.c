@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <stdint.h>
 
 /* ----------------------------------------------------------
  * Constants
@@ -355,58 +356,114 @@ static char *dechunk_body(const char *body, size_t body_len, size_t *out_len)
         return NULL;
     }
 
-    while (p < end) {
-        /* Chunk size in hex (chunk extensions after ';' are ignored). */
+    for (;;) {
         size_t chunk_size = 0;
         int has_digit = 0;
-        while (p < end && *p != '\r' && *p != '\n') {
-            char c = *p++;
-            int digit;
-            if (c >= '0' && c <= '9') {
-                digit = c - '0';
-            } else if (c >= 'a' && c <= 'f') {
-                digit = c - 'a' + 10;
-            } else if (c >= 'A' && c <= 'F') {
-                digit = c - 'A' + 10;
-            } else {
-                break;   /* e.g. ';' chunk extension — stop reading the size */
-            }
-            chunk_size = chunk_size * 16 + (size_t)digit;
-            has_digit = 1;
-        }
 
-        /* Skip the rest of the size line: chunk extensions (";ext=..") and
-         * the terminating CRLF. */
-        while (p < end && *p != '\n') {
+        while (p < end) {
+            unsigned int digit;
+            if (*p >= '0' && *p <= '9') {
+                digit = (unsigned int)(*p - '0');
+            } else if (*p >= 'a' && *p <= 'f') {
+                digit = (unsigned int)(*p - 'a' + 10);
+            } else if (*p >= 'A' && *p <= 'F') {
+                digit = (unsigned int)(*p - 'A' + 10);
+            } else {
+                break;
+            }
+            if (chunk_size > (SIZE_MAX - digit) / 16) {
+                goto fail;
+            }
+            chunk_size = chunk_size * 16 + digit;
+            has_digit = 1;
             p++;
-        }
-        if (p < end) {
-            p++;   /* skip '\n' */
         }
 
         if (!has_digit) {
-            break;   /* malformed size line */
+            goto fail;
         }
+        if (p < end && *p == ';') {
+            while (p < end && *p != '\r' && *p != '\n') {
+                p++;
+            }
+        }
+        if ((size_t)(end - p) < 2 || p[0] != '\r' || p[1] != '\n') {
+            goto fail;
+        }
+        p += 2;
+
         if (chunk_size == 0) {
-            break;   /* last chunk */
-        }
-        if (chunk_size > (size_t)(end - p) || len + chunk_size >= cap) {
-            aosl_hal_free(out);
-            return NULL;   /* truncated or over-long chunk data */
+            /* Consume optional trailer fields and require their final CRLF. */
+            for (;;) {
+                const char *line_end = p;
+                while ((size_t)(end - line_end) >= 2 &&
+                       !(line_end[0] == '\r' && line_end[1] == '\n')) {
+                    line_end++;
+                }
+                if ((size_t)(end - line_end) < 2) {
+                    goto fail;
+                }
+                if (line_end == p) {
+                    p = line_end + 2;
+                    if (p != end) {
+                        goto fail;
+                    }
+                    out[len] = '\0';
+                    *out_len = len;
+                    return out;
+                }
+                p = line_end + 2;
+            }
         }
 
+        if (chunk_size > (size_t)(end - p) || chunk_size > cap - len - 1) {
+            goto fail;
+        }
         memcpy(out + len, p, chunk_size);
         len += chunk_size;
         p += chunk_size;
 
-        /* Skip CRLF after the chunk data. */
-        if (p < end && *p == '\r') { p++; }
-        if (p < end && *p == '\n') { p++; }
+        if ((size_t)(end - p) < 2 || p[0] != '\r' || p[1] != '\n') {
+            goto fail;
+        }
+        p += 2;
     }
 
-    out[len] = '\0';
-    *out_len = len;
-    return out;
+fail:
+    aosl_hal_free(out);
+    return NULL;
+}
+
+static int parse_content_length(const char *value, const char *end,
+                                size_t *out_length)
+{
+    size_t length = 0;
+    int has_digit = 0;
+
+    while (value < end && (*value == ' ' || *value == '\t')) {
+        value++;
+    }
+    while (value < end && *value >= '0' && *value <= '9') {
+        unsigned int digit = (unsigned int)(*value - '0');
+        if (length > (SIZE_MAX - digit) / 10) {
+            return -1;
+        }
+        length = length * 10 + digit;
+        has_digit = 1;
+        value++;
+    }
+    while (value < end && (*value == ' ' || *value == '\t')) {
+        value++;
+    }
+    if (value < end && *value == '\r') {
+        value++;
+    }
+    if (!has_digit || value != end) {
+        return -1;
+    }
+
+    *out_length = length;
+    return 0;
 }
 
 /*
@@ -431,7 +488,8 @@ static int parse_response(const char *raw, size_t raw_len, mybot_http_response_t
 
     /* headers */
     size_t body_offset = 0;
-    int content_length = -1;
+    size_t content_length = 0;
+    int has_content_length = 0;
     int chunked = 0;
 
     while (p < end) {
@@ -447,16 +505,16 @@ static int parse_response(const char *raw, size_t raw_len, mybot_http_response_t
             break;
         }
 
-        /* parse Content-Length */
-        if (hdr_len > 16 &&
-            (strncasecmp(p, "Content-Length:", 15) == 0 ||
-             strncasecmp(p, "content-length:", 15) == 0)) {
-            const char *val = p + 15;
-            while (val < nl && *val == ' ') { val++; }
-            content_length = 0;
-            while (val < nl && *val >= '0' && *val <= '9') {
-                content_length = content_length * 10 + (*val++ - '0');
+        /* Parse Content-Length without signed overflow. Repeated fields
+         * are accepted only when they carry the same value. */
+        if (hdr_len >= 15 && strncasecmp(p, "Content-Length:", 15) == 0) {
+            size_t parsed_length;
+            if (parse_content_length(p + 15, nl, &parsed_length) < 0 ||
+                (has_content_length && content_length != parsed_length)) {
+                return -1;
             }
+            content_length = parsed_length;
+            has_content_length = 1;
         }
 
         /* parse Transfer-Encoding (takes precedence over Content-Length) */
@@ -487,8 +545,8 @@ static int parse_response(const char *raw, size_t raw_len, mybot_http_response_t
                 return -1;
             }
         } else {
-            if (content_length >= 0) {
-                resp->body_len = (size_t)content_length;
+            if (has_content_length) {
+                resp->body_len = content_length;
                 if (resp->body_len > avail) {
                     resp->body_len = avail;
                 }
