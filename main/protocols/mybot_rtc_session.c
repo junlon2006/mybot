@@ -1,4 +1,4 @@
-#include "rtc_session.h"
+#include "mybot_rtc_session.h"
 #include "mybot_config.h"
 
 #include "agora_rtc_api.h"

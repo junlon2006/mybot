@@ -9,18 +9,18 @@
 ```
 mybot/
 ├── main/
-│   ├── main.c                      # 入口：CLI 解析、信号处理、按键循环
-│   ├── app.h / app.c               # 跨平台应用层：音频/MPQ/状态机，非阻塞启动
+│   ├── mybot_main.c                      # 入口：CLI 解析、信号处理、按键循环
+│   ├── mybot_app.h / .c               # 跨平台应用层：音频/MPQ/状态机，非阻塞启动
 │   ├── audio/
-│   │   └── audio_device.h / .c     # 音频平台抽象（ops 函数指针注册表）
+│   │   └── mybot_audio_device.h / .c     # 音频平台抽象（ops 函数指针注册表）
 │   ├── flash/
-│   │   └── flash_device.h / .c     # 持久化存储抽象（设备凭证等）
+│   │   └── mybot_flash_device.h / .c     # 持久化存储抽象（设备凭证等）
 │   ├── board/
 │   │   └── linux/                  # 板级适配层：Linux ALSA 采集/播放实现
 │   └── protocols/
-│       ├── rtc_session.h / .c      # Agora RTC 会话管理
-│       ├── device_api.h / .c       # 设备端服务 API（配对/对话/轮询）
-│       └── device_state.h / .c     # 设备生命周期状态机
+│       ├── mybot_rtc_session.h / .c      # Agora RTC 会话管理
+│       ├── mybot_device_api.h / .c       # 设备端服务 API（配对/对话/轮询）
+│       └── mybot_device_state.h / .c     # 设备生命周期状态机
 └── components/
     ├── aosl/                       # AOSL 跨平台系统库
     ├── agora_rtsa_sdk/             # Agora RTSA SDK

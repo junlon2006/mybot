@@ -1,5 +1,5 @@
-#include "protocols/device_state.h"
-#include "flash/flash_device.h"
+#include "protocols/mybot_device_state.h"
+#include "flash/mybot_flash_device.h"
 
 #include <api/aosl.h>
 

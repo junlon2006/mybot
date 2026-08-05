@@ -1,6 +1,6 @@
-#include "device_state.h"
-#include "device_api.h"
-#include "flash/flash_device.h"
+#include "mybot_device_state.h"
+#include "mybot_device_api.h"
+#include "flash/mybot_flash_device.h"
 
 #include <api/aosl_log.h>
 #include <api/aosl_atomic.h>

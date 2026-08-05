@@ -1,4 +1,4 @@
-#include "device_api.h"
+#include "mybot_device_api.h"
 #include "mybot_config.h"
 #include "mybot_utils_http_client.h"
 #include "mybot_utils_cJSON.h"

@@ -1,7 +1,7 @@
 #ifndef MYBOT_DEVICE_STATE_H_
 #define MYBOT_DEVICE_STATE_H_
 
-#include "device_api.h"
+#include "mybot_device_api.h"
 
 #include <stdint.h>
 #include <stdbool.h>

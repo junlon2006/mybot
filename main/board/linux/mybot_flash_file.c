@@ -1,4 +1,4 @@
-#include "flash/flash_device.h"
+#include "flash/mybot_flash_device.h"
 
 #include <api/aosl_log.h>
 

@@ -1,4 +1,4 @@
-#include "flash_device.h"
+#include "mybot_flash_device.h"
 
 static const mybot_flash_ops_t *s_ops;
 static void *s_ctx;

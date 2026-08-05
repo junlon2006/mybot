@@ -37,19 +37,19 @@ set_target_properties(agora-rtc-sdk PROPERTIES
 # mybot executable
 # ------------------------------------------------------------
 set(MYBOT_SRC
-    main/main.c
-    main/app.c
-    main/flash/flash_device.c
-    main/board/linux/flash_file.c
+    main/mybot_main.c
+    main/mybot_app.c
+    main/flash/mybot_flash_device.c
+    main/board/linux/mybot_flash_file.c
     components/ringbuf/mybot_utils_ringbuf.c
     components/http_client/mybot_utils_http_client.c
     components/cJSON/mybot_utils_cJSON.c
-    main/protocols/device_api.c
-    main/audio/audio_device.c
-    main/board/linux/audio_capture_alsa.c
-    main/board/linux/audio_playback_alsa.c
-    main/protocols/rtc_session.c
-    main/protocols/device_state.c
+    main/protocols/mybot_device_api.c
+    main/audio/mybot_audio_device.c
+    main/board/linux/mybot_audio_capture_alsa.c
+    main/board/linux/mybot_audio_playback_alsa.c
+    main/protocols/mybot_rtc_session.c
+    main/protocols/mybot_device_state.c
 )
 
 add_executable(mybot ${MYBOT_SRC})
@@ -79,8 +79,8 @@ include(CTest)
 if(BUILD_TESTING)
     add_executable(mybot_device_state_test
         tests/device_state_test.c
-        main/protocols/device_state.c
-        main/flash/flash_device.c
+        main/protocols/mybot_device_state.c
+        main/flash/mybot_flash_device.c
     )
     target_include_directories(mybot_device_state_test PRIVATE
         ${CMAKE_SOURCE_DIR}/main
