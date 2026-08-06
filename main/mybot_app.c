@@ -639,12 +639,6 @@ bool mybot_app_is_running(void) {
     return aosl_atomic_read(&s_app.running) != 0;
 }
 
-void mybot_app_poll(void) {
-    if (s_app.key_service_active && mybot_key_service_poll() < 0) {
-        AOSL_LOG_ERR("key service poll failed");
-    }
-}
-
 void mybot_app_request_exit(void) {
     aosl_atomic_set(&s_app.running, false);
 }

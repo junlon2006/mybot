@@ -150,6 +150,25 @@ if(BUILD_TESTING)
     target_include_directories(mybot_key_service_test PRIVATE ${CMAKE_SOURCE_DIR}/main)
     add_test(NAME mybot_key_service_test COMMAND mybot_key_service_test)
 
+    add_executable(mybot_key_stdin_test
+        tests/key_stdin_test.c
+        main/key_service/mybot_key_service.c
+        main/platform/linux/mybot_key_stdin.c
+    )
+    target_include_directories(mybot_key_stdin_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/main
+        ${AOSL_DIR}/include
+        ${AOSL_DIR}/platform/include
+    )
+    target_link_libraries(mybot_key_stdin_test PRIVATE
+        aosl
+        pthread
+        dl
+        rt
+        m
+    )
+    add_test(NAME mybot_key_stdin_test COMMAND mybot_key_stdin_test)
+
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         foreach(test_target IN ITEMS
             mybot_device_lifecycle_test
@@ -157,6 +176,7 @@ if(BUILD_TESTING)
             mybot_http_client_test
             mybot_json_test
             mybot_key_service_test
+            mybot_key_stdin_test
         )
             target_compile_options(${test_target} PRIVATE -UNDEBUG)
         endforeach()

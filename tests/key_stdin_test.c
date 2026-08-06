@@ -1,0 +1,57 @@
+#include "key_service/mybot_key_service.h"
+
+#include "api/aosl.h"
+#include "api/aosl_atomic.h"
+#include "hal/aosl_hal_time.h"
+
+#include <assert.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+void mybot_key_platform_register_stdin(void);
+
+static aosl_atomic_t s_event_count;
+static aosl_atomic_t s_last_event;
+
+static void on_key(mybot_key_event_t event, void *user_data) {
+    assert(user_data == &s_event_count);
+    aosl_atomic_set(&s_last_event, event);
+    aosl_atomic_inc(&s_event_count);
+}
+
+static void wait_for_event(void) {
+    for (int i = 0; i < 1000 && aosl_atomic_read(&s_event_count) == 0; ++i) {
+        aosl_hal_msleep(1);
+    }
+}
+
+int main(void) {
+    int pipe_fds[2];
+    assert(pipe(pipe_fds) == 0);
+
+    int saved_stdin = dup(STDIN_FILENO);
+    assert(saved_stdin >= 0);
+    assert(dup2(pipe_fds[0], STDIN_FILENO) == STDIN_FILENO);
+    close(pipe_fds[0]);
+
+    aosl_ctor();
+    mybot_key_platform_register_stdin();
+    assert(mybot_key_service_init(on_key, &s_event_count) == 0);
+
+    assert(write(pipe_fds[1], "p", 1) == 1);
+    wait_for_event();
+    assert(aosl_atomic_read(&s_event_count) == 1);
+    assert(aosl_atomic_read(&s_last_event) == MYBOT_KEY_EVENT_PAIR);
+
+    mybot_key_service_deinit();
+    assert(fcntl(STDIN_FILENO, F_GETFD) >= 0);
+    assert(write(pipe_fds[1], "s", 1) == 1);
+    aosl_hal_msleep(20);
+    assert(aosl_atomic_read(&s_event_count) == 1);
+
+    aosl_dtor();
+    close(pipe_fds[1]);
+    assert(dup2(saved_stdin, STDIN_FILENO) == STDIN_FILENO);
+    close(saved_stdin);
+    return 0;
+}

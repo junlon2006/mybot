@@ -20,14 +20,10 @@ static int fake_init(void **ctx, mybot_key_event_handler_t emit, void *user_data
     return 0;
 }
 
-static int fake_poll(void *ctx) {
-    fake_key_ctx_t *fake = ctx;
-    fake->emit(MYBOT_KEY_EVENT_PAIR, fake->user_data);
-    return 0;
-}
-
 static void fake_destroy(void *ctx) {
     assert(ctx == &s_fake);
+    s_fake.emit = NULL;
+    s_fake.user_data = NULL;
     s_destroy_count++;
 }
 
@@ -42,7 +38,6 @@ int main(void) {
     const mybot_key_service_ops_t fake_ops = {
         .name = "fake",
         .init = fake_init,
-        .poll = fake_poll,
         .destroy = fake_destroy,
     };
 
@@ -52,13 +47,13 @@ int main(void) {
     assert(mybot_key_service_init(NULL, NULL) < 0);
     assert(mybot_key_service_init(on_key, &s_handler_count) == 0);
     assert(mybot_key_service_register(&fake_ops) < 0);
-    assert(mybot_key_service_poll() == 0);
+    s_fake.emit(MYBOT_KEY_EVENT_PAIR, s_fake.user_data);
     assert(s_handler_count == 1);
     assert(s_last_event == MYBOT_KEY_EVENT_PAIR);
 
     mybot_key_service_deinit();
     mybot_key_service_deinit();
     assert(s_destroy_count == 1);
-    assert(mybot_key_service_poll() < 0);
+    assert(s_fake.emit == NULL);
     return 0;
 }

@@ -110,16 +110,13 @@ int main(int argc, char **argv) {
                  "  e - exit\n"
                  "  Ctrl+C - exit");
 
-    /* ---- Main loop: platform input only.
-     * The app drives itself (device state machine etc.) from its own MPQ
-     * timers, so main() only needs to poll input here. ---- */
+    /* ---- Main loop: wait for a key event or process signal to request exit. ---- */
     while (mybot_app_is_running()) {
         if (s_exit_requested) {
             mybot_app_request_exit();
             continue;
         }
 
-        mybot_app_poll();
         aosl_hal_msleep(100);
     }
 
