@@ -1,6 +1,6 @@
-#include "mybot_device_state.h"
+#include "mybot_device_lifecycle.h"
 #include "mybot_device_client.h"
-#include "flash/mybot_flash_device.h"
+#include "storage/mybot_kv_store.h"
 
 #include <api/aosl_log.h>
 #include <api/aosl_atomic.h>
@@ -8,7 +8,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#define MYBOT_DEVICE_AUTH_FLASH_KEY "device_auth"
+#define MYBOT_DEVICE_AUTH_KEY "device_auth"
 #define MYBOT_DEVICE_AUTH_VERSION 1U
 #define MYBOT_PAIR_RETRY_INITIAL_TICKS 30
 #define MYBOT_PAIR_RETRY_MAX_TICKS 600
@@ -27,7 +27,7 @@ static struct {
     char device_id[MYBOT_DEVICE_CLIENT_MAX_ID];
     char firmware_ver[64];
     char hw_model[64];
-    mybot_device_state_callbacks_t cbs;
+    mybot_device_lifecycle_callbacks_t cbs;
 
     aosl_atomic_t state; /* atomic: also read by the main/SDK threads */
 
@@ -67,7 +67,7 @@ typedef enum {
 static const char *s_name[] = {"unprovisioned", "pairing", "awaiting_claim", "runtime",
                                "in_conversation"};
 
-const char *mybot_device_state_name(mybot_device_state_t s) {
+const char *mybot_device_lifecycle_state_name(mybot_device_state_t s) {
     if ((size_t)s >= sizeof(s_name) / sizeof(s_name[0])) {
         return "?";
     }
@@ -100,7 +100,7 @@ static int persist_device_auth(void) {
     strncpy(record.server_base, s_state.server_base, sizeof(record.server_base) - 1);
     strncpy(record.device_id, s_state.device_id, sizeof(record.device_id) - 1);
     strncpy(record.device_token, s_state.device_token, sizeof(record.device_token) - 1);
-    return mybot_flash_write(MYBOT_DEVICE_AUTH_FLASH_KEY, &record, sizeof(record));
+    return mybot_kv_store_set(MYBOT_DEVICE_AUTH_KEY, &record, sizeof(record));
 }
 
 static bool load_device_auth(void) {
@@ -108,8 +108,8 @@ static bool load_device_auth(void) {
     size_t len = 0;
     memset(&record, 0, sizeof(record));
 
-    int ret = mybot_flash_read(MYBOT_DEVICE_AUTH_FLASH_KEY, &record, sizeof(record), &len);
-    if (ret == MYBOT_FLASH_NOT_FOUND) {
+    int ret = mybot_kv_store_get(MYBOT_DEVICE_AUTH_KEY, &record, sizeof(record), &len);
+    if (ret == MYBOT_KV_STORE_NOT_FOUND) {
         return false;
     }
     if (ret < 0 || len != sizeof(record) || record.version != MYBOT_DEVICE_AUTH_VERSION ||
@@ -121,7 +121,7 @@ static bool load_device_auth(void) {
         if (ret < 0) {
             AOSL_LOG_ERR("failed to read persisted device credential");
         }
-        (void)mybot_flash_erase(MYBOT_DEVICE_AUTH_FLASH_KEY);
+        (void)mybot_kv_store_erase(MYBOT_DEVICE_AUTH_KEY);
         return false;
     }
 
@@ -131,7 +131,7 @@ static bool load_device_auth(void) {
 
 static void clear_device_auth(void) {
     s_state.device_token[0] = '\0';
-    if (mybot_flash_erase(MYBOT_DEVICE_AUTH_FLASH_KEY) < 0) {
+    if (mybot_kv_store_erase(MYBOT_DEVICE_AUTH_KEY) < 0) {
         AOSL_LOG_ERR("failed to erase persisted device credential");
     }
 }
@@ -142,14 +142,14 @@ static void restart_pairing_after_auth_rejection(void) {
     aosl_atomic_set(&s_state.start_pairing_flag, true);
 }
 
-const char *mybot_device_state_get_token(void) {
+const char *mybot_device_lifecycle_get_token(void) {
     return (current_state() == MYBOT_DEVICE_STATE_RUNTIME ||
             current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION)
                ? s_state.device_token
                : NULL;
 }
 
-mybot_device_state_t mybot_device_state_get(void) {
+mybot_device_state_t mybot_device_lifecycle_get_state(void) {
     return current_state();
 }
 
@@ -360,9 +360,9 @@ static void action_stop_conversation(const char *reason) {
  * Public API
  * ---------------------------------------------------------- */
 
-int mybot_device_state_init(const char *server_base, const char *device_id,
-                            const char *firmware_ver, const char *hw_model,
-                            mybot_device_state_callbacks_t *cbs) {
+int mybot_device_lifecycle_init(const char *server_base, const char *device_id,
+                                const char *firmware_ver, const char *hw_model,
+                                mybot_device_lifecycle_callbacks_t *cbs) {
     if (!server_base || !device_id) {
         return -1;
     }
@@ -393,7 +393,7 @@ int mybot_device_state_init(const char *server_base, const char *device_id,
     return 0;
 }
 
-void mybot_device_state_tick(void) {
+void mybot_device_lifecycle_tick(void) {
     if (aosl_atomic_read(&s_state.shutting_down)) {
         return;
     }
@@ -467,7 +467,7 @@ void mybot_device_state_tick(void) {
     }
 }
 
-void mybot_device_state_shutdown(void) {
+void mybot_device_lifecycle_shutdown(void) {
     aosl_atomic_set(&s_state.shutting_down, true);
     aosl_atomic_set(&s_state.start_pairing_flag, false);
     aosl_atomic_set(&s_state.conversation_requested, false);
@@ -478,14 +478,14 @@ void mybot_device_state_shutdown(void) {
     }
 }
 
-void mybot_device_state_request_pair(void) {
+void mybot_device_lifecycle_request_pair(void) {
     if (aosl_atomic_read(&s_state.shutting_down)) {
         return;
     }
     aosl_atomic_set(&s_state.start_pairing_flag, true);
 }
 
-void mybot_device_state_request_start(void) {
+void mybot_device_lifecycle_request_start(void) {
     if (aosl_atomic_read(&s_state.shutting_down)) {
         return;
     }
@@ -496,7 +496,7 @@ void mybot_device_state_request_start(void) {
     aosl_atomic_set(&s_state.conversation_requested, true);
 }
 
-void mybot_device_state_request_stop(void) {
+void mybot_device_lifecycle_request_stop(void) {
     if (aosl_atomic_read(&s_state.shutting_down)) {
         return;
     }
@@ -507,13 +507,13 @@ void mybot_device_state_request_stop(void) {
     aosl_atomic_set(&s_state.stop_request, MYBOT_STOP_REQUEST_DEVICE_HANGUP);
 }
 
-void mybot_device_state_notify_conversation_ended(void) {
+void mybot_device_lifecycle_notify_conversation_ended(void) {
     if (aosl_atomic_read(&s_state.shutting_down)) {
         return;
     }
     /* Called from an RTC SDK callback thread on connection loss/error. Only
      * flag the stop here — the actual teardown (HTTP stop + RTC leave) runs
-     * on the state_mpq thread via mybot_device_state_tick(), avoiding
+     * on the state_mpq thread via mybot_device_lifecycle_tick(), avoiding
      * re-entrant SDK calls from inside an SDK callback. */
     if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
         aosl_atomic_set(&s_state.stop_request, MYBOT_STOP_REQUEST_ERROR);

@@ -1,4 +1,4 @@
-#include "mybot_utils_http_client.h"
+#include "mybot_http_client.h"
 
 #include <hal/aosl_hal_socket.h>
 #include <hal/aosl_hal_iomp.h>
@@ -462,7 +462,7 @@ static int parse_content_length(const char *value, const char *end, size_t *out_
  * Returns the response struct (body will point into or be a copy from raw).
  */
 static int parse_response(const char *raw, size_t raw_len, int stream_closed,
-                          mybot_utils_http_response_t *resp) {
+                          mybot_http_client_response_t *resp) {
     memset(resp, 0, sizeof(*resp));
 
     const char *p = raw;
@@ -578,7 +578,7 @@ static int parse_response(const char *raw, size_t raw_len, int stream_closed,
  * ---------------------------------------------------------- */
 static int http_request(const char *method, const char *url, const char *content_type,
                         const char *req_body, const char *extra_headers,
-                        mybot_utils_http_response_t *resp) {
+                        mybot_http_client_response_t *resp) {
     uint64_t deadline = aosl_hal_get_tick_ms() + HTTP_TIMEOUT_MS;
 
     url_parts_t parts;
@@ -651,32 +651,32 @@ static int http_request(const char *method, const char *url, const char *content
  * Public API
  * ---------------------------------------------------------- */
 
-int mybot_utils_http_get(const char *url, mybot_utils_http_response_t *resp) {
-    return mybot_utils_http_get_ex(url, NULL, resp);
+int mybot_http_client_get(const char *url, mybot_http_client_response_t *resp) {
+    return mybot_http_client_get_ex(url, NULL, resp);
 }
 
-int mybot_utils_http_post(const char *url, const char *content_type, const char *body,
-                          mybot_utils_http_response_t *resp) {
-    return mybot_utils_http_post_ex(url, content_type, body, NULL, resp);
+int mybot_http_client_post(const char *url, const char *content_type, const char *body,
+                           mybot_http_client_response_t *resp) {
+    return mybot_http_client_post_ex(url, content_type, body, NULL, resp);
 }
 
-int mybot_utils_http_get_ex(const char *url, const char *extra_headers,
-                            mybot_utils_http_response_t *resp) {
+int mybot_http_client_get_ex(const char *url, const char *extra_headers,
+                             mybot_http_client_response_t *resp) {
     if (!url || !resp) {
         return -1;
     }
     return http_request("GET", url, NULL, NULL, extra_headers, resp);
 }
 
-int mybot_utils_http_post_ex(const char *url, const char *content_type, const char *body,
-                             const char *extra_headers, mybot_utils_http_response_t *resp) {
+int mybot_http_client_post_ex(const char *url, const char *content_type, const char *body,
+                              const char *extra_headers, mybot_http_client_response_t *resp) {
     if (!url || !resp) {
         return -1;
     }
     return http_request("POST", url, content_type, body, extra_headers, resp);
 }
 
-void mybot_utils_http_response_free(mybot_utils_http_response_t *resp) {
+void mybot_http_client_response_free(mybot_http_client_response_t *resp) {
     if (resp) {
         if (resp->body) {
             aosl_hal_free(resp->body);

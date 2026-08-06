@@ -1,4 +1,4 @@
-#include "flash/mybot_flash_device.h"
+#include "storage/mybot_kv_store.h"
 
 #include <api/aosl_log.h>
 
@@ -16,11 +16,11 @@
 #define PATH_MAX 4096
 #endif
 
-#define MYBOT_FLASH_DEFAULT_DIR ".mybot-flash"
+#define MYBOT_KV_STORE_DEFAULT_DIR ".mybot-kv-store"
 
 typedef struct {
     char root[PATH_MAX];
-} mybot_flash_file_ctx_t;
+} mybot_kv_store_file_ctx_t;
 
 static bool valid_key(const char *key) {
     if (!key || !key[0]) {
@@ -35,7 +35,7 @@ static bool valid_key(const char *key) {
     return true;
 }
 
-static int make_path(const mybot_flash_file_ctx_t *ctx, const char *key, const char *suffix,
+static int make_path(const mybot_kv_store_file_ctx_t *ctx, const char *key, const char *suffix,
                      char *path, size_t path_size) {
     if (!valid_key(key)) {
         return -1;
@@ -44,45 +44,45 @@ static int make_path(const mybot_flash_file_ctx_t *ctx, const char *key, const c
     return n >= 0 && (size_t)n < path_size ? 0 : -1;
 }
 
-static int flash_file_init(void **out_ctx) {
+static int kv_store_file_init(void **out_ctx) {
     if (!out_ctx) {
         return -1;
     }
 
-    mybot_flash_file_ctx_t *ctx = calloc(1, sizeof(*ctx));
+    mybot_kv_store_file_ctx_t *ctx = calloc(1, sizeof(*ctx));
     if (!ctx) {
         return -1;
     }
 
-    const char *configured = getenv("MYBOT_FLASH_DIR");
-    const char *root = configured && configured[0] ? configured : MYBOT_FLASH_DEFAULT_DIR;
+    const char *configured = getenv("MYBOT_KV_STORE_DIR");
+    const char *root = configured && configured[0] ? configured : MYBOT_KV_STORE_DEFAULT_DIR;
     if (snprintf(ctx->root, sizeof(ctx->root), "%s", root) >= (int)sizeof(ctx->root)) {
         free(ctx);
         return -1;
     }
 
     if (mkdir(ctx->root, 0700) < 0 && errno != EEXIST) {
-        AOSL_LOG_ERR("flash: cannot create %s: %s", ctx->root, strerror(errno));
+        AOSL_LOG_ERR("kv store: cannot create %s: %s", ctx->root, strerror(errno));
         free(ctx);
         return -1;
     }
 
     struct stat st;
     if (stat(ctx->root, &st) < 0 || !S_ISDIR(st.st_mode)) {
-        AOSL_LOG_ERR("flash: %s is not a directory", ctx->root);
+        AOSL_LOG_ERR("kv store: %s is not a directory", ctx->root);
         free(ctx);
         return -1;
     }
     (void)chmod(ctx->root, 0700);
 
     *out_ctx = ctx;
-    AOSL_LOG_INF("flash backend: %s", ctx->root);
+    AOSL_LOG_INF("kv store backend: %s", ctx->root);
     return 0;
 }
 
-static int flash_file_read(void *opaque, const char *key, void *data, size_t capacity,
-                           size_t *out_len) {
-    mybot_flash_file_ctx_t *ctx = opaque;
+static int kv_store_file_get(void *opaque, const char *key, void *value, size_t capacity,
+                             size_t *out_len) {
+    mybot_kv_store_file_ctx_t *ctx = opaque;
     char path[PATH_MAX];
     if (make_path(ctx, key, NULL, path, sizeof(path)) < 0) {
         return -1;
@@ -90,12 +90,12 @@ static int flash_file_read(void *opaque, const char *key, void *data, size_t cap
 
     int fd = open(path, O_RDONLY | O_CLOEXEC);
     if (fd < 0) {
-        return errno == ENOENT ? MYBOT_FLASH_NOT_FOUND : -1;
+        return errno == ENOENT ? MYBOT_KV_STORE_NOT_FOUND : -1;
     }
 
     size_t total = 0;
     while (total < capacity) {
-        ssize_t n = read(fd, (char *)data + total, capacity - total);
+        ssize_t n = read(fd, (char *)value + total, capacity - total);
         if (n > 0) {
             total += (size_t)n;
         } else if (n == 0) {
@@ -136,8 +136,8 @@ static int write_all(int fd, const void *data, size_t len) {
     return 0;
 }
 
-static int flash_file_write(void *opaque, const char *key, const void *data, size_t len) {
-    mybot_flash_file_ctx_t *ctx = opaque;
+static int kv_store_file_set(void *opaque, const char *key, const void *value, size_t len) {
+    mybot_kv_store_file_ctx_t *ctx = opaque;
     char path[PATH_MAX];
     char temp_path[PATH_MAX];
     if (make_path(ctx, key, NULL, path, sizeof(path)) < 0 ||
@@ -150,7 +150,7 @@ static int flash_file_write(void *opaque, const char *key, const void *data, siz
         return -1;
     }
 
-    int ret = write_all(fd, data, len);
+    int ret = write_all(fd, value, len);
     if (ret == 0 && fsync(fd) < 0) {
         ret = -1;
     }
@@ -166,8 +166,8 @@ static int flash_file_write(void *opaque, const char *key, const void *data, siz
     return ret;
 }
 
-static int flash_file_erase(void *opaque, const char *key) {
-    mybot_flash_file_ctx_t *ctx = opaque;
+static int kv_store_file_erase(void *opaque, const char *key) {
+    mybot_kv_store_file_ctx_t *ctx = opaque;
     char path[PATH_MAX];
     if (make_path(ctx, key, NULL, path, sizeof(path)) < 0) {
         return -1;
@@ -175,21 +175,21 @@ static int flash_file_erase(void *opaque, const char *key) {
     return unlink(path) == 0 || errno == ENOENT ? 0 : -1;
 }
 
-static void flash_file_destroy(void *ctx) {
+static void kv_store_file_destroy(void *ctx) {
     free(ctx);
 }
 
-static const mybot_flash_ops_t s_flash_file_ops = {
+static const mybot_kv_store_ops_t s_kv_store_file_ops = {
     .name = "file",
-    .init = flash_file_init,
-    .read = flash_file_read,
-    .write = flash_file_write,
-    .erase = flash_file_erase,
-    .destroy = flash_file_destroy,
+    .init = kv_store_file_init,
+    .get = kv_store_file_get,
+    .set = kv_store_file_set,
+    .erase = kv_store_file_erase,
+    .destroy = kv_store_file_destroy,
 };
 
-void mybot_flash_platform_register_file(void) {
-    if (mybot_flash_register(&s_flash_file_ops) < 0) {
-        AOSL_LOG_ERR("flash platform registration failed");
+void mybot_kv_store_platform_register_file(void) {
+    if (mybot_kv_store_register(&s_kv_store_file_ops) < 0) {
+        AOSL_LOG_ERR("kv store platform registration failed");
     }
 }

@@ -1,5 +1,5 @@
-#ifndef MYBOT_CONFIG_H_
-#define MYBOT_CONFIG_H_
+#ifndef MYBOT_BUILD_CONFIG_H_
+#define MYBOT_BUILD_CONFIG_H_
 
 /*
  * Feature flags for voice chat capabilities.
@@ -22,4 +22,4 @@
 #define MYBOT_SHOW_TRANSCRIPT 0 /* real-time transcript in datastream */
 #endif
 
-#endif /* MYBOT_CONFIG_H_ */
+#endif /* MYBOT_BUILD_CONFIG_H_ */

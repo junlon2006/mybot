@@ -1,5 +1,5 @@
-#ifndef MYBOT_DEVICE_STATE_H_
-#define MYBOT_DEVICE_STATE_H_
+#ifndef MYBOT_DEVICE_LIFECYCLE_H_
+#define MYBOT_DEVICE_LIFECYCLE_H_
 
 #include "mybot_device_client.h"
 
@@ -43,7 +43,7 @@ typedef struct {
 
     /** State changed (for logging / UI). */
     void (*on_state_changed)(mybot_device_state_t state);
-} mybot_device_state_callbacks_t;
+} mybot_device_lifecycle_callbacks_t;
 
 /* ----------------------------------------------------------
  * API
@@ -57,41 +57,41 @@ typedef struct {
  *  @param cbs          Callbacks (may be NULL)
  *  @return 0 on success, -1 on error.
  */
-int mybot_device_state_init(const char *server_base, const char *device_id,
-                            const char *firmware_ver, const char *hw_model,
-                            mybot_device_state_callbacks_t *cbs);
+int mybot_device_lifecycle_init(const char *server_base, const char *device_id,
+                                const char *firmware_ver, const char *hw_model,
+                                mybot_device_lifecycle_callbacks_t *cbs);
 
 /** Must be called periodically from the main loop (e.g., every 100ms).
  *  Drives polling and state transitions. */
-void mybot_device_state_tick(void);
+void mybot_device_lifecycle_tick(void);
 
 /** Stop state-machine activity and close any active conversation.
- *  Must be called from the same thread that calls mybot_device_state_tick(). */
-void mybot_device_state_shutdown(void);
+ *  Must be called from the same thread that calls mybot_device_lifecycle_tick(). */
+void mybot_device_lifecycle_shutdown(void);
 
 /** Get current state. */
-mybot_device_state_t mybot_device_state_get(void);
+mybot_device_state_t mybot_device_lifecycle_get_state(void);
 
 /** Return human-readable state name. */
-const char *mybot_device_state_name(mybot_device_state_t s);
+const char *mybot_device_lifecycle_state_name(mybot_device_state_t s);
 
 /** Return the current device_token (NULL if not in runtime). */
-const char *mybot_device_state_get_token(void);
+const char *mybot_device_lifecycle_get_token(void);
 
 /** Trigger pairing from unprovisioned state. */
-void mybot_device_state_request_pair(void);
+void mybot_device_lifecycle_request_pair(void);
 
 /** Trigger conversation start (user pressed button). */
-void mybot_device_state_request_start(void);
+void mybot_device_lifecycle_request_start(void);
 
 /** Trigger conversation stop (user hung up). */
-void mybot_device_state_request_stop(void);
+void mybot_device_lifecycle_request_stop(void);
 
 /** Notify state machine that conversation RTC connection ended. */
-void mybot_device_state_notify_conversation_ended(void);
+void mybot_device_lifecycle_notify_conversation_ended(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* MYBOT_DEVICE_STATE_H_ */
+#endif /* MYBOT_DEVICE_LIFECYCLE_H_ */

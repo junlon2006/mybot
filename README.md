@@ -9,32 +9,38 @@
 ```
 mybot/
 ├── main/
-│   ├── mybot_main.c                      # 入口：CLI 解析、信号处理、平台注册
-│   ├── mybot_app.h / .c               # 跨平台应用层：音频/MPQ/状态机，非阻塞启动
+│   ├── mybot_app.h / .c                  # 跨平台应用编排
+│   ├── mybot_build_config.h              # 编译期功能配置
 │   ├── audio/
 │   │   └── mybot_audio_device.h / .c     # 音频平台抽象（ops 函数指针注册表）
-│   ├── flash/
-│   │   └── mybot_flash_device.h / .c     # 持久化存储抽象（设备凭证等）
+│   ├── storage/
+│   │   └── mybot_kv_store.h / .c         # 键值存储抽象（设备凭证等）
 │   ├── key_service/
 │   │   └── mybot_key_service.h / .c      # 按键事件与平台后端抽象
-│   ├── board/
-│   │   └── linux/                  # 板级适配层：Linux ALSA、stdin 按键实现
-│   └── protocols/
-│       ├── mybot_rtc_session.h / .c      # Agora RTC 会话管理
-│       ├── mybot_device_client.h / .c    # 设备服务客户端（配对/对话/轮询）
-│       └── mybot_device_state.h / .c     # 设备生命周期状态机
+│   ├── device/
+│   │   ├── mybot_device_client.h / .c    # 设备服务客户端（配对/对话/轮询）
+│   │   └── mybot_device_lifecycle.h / .c # 设备生命周期状态机
+│   ├── rtc/
+│   │   ├── mybot_rtc_session.h           # RTC 会话接口
+│   │   └── mybot_rtc_session.c           # Agora RTC 会话实现
+│   └── platform/
+│       └── linux/
+│           ├── mybot_main.c              # Linux 入口、CLI 与信号处理
+│           ├── mybot_audio_*_alsa.c      # ALSA 音频后端
+│           ├── mybot_kv_store_file.c     # 文件型键值存储后端
+│           └── mybot_key_stdin.c         # stdin 按键后端
 └── components/
-    ├── aosl/                       # AOSL 跨平台系统库
-    ├── agora_rtsa_sdk/             # Agora RTSA SDK
-    ├── ringbuf/                    # SPSC 环缓冲（mybot_utils_ringbuf_*）
-    ├── http_client/                # HTTP 客户端（mybot_utils_http_*）
-    └── cJSON/                      # JSON 解析库（以 mybot_utils_cJSON_* 前缀导出）
+    ├── aosl/                              # AOSL 跨平台系统库
+    ├── agora_rtsa_sdk/                    # Agora RTSA SDK
+    ├── ringbuf/                           # SPSC 环缓冲（mybot_ringbuf_*）
+    ├── http_client/                       # HTTP 客户端（mybot_http_client_*）
+    └── json/                              # 命名空间化 cJSON 实现（mybot_json_*）
 ```
 
 仓库根目录的 `.clang-format` 是唯一的 C 代码格式规范。格式化自研源码时执行：
 
 ```bash
-find main tests components/ringbuf components/http_client components/cJSON \\
+find main tests components/ringbuf components/http_client components/json \\
     -type f \\( -name '*.c' -o -name '*.h' \\) -exec clang-format -i {} +
 ```
 
@@ -62,7 +68,7 @@ unprovisioned → pairing → awaiting_claim ──→ runtime ←→ in_convers
 扬声器 ← pb_mpq 线程(10ms) ← playback ringbuf ← RTC on_audio_data 回调（SDK 线程）
 ```
 
-设备状态机运行在独立的 `state_mpq` 线程（100ms 轮询，含阻塞 HTTP 请求），不影响实时音频。上行开启云 AEC 时，`send_timer` 将麦克风 PCM 与扬声器下行 PCM 交错发送。所有线程均通过 `aosl_mpq_create()` 创建（跨平台，不依赖 `aosl_hal_thread_join`）。
+设备生命周期状态机运行在独立的 `state_mpq` 线程（100ms 轮询，含阻塞 HTTP 请求），不影响实时音频。上行开启云 AEC 时，`send_timer` 将麦克风 PCM 与扬声器下行 PCM 交错发送。所有线程均通过 `aosl_mpq_create()` 创建（跨平台，不依赖 `aosl_hal_thread_join`）。
 
 ## 环境要求
 
@@ -91,8 +97,8 @@ make -j$(nproc)
 ./mybot --server http://localhost:3001 --device-id AG-DEMO-001
 ```
 
-Linux 文件型 flash 默认将设备凭证保存在当前目录的 `.mybot-flash/`。
-可通过 `MYBOT_FLASH_DIR` 指定其他持久化目录；部署时应选择仅设备进程可访问的位置。
+Linux 文件型键值存储默认将设备凭证保存在当前目录的 `.mybot-kv-store/`。
+可通过 `MYBOT_KV_STORE_DIR` 指定其他持久化目录；部署时应选择仅设备进程可访问的位置。
 
 ### 命令行参数
 
@@ -114,7 +120,7 @@ Linux 文件型 flash 默认将设备凭证保存在当前目录的 `.mybot-flas
 
 ## 跨平台扩展
 
-音频设备和按键服务通过 ops 函数指针表实现平台无关化。板级适配层位于 `main/board/`，添加新平台只需在 `main/board/` 下新建对应平台目录（如 `linux/`）并注册 ops：
+音频设备、持久化存储和按键服务通过 ops 函数指针表实现平台无关化。平台适配层位于 `main/platform/`，添加新平台时在该目录下新建对应平台目录并注册 ops：
 
 ```c
 typedef struct {
@@ -129,18 +135,23 @@ typedef struct {
 ```
 
 > 公开接口统一使用 `mybot_` 前缀（类型、函数、宏），防止集成到其它工程时符号冲突；`components/aosl` 与 `components/agora_rtsa_sdk` 保持上游命名。
+>
+> `components/json` 直接基于 cJSON 实现，但所有外部类型、宏和函数均使用 `mybot_json_*` / `MYBOT_JSON_*` 命名；工程不声明原始 `cJSON_*` API，避免作为子模块集成时发生符号冲突。
 
 ## 项目结构
 
 | 目录 | 内容 |
 |------|------|
-| `main/` | 应用入口、跨平台应用层、音频抽象、协议层 |
-| `main/board/` | 板级跨平台适配层（当前仅 `linux/`，ALSA 实现） |
+| `main/` | 跨平台应用层与各子系统接口 |
+| `main/device/` | 设备服务客户端与生命周期状态机 |
+| `main/storage/` | 平台无关的键值存储接口 |
+| `main/rtc/` | RTC 会话接口及服务商实现 |
+| `main/platform/` | 平台后端（当前为 Linux ALSA、文件存储和 stdin） |
 | `components/aosl/` | 跨平台系统抽象层（线程/内存/网络/日志） |
 | `components/agora_rtsa_sdk/` | Agora RTSA SDK v1.10.1 |
 | `components/ringbuf/` | 通用锁无关 SPSC 环缓冲 |
 | `components/http_client/` | 基于 AOSL HAL 的 HTTP 客户端 |
-| `components/cJSON/` | JSON 解析库 |
+| `components/json/` | 直接基于 cJSON 的命名空间化 JSON 实现 |
 
 ## 项目状态
 

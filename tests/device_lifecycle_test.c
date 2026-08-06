@@ -1,5 +1,5 @@
-#include "protocols/mybot_device_state.h"
-#include "flash/mybot_flash_device.h"
+#include "device/mybot_device_lifecycle.h"
+#include "storage/mybot_kv_store.h"
 
 #include <api/aosl.h>
 
@@ -8,10 +8,10 @@
 #include <stdio.h>
 #include <string.h>
 
-static unsigned char s_flash_data[2048];
-static size_t s_flash_len;
-static bool s_flash_present;
-static bool s_flash_write_fails;
+static unsigned char s_kv_store_data[2048];
+static size_t s_kv_store_len;
+static bool s_kv_store_present;
+static bool s_kv_store_set_fails;
 
 static int s_binding_result;
 static char s_binding_status[16];
@@ -23,57 +23,57 @@ static int s_stop_call_count;
 static int s_conversation_start_count;
 static int s_conversation_stop_count;
 
-static int mock_flash_init(void **ctx) {
-    *ctx = s_flash_data;
+static int mock_kv_store_init(void **ctx) {
+    *ctx = s_kv_store_data;
     return 0;
 }
 
-static int mock_flash_read(void *ctx, const char *key, void *data, size_t capacity,
-                           size_t *out_len) {
+static int mock_kv_store_get(void *ctx, const char *key, void *value, size_t capacity,
+                             size_t *out_len) {
     (void)ctx;
     (void)key;
-    if (!s_flash_present) {
-        return MYBOT_FLASH_NOT_FOUND;
+    if (!s_kv_store_present) {
+        return MYBOT_KV_STORE_NOT_FOUND;
     }
-    if (s_flash_len > capacity) {
+    if (s_kv_store_len > capacity) {
         return -1;
     }
-    memcpy(data, s_flash_data, s_flash_len);
-    *out_len = s_flash_len;
+    memcpy(value, s_kv_store_data, s_kv_store_len);
+    *out_len = s_kv_store_len;
     return 0;
 }
 
-static int mock_flash_write(void *ctx, const char *key, const void *data, size_t len) {
+static int mock_kv_store_set(void *ctx, const char *key, const void *value, size_t len) {
     (void)ctx;
     (void)key;
-    if (s_flash_write_fails || len > sizeof(s_flash_data)) {
+    if (s_kv_store_set_fails || len > sizeof(s_kv_store_data)) {
         return -1;
     }
-    memcpy(s_flash_data, data, len);
-    s_flash_len = len;
-    s_flash_present = true;
+    memcpy(s_kv_store_data, value, len);
+    s_kv_store_len = len;
+    s_kv_store_present = true;
     return 0;
 }
 
-static int mock_flash_erase(void *ctx, const char *key) {
+static int mock_kv_store_erase(void *ctx, const char *key) {
     (void)ctx;
     (void)key;
-    s_flash_present = false;
-    s_flash_len = 0;
+    s_kv_store_present = false;
+    s_kv_store_len = 0;
     return 0;
 }
 
-static void mock_flash_destroy(void *ctx) {
+static void mock_kv_store_destroy(void *ctx) {
     (void)ctx;
 }
 
-static const mybot_flash_ops_t s_mock_flash_ops = {
+static const mybot_kv_store_ops_t s_mock_kv_store_ops = {
     .name = "mock",
-    .init = mock_flash_init,
-    .read = mock_flash_read,
-    .write = mock_flash_write,
-    .erase = mock_flash_erase,
-    .destroy = mock_flash_destroy,
+    .init = mock_kv_store_init,
+    .get = mock_kv_store_get,
+    .set = mock_kv_store_set,
+    .erase = mock_kv_store_erase,
+    .destroy = mock_kv_store_destroy,
 };
 
 int mybot_device_client_create_pair_code(const char *base_url, const char *device_id,
@@ -148,95 +148,95 @@ static void on_conversation_stop(void) {
 
 static void tick_many(int count) {
     for (int i = 0; i < count; i++) {
-        mybot_device_state_tick();
+        mybot_device_lifecycle_tick();
     }
 }
 
 static void begin_pairing(void) {
-    assert(mybot_device_state_init("http://server", "device-1", NULL, NULL, NULL) == 0);
-    assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_UNPROVISIONED);
-    mybot_device_state_tick();
-    assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
+    assert(mybot_device_lifecycle_init("http://server", "device-1", NULL, NULL, NULL) == 0);
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_UNPROVISIONED);
+    mybot_device_lifecycle_tick();
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
 }
 
 int main(void) {
     aosl_ctor();
-    assert(mybot_flash_register(&s_mock_flash_ops) == 0);
-    assert(mybot_flash_init() == 0);
+    assert(mybot_kv_store_register(&s_mock_kv_store_ops) == 0);
+    assert(mybot_kv_store_init() == 0);
 
     s_pair_result = -1;
-    assert(mybot_device_state_init("http://server", "device-1", NULL, NULL, NULL) == 0);
-    mybot_device_state_tick();
+    assert(mybot_device_lifecycle_init("http://server", "device-1", NULL, NULL, NULL) == 0);
+    mybot_device_lifecycle_tick();
     assert(s_pair_call_count == 1);
-    assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_UNPROVISIONED);
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_UNPROVISIONED);
 
     s_pair_result = 0;
     tick_many(29);
     assert(s_pair_call_count == 1);
-    assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_UNPROVISIONED);
-    mybot_device_state_tick();
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_UNPROVISIONED);
+    mybot_device_lifecycle_tick();
     assert(s_pair_call_count == 2);
-    assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
 
     strcpy(s_binding_status, "bound");
     strcpy(s_binding_token, "device-token");
     begin_pairing();
     tick_many(30);
-    assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_RUNTIME);
-    assert(strcmp(mybot_device_state_get_token(), "device-token") == 0);
-    assert(s_flash_present);
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_RUNTIME);
+    assert(strcmp(mybot_device_lifecycle_get_token(), "device-token") == 0);
+    assert(s_kv_store_present);
 
-    assert(mybot_device_state_init("http://server", "device-1", NULL, NULL, NULL) == 0);
-    assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_RUNTIME);
-    assert(strcmp(mybot_device_state_get_token(), "device-token") == 0);
+    assert(mybot_device_lifecycle_init("http://server", "device-1", NULL, NULL, NULL) == 0);
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_RUNTIME);
+    assert(strcmp(mybot_device_lifecycle_get_token(), "device-token") == 0);
 
     s_binding_result = 401;
     tick_many(300);
-    assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_UNPROVISIONED);
-    assert(mybot_device_state_get_token() == NULL);
-    assert(!s_flash_present);
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_UNPROVISIONED);
+    assert(mybot_device_lifecycle_get_token() == NULL);
+    assert(!s_kv_store_present);
 
     s_binding_result = 0;
     s_binding_token[0] = '\0';
     begin_pairing();
     tick_many(30);
-    assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
-    assert(!s_flash_present);
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
+    assert(!s_kv_store_present);
 
     strcpy(s_binding_token, "one-time-token");
-    s_flash_write_fails = true;
+    s_kv_store_set_fails = true;
     tick_many(30);
-    assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
-    assert(!s_flash_present);
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
+    assert(!s_kv_store_present);
 
     s_binding_token[0] = '\0';
-    s_flash_write_fails = false;
+    s_kv_store_set_fails = false;
     tick_many(30);
-    assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_RUNTIME);
-    assert(strcmp(mybot_device_state_get_token(), "one-time-token") == 0);
-    assert(s_flash_present);
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_RUNTIME);
+    assert(strcmp(mybot_device_lifecycle_get_token(), "one-time-token") == 0);
+    assert(s_kv_store_present);
 
-    mybot_device_state_callbacks_t callbacks = {
+    mybot_device_lifecycle_callbacks_t callbacks = {
         .on_conversation_start = on_conversation_start,
         .on_conversation_stop = on_conversation_stop,
     };
-    assert(mybot_device_state_init("http://server", "device-1", NULL, NULL, &callbacks) == 0);
-    mybot_device_state_request_start();
-    mybot_device_state_tick();
-    assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_IN_CONVERSATION);
+    assert(mybot_device_lifecycle_init("http://server", "device-1", NULL, NULL, &callbacks) == 0);
+    mybot_device_lifecycle_request_start();
+    mybot_device_lifecycle_tick();
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION);
     assert(s_conversation_start_count == 1);
 
-    mybot_device_state_shutdown();
+    mybot_device_lifecycle_shutdown();
     assert(s_stop_call_count == 1);
     assert(s_conversation_stop_count == 1);
-    assert(mybot_device_state_get() == MYBOT_DEVICE_STATE_RUNTIME);
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_RUNTIME);
 
-    mybot_device_state_request_start();
-    mybot_device_state_tick();
+    mybot_device_lifecycle_request_start();
+    mybot_device_lifecycle_tick();
     assert(s_conversation_start_count == 1);
 
-    mybot_flash_deinit();
+    mybot_kv_store_deinit();
     aosl_dtor();
-    puts("device_state_test: ok");
+    puts("device_lifecycle_test: ok");
     return 0;
 }

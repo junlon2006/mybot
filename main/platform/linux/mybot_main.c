@@ -8,13 +8,13 @@
 #include <signal.h>
 
 /* ----------------------------------------------------------
- * Platform backends (Linux: ALSA, file flash, and stdin keys).
+ * Platform backends (Linux: ALSA, file-backed key-value storage, and stdin keys).
  * Registers the platform ops used by the app layer before
  * mybot_app_start() is called.
  * ---------------------------------------------------------- */
 void mybot_audio_platform_register_alsa_capture(void);
 void mybot_audio_platform_register_alsa_playback(void);
-void mybot_flash_platform_register_file(void);
+void mybot_kv_store_platform_register_file(void);
 void mybot_key_platform_register_stdin(void);
 static volatile sig_atomic_t s_exit_requested;
 
@@ -91,7 +91,7 @@ int main(int argc, char **argv) {
     /* ---- Register the platform audio backend (Linux: ALSA) ---- */
     mybot_audio_platform_register_alsa_capture();
     mybot_audio_platform_register_alsa_playback();
-    mybot_flash_platform_register_file();
+    mybot_kv_store_platform_register_file();
     mybot_key_platform_register_stdin();
 
     /* ---- Install signal handlers ---- */
