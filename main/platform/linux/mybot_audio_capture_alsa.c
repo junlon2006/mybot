@@ -5,13 +5,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 
 #include <api/aosl_log.h>
 #include <hal/aosl_hal_time.h>
-
-/* 16 kHz, 16-bit, mono → 20 ms = 640 bytes / frame */
-#define PCM_FRAMES_20MS 320
-#define PCM_BYTES_20MS 640
 
 /* Bounded wait for poll-based (non-blocking) PCM I/O. Keeps read/write
  * interruptible so worker threads can observe stop conditions and exit
@@ -27,9 +24,10 @@ typedef struct {
     int channels;
     int bits_per_sample;
 
-    /* Holds partial reads across calls (up to one full frame + one read). */
-    uint8_t acc_buf[PCM_BYTES_20MS * 2];
-    int acc_len;
+    /* Holds partial reads across calls for the frame size requested by the app. */
+    uint8_t *acc_buf;
+    size_t acc_capacity;
+    size_t acc_len;
 } alsa_cap_t;
 
 /* ---- ALSA error recovery helpers ---- */
@@ -211,22 +209,38 @@ static int alsa_capture_start(void *ctx) {
 
 static int alsa_capture_read(void *ctx, void *buf, int frames) {
     alsa_cap_t *c = (alsa_cap_t *)ctx;
-    int frame_bytes = c->bits_per_sample / 8 * c->channels;
-    int want = frames * frame_bytes;
+    if (!c || !buf || frames <= 0) {
+        return -1;
+    }
+
+    size_t frame_bytes = (size_t)(c->bits_per_sample / 8 * c->channels);
+    if (frame_bytes == 0 || (size_t)frames > SIZE_MAX / frame_bytes) {
+        return -1;
+    }
+    size_t want = (size_t)frames * frame_bytes;
+    if (want > c->acc_capacity) {
+        uint8_t *new_buf = realloc(c->acc_buf, want);
+        if (!new_buf) {
+            return -1;
+        }
+        c->acc_buf = new_buf;
+        c->acc_capacity = want;
+    }
+
     int got;
 
     /* Accumulate until a full frame is available. Partial reads stay in
      * acc_buf across calls, so short reads never lose audio. */
     while (c->acc_len < want) {
-        got = pcm_read(c->handle, (char *)c->acc_buf + c->acc_len, PCM_FRAMES_20MS,
-                       (size_t)frame_bytes);
+        size_t remaining_frames = (want - c->acc_len) / frame_bytes;
+        got = pcm_read(c->handle, (char *)c->acc_buf + c->acc_len, remaining_frames, frame_bytes);
         if (got < 0) {
             return -1;
         }
         if (got == 0) {
             return 0; /* no new data; keep whatever is already in acc_buf */
         }
-        c->acc_len += got * frame_bytes;
+        c->acc_len += (size_t)got * frame_bytes;
     }
 
     /* Hand out one full frame from the head of the accumulator. */
@@ -259,6 +273,7 @@ static void alsa_capture_destroy(void *ctx) {
         snd_pcm_drop(c->handle);
         snd_pcm_close(c->handle);
     }
+    free(c->acc_buf);
     free(c);
 }
 

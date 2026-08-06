@@ -100,6 +100,27 @@ if(BUILD_TESTING)
     )
     add_test(NAME mybot_device_lifecycle_test COMMAND mybot_device_lifecycle_test)
 
+    add_executable(mybot_device_client_test
+        tests/device_client_test.c
+        main/device/mybot_device_client.c
+        components/json/mybot_json.c
+    )
+    target_include_directories(mybot_device_client_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/main
+        ${CMAKE_SOURCE_DIR}/components/http_client
+        ${CMAKE_SOURCE_DIR}/components/json
+        ${AOSL_DIR}/include
+        ${AOSL_DIR}/platform/include
+    )
+    target_link_libraries(mybot_device_client_test PRIVATE
+        aosl
+        pthread
+        dl
+        rt
+        m
+    )
+    add_test(NAME mybot_device_client_test COMMAND mybot_device_client_test)
+
     add_executable(mybot_http_client_test tests/http_client_test.c)
     target_include_directories(mybot_http_client_test PRIVATE
         ${AOSL_DIR}/include
@@ -132,6 +153,7 @@ if(BUILD_TESTING)
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         foreach(test_target IN ITEMS
             mybot_device_lifecycle_test
+            mybot_device_client_test
             mybot_http_client_test
             mybot_json_test
             mybot_key_service_test

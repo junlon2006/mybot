@@ -50,7 +50,7 @@ static char *build_conversation_start_body(void) {
     }
 
     audio = mybot_json_create_object();
-    if (!audio || mybot_json_add_number(audio, "p_time", 20) < 0 ||
+    if (!audio || mybot_json_add_number(audio, "p_time", MYBOT_AUDIO_PTIME_MS) < 0 ||
         mybot_json_add_string(audio, "codec", "G722") < 0) {
         goto done;
     }
