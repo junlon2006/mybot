@@ -44,6 +44,8 @@ set(MYBOT_SRC
     main/storage/mybot_kv_store.c
     main/platform/linux/mybot_kv_store_file.c
     main/key_service/mybot_key_service.c
+    main/lcd/mybot_lcd.c
+    main/platform/linux/mybot_lcd_console.c
     main/platform/linux/mybot_key_stdin.c
     components/ringbuf/mybot_ringbuf.c
     components/http_client/mybot_http_client.c
@@ -63,6 +65,7 @@ target_include_directories(mybot PRIVATE
     ${CMAKE_SOURCE_DIR}/main/audio
     ${CMAKE_SOURCE_DIR}/main/device
     ${CMAKE_SOURCE_DIR}/main/key_service
+    ${CMAKE_SOURCE_DIR}/main/lcd
     ${CMAKE_SOURCE_DIR}/main/rtc
     ${CMAKE_SOURCE_DIR}/main/wifi
     ${CMAKE_SOURCE_DIR}/components/ringbuf
@@ -172,6 +175,43 @@ if(BUILD_TESTING)
     )
     add_test(NAME mybot_key_stdin_test COMMAND mybot_key_stdin_test)
 
+    add_executable(mybot_lcd_test
+        tests/lcd_test.c
+        main/lcd/mybot_lcd.c
+    )
+    target_include_directories(mybot_lcd_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/main
+        ${AOSL_DIR}/include
+        ${AOSL_DIR}/platform/include
+    )
+    target_link_libraries(mybot_lcd_test PRIVATE
+        aosl
+        pthread
+        dl
+        rt
+        m
+    )
+    add_test(NAME mybot_lcd_test COMMAND mybot_lcd_test)
+
+    add_executable(mybot_lcd_console_test
+        tests/lcd_console_test.c
+        main/lcd/mybot_lcd.c
+        main/platform/linux/mybot_lcd_console.c
+    )
+    target_include_directories(mybot_lcd_console_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/main
+        ${AOSL_DIR}/include
+        ${AOSL_DIR}/platform/include
+    )
+    target_link_libraries(mybot_lcd_console_test PRIVATE
+        aosl
+        pthread
+        dl
+        rt
+        m
+    )
+    add_test(NAME mybot_lcd_console_test COMMAND mybot_lcd_console_test)
+
     add_executable(mybot_wifi_provisioning_test
         tests/wifi_provisioning_test.c
         main/wifi/mybot_wifi_provisioning.c
@@ -198,6 +238,8 @@ if(BUILD_TESTING)
             mybot_json_test
             mybot_key_service_test
             mybot_key_stdin_test
+            mybot_lcd_test
+            mybot_lcd_console_test
             mybot_wifi_provisioning_test
         )
             target_compile_options(${test_target} PRIVATE -UNDEBUG)

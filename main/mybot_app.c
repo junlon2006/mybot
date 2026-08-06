@@ -6,6 +6,7 @@
 #include "mybot_ringbuf.h"
 #include "storage/mybot_kv_store.h"
 #include "key_service/mybot_key_service.h"
+#include "lcd/mybot_lcd.h"
 #include "wifi/mybot_wifi_provisioning.h"
 
 #include "api/aosl.h"
@@ -47,6 +48,7 @@ static struct {
     bool wifi_provisioning_active;
     bool kv_store_active;
     bool key_service_active;
+    bool lcd_active;
     mybot_app_config_t config;
     aosl_mpq_t startup_mpq;
 
@@ -93,6 +95,18 @@ static struct {
     aosl_mpq_t state_mpq;
     aosl_timer_t state_timer; /* 100 ms — drive the device state machine */
 } s_app;
+
+static void lcd_show_screen(mybot_lcd_screen_t screen) {
+    if (s_app.lcd_active && mybot_lcd_show_screen(screen) < 0) {
+        AOSL_LOG_WRN("failed to render LCD screen %d", (int)screen);
+    }
+}
+
+static void lcd_show_pair_code(const char *code) {
+    if (s_app.lcd_active && mybot_lcd_show_pair_code(code) < 0) {
+        AOSL_LOG_WRN("failed to render LCD pair code");
+    }
+}
 
 /* ----------------------------------------------------------
  * Capture — runs on the capture MPQ thread (cap_mpq).
@@ -327,6 +341,11 @@ static void dev_on_pair_code(const char *code) {
     AOSL_LOG_INF("==== PAIR CODE ====");
     AOSL_LOG_INF("*** PAIR CODE: %s ***", code);
     AOSL_LOG_INF("*** Enter this code in the web UI to claim the device ***");
+    mybot_app_state_t app_state = mybot_app_get_state();
+    if (app_state == MYBOT_APP_STATE_STOPPING || app_state == MYBOT_APP_STATE_FAILED) {
+        return;
+    }
+    lcd_show_pair_code(code);
 }
 
 static void dev_on_conversation_start(const mybot_conversation_params_t *params) {
@@ -396,7 +415,26 @@ static void dev_on_conversation_stop(void) {
 }
 
 static void dev_on_state_changed(mybot_device_state_t state) {
-    (void)state;
+    mybot_app_state_t app_state = mybot_app_get_state();
+    if (app_state == MYBOT_APP_STATE_STOPPING || app_state == MYBOT_APP_STATE_FAILED) {
+        return;
+    }
+
+    switch (state) {
+    case MYBOT_DEVICE_STATE_UNPROVISIONED:
+    case MYBOT_DEVICE_STATE_PAIRING:
+        lcd_show_screen(MYBOT_LCD_SCREEN_PAIRING);
+        break;
+    case MYBOT_DEVICE_STATE_AWAITING_CLAIM:
+        /* Keep the pair-code screen rendered by dev_on_pair_code(). */
+        break;
+    case MYBOT_DEVICE_STATE_RUNTIME:
+        lcd_show_screen(MYBOT_LCD_SCREEN_READY);
+        break;
+    case MYBOT_DEVICE_STATE_IN_CONVERSATION:
+        lcd_show_screen(MYBOT_LCD_SCREEN_IN_CONVERSATION);
+        break;
+    }
 }
 
 static void on_key_event(mybot_key_event_t event, void *user_data) {
@@ -626,13 +664,24 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
         return;
     }
 
+    mybot_app_state_t app_state = mybot_app_get_state();
+    if (app_state == MYBOT_APP_STATE_STOPPING || app_state == MYBOT_APP_STATE_FAILED) {
+        return;
+    }
+
     mybot_wifi_provisioning_state_t wifi_state = (mybot_wifi_provisioning_state_t)argv[0];
     if (wifi_state == MYBOT_WIFI_PROVISIONING_STATE_FAILED) {
         if (aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING,
                                 MYBOT_APP_STATE_FAILED) == MYBOT_APP_STATE_WIFI_PROVISIONING) {
+            lcd_show_screen(MYBOT_LCD_SCREEN_FAILED);
             AOSL_LOG_ERR("wifi provisioning failed");
             aosl_atomic_set(&s_app.running, false);
         }
+        return;
+    }
+
+    if (wifi_state == MYBOT_WIFI_PROVISIONING_STATE_DISCONNECTED) {
+        lcd_show_screen(MYBOT_LCD_SCREEN_WIFI_DISCONNECTED);
         return;
     }
 
@@ -643,20 +692,25 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
         return;
     }
 
+    lcd_show_screen(MYBOT_LCD_SCREEN_STARTING_SERVICES);
     if (start_services() < 0) {
         if (aosl_atomic_read(&s_app.state) != MYBOT_APP_STATE_STOPPING) {
+            lcd_show_screen(MYBOT_LCD_SCREEN_FAILED);
             aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_FAILED);
             aosl_atomic_set(&s_app.running, false);
         }
         return;
     }
 
-    aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_STARTING_SERVICES, MYBOT_APP_STATE_READY);
+    if (aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_STARTING_SERVICES,
+                            MYBOT_APP_STATE_READY) == MYBOT_APP_STATE_STARTING_SERVICES) {
+        dev_on_state_changed(mybot_device_lifecycle_get_state());
+    }
 }
 
 static void on_wifi_state_changed(mybot_wifi_provisioning_state_t state, void *user_data) {
     (void)user_data;
-    if (aosl_atomic_read(&s_app.state) != MYBOT_APP_STATE_WIFI_PROVISIONING) {
+    if (mybot_app_get_state() != MYBOT_APP_STATE_WIFI_PROVISIONING) {
         return;
     }
 
@@ -665,6 +719,7 @@ static void on_wifi_state_changed(mybot_wifi_provisioning_state_t state, void *u
         AOSL_LOG_ERR("failed to queue wifi state transition");
         if (aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING,
                                 MYBOT_APP_STATE_FAILED) == MYBOT_APP_STATE_WIFI_PROVISIONING) {
+            lcd_show_screen(MYBOT_LCD_SCREEN_FAILED);
             aosl_atomic_set(&s_app.running, false);
         }
     }
@@ -696,6 +751,15 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
     aosl_ctor();
     s_app.aosl_active = true;
 
+    if (mybot_lcd_is_registered()) {
+        if (mybot_lcd_init() < 0) {
+            AOSL_LOG_ERR("LCD init failed");
+            goto fail;
+        }
+        s_app.lcd_active = true;
+        lcd_show_screen(MYBOT_LCD_SCREEN_STARTING);
+    }
+
     s_app.startup_mpq =
         aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MPQ_STACK_SIZE, 32, "startup_mpq", NULL, NULL, NULL);
     if (aosl_mpq_invalid(s_app.startup_mpq)) {
@@ -704,6 +768,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
     }
 
     aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING);
+    lcd_show_screen(MYBOT_LCD_SCREEN_WIFI_PROVISIONING);
     if (mybot_wifi_provisioning_init(s_app.config.device_id, on_wifi_state_changed, NULL) < 0) {
         AOSL_LOG_ERR("wifi provisioning init failed");
         goto fail;
@@ -713,6 +778,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
     return 0;
 
 fail:
+    lcd_show_screen(MYBOT_LCD_SCREEN_FAILED);
     aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_FAILED);
     mybot_app_stop();
     return -1;
@@ -763,8 +829,12 @@ void mybot_app_stop(void) {
      * Set BEFORE any AOSL/audio teardown so the MPQ timer callbacks return
      * early. The ALSA read/write paths are poll-with-timeout, so each worker
      * exits within a bounded time even when the device yields no data. */
+    mybot_app_state_t previous_state = mybot_app_get_state();
     aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_STOPPING);
     aosl_atomic_set(&s_app.running, false);
+    if (previous_state != MYBOT_APP_STATE_FAILED) {
+        lcd_show_screen(MYBOT_LCD_SCREEN_STOPPING);
+    }
 
     /* A Wi-Fi event may already be running start_services() on this queue.
      * Joining it before teardown serializes partial startup with cleanup. */
@@ -786,6 +856,10 @@ void mybot_app_stop(void) {
         aosl_mpq_destroy_wait(s_app.state_mpq);
         s_app.state_mpq = AOSL_MPQ_INVALID;
     }
+
+    /* Reassert the terminal screen after all device workflow callbacks have drained. */
+    lcd_show_screen(previous_state == MYBOT_APP_STATE_FAILED ? MYBOT_LCD_SCREEN_FAILED
+                                                             : MYBOT_LCD_SCREEN_STOPPING);
 
     /* ---- 3. Stop the MPQ loop ----
      * Its fini callback kills the send timer and leaves the RTC channel.
@@ -847,14 +921,20 @@ void mybot_app_stop(void) {
         s_app.wifi_provisioning_active = false;
     }
 
-    /* ---- 8. Finalize RTC ----
+    /* ---- 8. Stop the LCD after all workflow event sources have exited. ---- */
+    if (s_app.lcd_active) {
+        mybot_lcd_deinit();
+        s_app.lcd_active = false;
+    }
+
+    /* ---- 9. Finalize RTC ----
      * The SDK waits for its callback queue before returning, so no callback can
      * access pb_ringbuf after this point. It also finalizes AOSL when active. */
     AOSL_LOG_INF("app stopped cleanly");
     s_app.aosl_active = false;
     bool rtc_finalized_aosl = mybot_rtc_session_fini();
 
-    /* ---- 9. Destroy ring buffers ----
+    /* ---- 10. Destroy ring buffers ----
      * The AOSL HAL allocator is independent of the AOSL global lifecycle. */
     if (s_app.cap_ringbuf) {
         mybot_ringbuf_destroy(s_app.cap_ringbuf);
@@ -871,7 +951,7 @@ void mybot_app_stop(void) {
     }
 #endif
 
-    /* ---- 10. Finalize AOSL when RTC never owned it ---- */
+    /* ---- 11. Finalize AOSL when RTC never owned it ---- */
     if (!rtc_finalized_aosl) {
         aosl_dtor();
     }

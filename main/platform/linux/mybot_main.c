@@ -8,7 +8,7 @@
 #include <signal.h>
 
 /* ----------------------------------------------------------
- * Platform backends (Linux: host network, ALSA, file-backed storage, and stdin keys).
+ * Platform backends (Linux: host network, ALSA, file-backed storage, stdin keys, and console LCD).
  * Registers the platform ops used by the app layer before
  * mybot_app_start() is called.
  * ---------------------------------------------------------- */
@@ -16,6 +16,7 @@ void mybot_audio_platform_register_alsa_capture(void);
 void mybot_audio_platform_register_alsa_playback(void);
 void mybot_kv_store_platform_register_file(void);
 void mybot_key_platform_register_stdin(void);
+void mybot_lcd_platform_register_console(void);
 void mybot_wifi_platform_register_host_network(void);
 static volatile sig_atomic_t s_exit_requested;
 
@@ -95,6 +96,7 @@ int main(int argc, char **argv) {
     mybot_audio_platform_register_alsa_playback();
     mybot_kv_store_platform_register_file();
     mybot_key_platform_register_stdin();
+    mybot_lcd_platform_register_console();
 
     /* ---- Install signal handlers ---- */
     signal(SIGINT, signal_handler);

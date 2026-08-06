@@ -17,6 +17,8 @@ mybot/
 │   │   └── mybot_kv_store.h / .c         # 键值存储抽象（设备凭证等）
 │   ├── key_service/
 │   │   └── mybot_key_service.h / .c      # 按键事件与平台后端抽象
+│   ├── lcd/
+│   │   └── mybot_lcd.h / .c              # LCD 关键工作流显示抽象
 │   ├── wifi/
 │   │   └── mybot_wifi_provisioning.h / .c # APSTA Wi-Fi 配网抽象
 │   ├── device/
@@ -31,6 +33,7 @@ mybot/
 │           ├── mybot_audio_*_alsa.c      # ALSA 音频后端
 │           ├── mybot_kv_store_file.c     # 文件型键值存储后端
 │           ├── mybot_key_stdin.c         # stdin 按键后端
+│           ├── mybot_lcd_console.c       # 高亮红色控制台 LCD 模拟后端
 │           └── mybot_wifi_host_network.c # Linux 宿主网络后端
 └── components/
     ├── aosl/                              # AOSL 跨平台系统库
@@ -137,7 +140,9 @@ Linux 文件型键值存储默认将设备凭证保存在当前目录的 `.mybot
 
 ## 跨平台扩展
 
-Wi-Fi 配网、音频设备、持久化存储和按键服务通过 ops 函数指针表实现平台无关化。平台适配层位于 `main/platform/`，添加新平台时在该目录下新建对应平台目录并注册 ops：
+Wi-Fi 配网、音频设备、持久化存储、按键服务和 LCD 通过 ops 函数指针表实现平台无关化。平台适配层位于 `main/platform/`，添加新平台时在该目录下新建对应平台目录并注册 ops。LCD 后端接收语义化内容（配网、配对码、就绪、对话中、故障等），由 MCU 平台自行决定字体、图标和布局。Linux 注册高亮红色控制台模拟后端；非交互输出或设置 `NO_COLOR` 时不输出 ANSI 颜色码，可设置 `MYBOT_LCD_COLOR=1` 强制开启。
+
+音频后端示例：
 
 ```c
 typedef struct {
@@ -162,9 +167,10 @@ typedef struct {
 | `main/` | 跨平台应用层与各子系统接口 |
 | `main/device/` | 设备服务客户端与生命周期状态机 |
 | `main/storage/` | 平台无关的键值存储接口 |
+| `main/lcd/` | LCD 关键工作流显示抽象 |
 | `main/rtc/` | RTC 会话接口及服务商实现 |
 | `main/wifi/` | APSTA Wi-Fi 配网抽象 |
-| `main/platform/` | 平台后端（当前为 Linux 宿主网络、ALSA、文件存储和 stdin） |
+| `main/platform/` | 平台后端（当前为 Linux 宿主网络、ALSA、文件存储、stdin 和控制台 LCD） |
 | `components/aosl/` | 跨平台系统抽象层（线程/内存/网络/日志） |
 | `components/agora_rtsa_sdk/` | Agora RTSA SDK v1.10.1 |
 | `components/ringbuf/` | 通用锁无关 SPSC 环缓冲 |
