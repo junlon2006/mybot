@@ -4,22 +4,22 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../components/http_client/mybot_utils_http_client.c"
+#include "../components/http_client/mybot_http_client.c"
 
 static void expect_success(const char *raw, int stream_closed, const char *expected_body) {
-    mybot_utils_http_response_t resp;
+    mybot_http_client_response_t resp;
     assert(parse_response(raw, strlen(raw), stream_closed, &resp) == 0);
     assert(resp.status_code == 200);
     assert(resp.body_len == strlen(expected_body));
     assert(resp.body != NULL);
     assert(strcmp(resp.body, expected_body) == 0);
-    mybot_utils_http_response_free(&resp);
+    mybot_http_client_response_free(&resp);
 }
 
 static void expect_failure(const char *raw, int stream_closed) {
-    mybot_utils_http_response_t resp;
+    mybot_http_client_response_t resp;
     assert(parse_response(raw, strlen(raw), stream_closed, &resp) < 0);
-    mybot_utils_http_response_free(&resp);
+    mybot_http_client_response_free(&resp);
 }
 
 int main(void) {

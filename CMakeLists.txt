@@ -37,19 +37,21 @@ set_target_properties(agora-rtc-sdk PROPERTIES
 # mybot executable
 # ------------------------------------------------------------
 set(MYBOT_SRC
-    main/mybot_main.c
+    main/platform/linux/mybot_main.c
     main/mybot_app.c
-    main/flash/mybot_flash_device.c
-    main/board/linux/mybot_flash_file.c
-    components/ringbuf/mybot_utils_ringbuf.c
-    components/http_client/mybot_utils_http_client.c
-    components/cJSON/mybot_utils_cJSON.c
-    main/protocols/mybot_device_api.c
+    main/storage/mybot_kv_store.c
+    main/platform/linux/mybot_kv_store_file.c
+    main/key_service/mybot_key_service.c
+    main/platform/linux/mybot_key_stdin.c
+    components/ringbuf/mybot_ringbuf.c
+    components/http_client/mybot_http_client.c
+    components/json/mybot_json.c
+    main/device/mybot_device_client.c
     main/audio/mybot_audio_device.c
-    main/board/linux/mybot_audio_capture_alsa.c
-    main/board/linux/mybot_audio_playback_alsa.c
-    main/protocols/mybot_rtc_session.c
-    main/protocols/mybot_device_state.c
+    main/platform/linux/mybot_audio_capture_alsa.c
+    main/platform/linux/mybot_audio_playback_alsa.c
+    main/rtc/mybot_rtc_session.c
+    main/device/mybot_device_lifecycle.c
 )
 
 add_executable(mybot ${MYBOT_SRC})
@@ -57,10 +59,12 @@ add_executable(mybot ${MYBOT_SRC})
 target_include_directories(mybot PRIVATE
     ${CMAKE_SOURCE_DIR}/main
     ${CMAKE_SOURCE_DIR}/main/audio
-    ${CMAKE_SOURCE_DIR}/main/protocols
+    ${CMAKE_SOURCE_DIR}/main/device
+    ${CMAKE_SOURCE_DIR}/main/key_service
+    ${CMAKE_SOURCE_DIR}/main/rtc
     ${CMAKE_SOURCE_DIR}/components/ringbuf
     ${CMAKE_SOURCE_DIR}/components/http_client
-    ${CMAKE_SOURCE_DIR}/components/cJSON
+    ${CMAKE_SOURCE_DIR}/components/json
     ${AGORA_SDK_DIR}/include
     ${AOSL_DIR}/include
     ${AOSL_DIR}/platform/include
@@ -77,36 +81,62 @@ target_link_libraries(mybot PRIVATE
 )
 include(CTest)
 if(BUILD_TESTING)
-    add_executable(mybot_device_state_test
-        tests/device_state_test.c
-        main/protocols/mybot_device_state.c
-        main/flash/mybot_flash_device.c
+    add_executable(mybot_device_lifecycle_test
+        tests/device_lifecycle_test.c
+        main/device/mybot_device_lifecycle.c
+        main/storage/mybot_kv_store.c
     )
-    target_include_directories(mybot_device_state_test PRIVATE
+    target_include_directories(mybot_device_lifecycle_test PRIVATE
         ${CMAKE_SOURCE_DIR}/main
         ${AOSL_DIR}/include
         ${AOSL_DIR}/platform/include
     )
-    target_link_libraries(mybot_device_state_test PRIVATE
+    target_link_libraries(mybot_device_lifecycle_test PRIVATE
         aosl
         pthread
         dl
         rt
         m
     )
-    add_test(NAME mybot_device_state_test COMMAND mybot_device_state_test)
+    add_test(NAME mybot_device_lifecycle_test COMMAND mybot_device_lifecycle_test)
 
-    add_executable(mybot_utils_http_client_test tests/http_client_test.c)
-    target_include_directories(mybot_utils_http_client_test PRIVATE
+    add_executable(mybot_http_client_test tests/http_client_test.c)
+    target_include_directories(mybot_http_client_test PRIVATE
         ${AOSL_DIR}/include
         ${AOSL_DIR}/platform/include
     )
-    target_link_libraries(mybot_utils_http_client_test PRIVATE
+    target_link_libraries(mybot_http_client_test PRIVATE
         aosl
         pthread
         dl
         rt
         m
     )
-    add_test(NAME mybot_utils_http_client_test COMMAND mybot_utils_http_client_test)
+    add_test(NAME mybot_http_client_test COMMAND mybot_http_client_test)
+
+    add_executable(mybot_json_test
+        tests/json_test.c
+        components/json/mybot_json.c
+    )
+    target_include_directories(mybot_json_test PRIVATE ${CMAKE_SOURCE_DIR}/components/json)
+    target_link_libraries(mybot_json_test PRIVATE m)
+    add_test(NAME mybot_json_test COMMAND mybot_json_test)
+
+    add_executable(mybot_key_service_test
+        tests/key_service_test.c
+        main/key_service/mybot_key_service.c
+    )
+    target_include_directories(mybot_key_service_test PRIVATE ${CMAKE_SOURCE_DIR}/main)
+    add_test(NAME mybot_key_service_test COMMAND mybot_key_service_test)
+
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        foreach(test_target IN ITEMS
+            mybot_device_lifecycle_test
+            mybot_http_client_test
+            mybot_json_test
+            mybot_key_service_test
+        )
+            target_compile_options(${test_target} PRIVATE -UNDEBUG)
+        endforeach()
+    endif()
 endif()

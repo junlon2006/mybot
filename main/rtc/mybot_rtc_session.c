@@ -1,5 +1,5 @@
 #include "mybot_rtc_session.h"
-#include "mybot_config.h"
+#include "mybot_build_config.h"
 
 #include "agora_rtc_api.h"
 #include <api/aosl_log.h>

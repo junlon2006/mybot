@@ -20,7 +20,7 @@
    THE SOFTWARE.
  */
 
-/* mybot_utils_cJSON */
+/* Namespaced cJSON implementation. */
 /* JSON parser in C. */
 
 #include <string.h>
@@ -30,15 +30,17 @@
 #include <float.h>
 #include <limits.h>
 #include <ctype.h>
-#include "mybot_utils_cJSON.h"
+#include "mybot_json.h"
+
+#define MYBOT_JSON_TYPE_MASK 0xFF
 
 static const char *ep;
 
-const char *mybot_utils_cJSON_GetErrorPtr(void) {
+const char *mybot_json_get_error_pointer(void) {
     return ep;
 }
 
-static int mybot_utils_cJSON_strcasecmp(const char *s1, const char *s2) {
+static int mybot_json_strcasecmp(const char *s1, const char *s2) {
     if (!s1)
         return (s1 == s2) ? 0 : 1;
     if (!s2)
@@ -49,59 +51,61 @@ static int mybot_utils_cJSON_strcasecmp(const char *s1, const char *s2) {
     return tolower(*(const unsigned char *)s1) - tolower(*(const unsigned char *)s2);
 }
 
-static void *(*mybot_utils_cJSON_malloc)(size_t sz) = malloc;
-static void (*mybot_utils_cJSON_free)(void *ptr) = free;
+static void *(*mybot_json_malloc_fn)(size_t sz) = malloc;
+static void (*mybot_json_free_fn)(void *ptr) = free;
 
-static char *mybot_utils_cJSON_strdup(const char *str) {
+static char *mybot_json_strdup(const char *str) {
     size_t len;
     char *copy;
 
     len = strlen(str) + 1;
-    if (!(copy = (char *)mybot_utils_cJSON_malloc(len)))
+    if (!(copy = (char *)mybot_json_malloc_fn(len)))
         return 0;
     memcpy(copy, str, len);
     return copy;
 }
 
-void mybot_utils_cJSON_InitHooks(mybot_utils_cJSON_Hooks *hooks) {
+int mybot_json_init_hooks(const mybot_json_hooks_t *hooks) {
     if (!hooks) { /* Reset hooks */
-        mybot_utils_cJSON_malloc = malloc;
-        mybot_utils_cJSON_free = free;
-        return;
+        mybot_json_malloc_fn = malloc;
+        mybot_json_free_fn = free;
+        return 0;
     }
+    if (!hooks->malloc_fn || !hooks->free_fn)
+        return -1;
 
-    mybot_utils_cJSON_malloc = (hooks->malloc_fn) ? hooks->malloc_fn : malloc;
-    mybot_utils_cJSON_free = (hooks->free_fn) ? hooks->free_fn : free;
+    mybot_json_malloc_fn = hooks->malloc_fn;
+    mybot_json_free_fn = hooks->free_fn;
+    return 0;
 }
 
 /* Internal constructor. */
-static mybot_utils_cJSON *mybot_utils_cJSON_New_Item(void) {
-    mybot_utils_cJSON *node =
-        (mybot_utils_cJSON *)mybot_utils_cJSON_malloc(sizeof(mybot_utils_cJSON));
+static mybot_json_t *mybot_json_new_item(void) {
+    mybot_json_t *node = (mybot_json_t *)mybot_json_malloc_fn(sizeof(mybot_json_t));
     if (node)
-        memset(node, 0, sizeof(mybot_utils_cJSON));
+        memset(node, 0, sizeof(mybot_json_t));
     return node;
 }
 
-/* Delete a mybot_utils_cJSON structure. */
-void mybot_utils_cJSON_Delete(mybot_utils_cJSON *c) {
-    mybot_utils_cJSON *next;
+/* Delete a mybot_json_t structure. */
+void mybot_json_delete(mybot_json_t *c) {
+    mybot_json_t *next;
     while (c) {
         next = c->next;
-        if (!(c->type & mybot_utils_cJSON_IsReference) && c->child)
-            mybot_utils_cJSON_Delete(c->child);
-        if (!(c->type & mybot_utils_cJSON_IsReference) && c->valuestring)
-            mybot_utils_cJSON_free(c->valuestring);
+        if (!(c->type & MYBOT_JSON_IS_REFERENCE) && c->child)
+            mybot_json_delete(c->child);
+        if (!(c->type & MYBOT_JSON_IS_REFERENCE) && c->valuestring)
+            mybot_json_free_fn(c->valuestring);
         if (c->string)
-            mybot_utils_cJSON_free(c->string);
-        mybot_utils_cJSON_free(c);
+            mybot_json_free_fn(c->string);
+        mybot_json_free_fn(c);
         c = next;
     }
 }
 
 #if 0
 /* Parse the input text to generate a number, and populate the result into item. */
-static const char *parse_number(mybot_utils_cJSON *item,const char *num)
+static const char *parse_number(mybot_json_t *item,const char *num)
 {
   double n=0,sign=1,scale=0;int subscale=0,signsubscale=1;
 
@@ -147,12 +151,12 @@ static const char *parse_number(mybot_utils_cJSON *item,const char *num)
 
   item->valuedouble = n;
   item->valueint    = (int)n;
-  item->type        = mybot_utils_cJSON_Number;
+  item->type        = MYBOT_JSON_NUMBER;
   return num;
 }
 #endif
 
-static const char *parse_number_u64(mybot_utils_cJSON *item, const char *num) {
+static const char *parse_number_u64(mybot_json_t *item, const char *num) {
     // double n=0,sign=1,scale=0;int subscale=0,signsubscale=1;
     long long n = 0;
     double f = 0;
@@ -215,20 +219,20 @@ static const char *parse_number_u64(mybot_utils_cJSON *item, const char *num) {
         item->valueint = (long long)f;
     }
 
-    item->type = mybot_utils_cJSON_Number;
+    item->type = MYBOT_JSON_NUMBER;
     return num;
 }
 
 /* Render the number nicely from the given item into a string. */
-static char *print_number(mybot_utils_cJSON *item) {
+static char *print_number(mybot_json_t *item) {
     char *str;
     double d = item->valuedouble;
     if (fabs(((double)item->valueint) - d) <= DBL_EPSILON && d <= INT_MAX && d >= INT_MIN) {
-        str = (char *)mybot_utils_cJSON_malloc(21); /* 2^64+1 can be represented in 21 chars. */
+        str = (char *)mybot_json_malloc_fn(21); /* 2^64+1 can be represented in 21 chars. */
         if (str)
             sprintf(str, "%lld", item->valueint);
     } else {
-        str = (char *)mybot_utils_cJSON_malloc(64); /* This is a nice tradeoff. */
+        str = (char *)mybot_json_malloc_fn(64); /* This is a nice tradeoff. */
         if (str) {
             if (fabs(floor(d) - d) <= DBL_EPSILON && fabs(d) < 1.0e60)
                 sprintf(str, "%.0f", d);
@@ -286,7 +290,7 @@ static unsigned parse_hex4(const char *str) {
 
 /* Parse the input text into an unescaped cstring, and populate item. */
 static const unsigned char firstByteMark[7] = {0x00, 0x00, 0xC0, 0xE0, 0xF0, 0xF8, 0xFC};
-static const char *parse_string(mybot_utils_cJSON *item, const char *str) {
+static const char *parse_string(mybot_json_t *item, const char *str) {
     const char *ptr = str + 1;
     char *ptr2;
     char *out;
@@ -301,8 +305,8 @@ static const char *parse_string(mybot_utils_cJSON *item, const char *str) {
         if (*ptr++ == '\\')
             ptr++; /* Skip escaped quotes. */
 
-    out = (char *)mybot_utils_cJSON_malloc(
-        len + 1); /* This is how long we need for the string, roughly. */
+    out = (char *)mybot_json_malloc_fn(len +
+                                       1); /* This is how long we need for the string, roughly. */
     if (!out)
         return 0;
 
@@ -382,7 +386,7 @@ static const char *parse_string(mybot_utils_cJSON *item, const char *str) {
     if (*ptr == '\"')
         ptr++;
     item->valuestring = out;
-    item->type = mybot_utils_cJSON_String;
+    item->type = MYBOT_JSON_STRING;
     return ptr;
 }
 
@@ -394,7 +398,7 @@ static char *print_string_ptr(const char *str) {
     unsigned char token;
 
     if (!str)
-        return mybot_utils_cJSON_strdup("");
+        return mybot_json_strdup("");
     ptr = str;
     while ((token = *ptr) && ++len) {
         if (strchr("\"\\\b\f\n\r\t", token))
@@ -404,7 +408,7 @@ static char *print_string_ptr(const char *str) {
         ptr++;
     }
 
-    out = (char *)mybot_utils_cJSON_malloc(len + 3);
+    out = (char *)mybot_json_malloc_fn(len + 3);
     if (!out)
         return 0;
 
@@ -450,17 +454,17 @@ static char *print_string_ptr(const char *str) {
     return out;
 }
 /* Invote print_string_ptr (which is useful) on an item. */
-static char *print_string(mybot_utils_cJSON *item) {
+static char *print_string(mybot_json_t *item) {
     return print_string_ptr(item->valuestring);
 }
 
 /* Predeclare these prototypes. */
-static const char *parse_value(mybot_utils_cJSON *item, const char *value);
-static char *print_value(mybot_utils_cJSON *item, int depth, int fmt);
-static const char *parse_array(mybot_utils_cJSON *item, const char *value);
-static char *print_array(mybot_utils_cJSON *item, int depth, int fmt);
-static const char *parse_object(mybot_utils_cJSON *item, const char *value);
-static char *print_object(mybot_utils_cJSON *item, int depth, int fmt);
+static const char *parse_value(mybot_json_t *item, const char *value);
+static char *print_value(mybot_json_t *item, int depth, int fmt);
+static const char *parse_array(mybot_json_t *item, const char *value);
+static char *print_array(mybot_json_t *item, int depth, int fmt);
+static const char *parse_object(mybot_json_t *item, const char *value);
+static char *print_object(mybot_json_t *item, int depth, int fmt);
 
 /* Utility to jump whitespace and cr/lf */
 static const char *skip(const char *in) {
@@ -470,17 +474,17 @@ static const char *skip(const char *in) {
 }
 
 /* Parse an object - create a new root, and populate. */
-mybot_utils_cJSON *mybot_utils_cJSON_ParseWithOpts(const char *value, const char **return_parse_end,
-                                                   int require_null_terminated) {
+mybot_json_t *mybot_json_parse_with_options(const char *value, const char **return_parse_end,
+                                            int require_null_terminated) {
     const char *end = 0;
-    mybot_utils_cJSON *c = mybot_utils_cJSON_New_Item();
+    mybot_json_t *c = mybot_json_new_item();
     ep = 0;
     if (!c)
         return 0; /* memory fail */
 
     end = parse_value(c, skip(value));
     if (!end) {
-        mybot_utils_cJSON_Delete(c);
+        mybot_json_delete(c);
         return 0;
     } /* parse failure. ep is set. */
 
@@ -489,7 +493,7 @@ mybot_utils_cJSON *mybot_utils_cJSON_ParseWithOpts(const char *value, const char
     if (require_null_terminated) {
         end = skip(end);
         if (*end) {
-            mybot_utils_cJSON_Delete(c);
+            mybot_json_delete(c);
             ep = end;
             return 0;
         }
@@ -498,34 +502,34 @@ mybot_utils_cJSON *mybot_utils_cJSON_ParseWithOpts(const char *value, const char
         *return_parse_end = end;
     return c;
 }
-/* Default options for mybot_utils_cJSON_Parse */
-mybot_utils_cJSON *mybot_utils_cJSON_Parse(const char *value) {
-    return mybot_utils_cJSON_ParseWithOpts(value, 0, 0);
+/* Default options for mybot_json_parse */
+mybot_json_t *mybot_json_parse(const char *value) {
+    return mybot_json_parse_with_options(value, 0, 0);
 }
 
-/* Render a mybot_utils_cJSON item/entity/structure to text. */
-char *mybot_utils_cJSON_Print(mybot_utils_cJSON *item) {
+/* Render a mybot_json_t item/entity/structure to text. */
+char *mybot_json_print(mybot_json_t *item) {
     return print_value(item, 0, 1);
 }
-char *mybot_utils_cJSON_PrintUnformatted(mybot_utils_cJSON *item) {
+char *mybot_json_print_unformatted(mybot_json_t *item) {
     return print_value(item, 0, 0);
 }
 
 /* Parser core - when encountering text, process appropriately. */
-static const char *parse_value(mybot_utils_cJSON *item, const char *value) {
+static const char *parse_value(mybot_json_t *item, const char *value) {
     if (!value) {
         return 0; /* Fail on null. */
     }
     if (!strncmp(value, "null", 4)) {
-        item->type = mybot_utils_cJSON_NULL;
+        item->type = MYBOT_JSON_NULL;
         return value + 4;
     }
     if (!strncmp(value, "false", 5)) {
-        item->type = mybot_utils_cJSON_False;
+        item->type = MYBOT_JSON_FALSE;
         return value + 5;
     }
     if (!strncmp(value, "true", 4)) {
-        item->type = mybot_utils_cJSON_True;
+        item->type = MYBOT_JSON_TRUE;
         item->valueint = 1;
         return value + 4;
     }
@@ -547,30 +551,30 @@ static const char *parse_value(mybot_utils_cJSON *item, const char *value) {
 }
 
 /* Render a value to text. */
-static char *print_value(mybot_utils_cJSON *item, int depth, int fmt) {
+static char *print_value(mybot_json_t *item, int depth, int fmt) {
     char *out = 0;
     if (!item)
         return 0;
     switch ((item->type) & 255) {
-    case mybot_utils_cJSON_NULL:
-        out = mybot_utils_cJSON_strdup("null");
+    case MYBOT_JSON_NULL:
+        out = mybot_json_strdup("null");
         break;
-    case mybot_utils_cJSON_False:
-        out = mybot_utils_cJSON_strdup("false");
+    case MYBOT_JSON_FALSE:
+        out = mybot_json_strdup("false");
         break;
-    case mybot_utils_cJSON_True:
-        out = mybot_utils_cJSON_strdup("true");
+    case MYBOT_JSON_TRUE:
+        out = mybot_json_strdup("true");
         break;
-    case mybot_utils_cJSON_Number:
+    case MYBOT_JSON_NUMBER:
         out = print_number(item);
         break;
-    case mybot_utils_cJSON_String:
+    case MYBOT_JSON_STRING:
         out = print_string(item);
         break;
-    case mybot_utils_cJSON_Array:
+    case MYBOT_JSON_ARRAY:
         out = print_array(item, depth, fmt);
         break;
-    case mybot_utils_cJSON_Object:
+    case MYBOT_JSON_OBJECT:
         out = print_object(item, depth, fmt);
         break;
     }
@@ -578,19 +582,19 @@ static char *print_value(mybot_utils_cJSON *item, int depth, int fmt) {
 }
 
 /* Build an array from input text. */
-static const char *parse_array(mybot_utils_cJSON *item, const char *value) {
-    mybot_utils_cJSON *child;
+static const char *parse_array(mybot_json_t *item, const char *value) {
+    mybot_json_t *child;
     if (*value != '[') {
         ep = value;
         return 0;
     } /* not an array! */
 
-    item->type = mybot_utils_cJSON_Array;
+    item->type = MYBOT_JSON_ARRAY;
     value = skip(value + 1);
     if (*value == ']')
         return value + 1; /* empty array. */
 
-    item->child = child = mybot_utils_cJSON_New_Item();
+    item->child = child = mybot_json_new_item();
     if (!item->child)
         return 0;                                  /* memory fail */
     value = skip(parse_value(child, skip(value))); /* skip any spacing, get the value. */
@@ -598,8 +602,8 @@ static const char *parse_array(mybot_utils_cJSON *item, const char *value) {
         return 0;
 
     while (*value == ',') {
-        mybot_utils_cJSON *new_item;
-        if (!(new_item = mybot_utils_cJSON_New_Item()))
+        mybot_json_t *new_item;
+        if (!(new_item = mybot_json_new_item()))
             return 0; /* memory fail */
         child->next = new_item;
         new_item->prev = child;
@@ -616,11 +620,11 @@ static const char *parse_array(mybot_utils_cJSON *item, const char *value) {
 }
 
 /* Render an array to text */
-static char *print_array(mybot_utils_cJSON *item, int depth, int fmt) {
+static char *print_array(mybot_json_t *item, int depth, int fmt) {
     char **entries;
     char *out = 0, *ptr, *ret;
     int len = 5;
-    mybot_utils_cJSON *child = item->child;
+    mybot_json_t *child = item->child;
     int numentries = 0, i = 0, fail = 0;
 
     /* How many entries in the array? */
@@ -628,13 +632,13 @@ static char *print_array(mybot_utils_cJSON *item, int depth, int fmt) {
         numentries++, child = child->next;
     /* Explicitly handle numentries==0 */
     if (!numentries) {
-        out = (char *)mybot_utils_cJSON_malloc(3);
+        out = (char *)mybot_json_malloc_fn(3);
         if (out)
             strcpy(out, "[]");
         return out;
     }
     /* Allocate an array to hold the values for each */
-    entries = (char **)mybot_utils_cJSON_malloc(numentries * sizeof(char *));
+    entries = (char **)mybot_json_malloc_fn(numentries * sizeof(char *));
     if (!entries)
         return 0;
     memset(entries, 0, numentries * sizeof(char *));
@@ -652,7 +656,7 @@ static char *print_array(mybot_utils_cJSON *item, int depth, int fmt) {
 
     /* If we didn't fail, try to malloc the output string */
     if (!fail)
-        out = (char *)mybot_utils_cJSON_malloc(len);
+        out = (char *)mybot_json_malloc_fn(len);
     /* If that fails, we fail. */
     if (!out)
         fail = 1;
@@ -661,8 +665,8 @@ static char *print_array(mybot_utils_cJSON *item, int depth, int fmt) {
     if (fail) {
         for (i = 0; i < numentries; i++)
             if (entries[i])
-                mybot_utils_cJSON_free(entries[i]);
-        mybot_utils_cJSON_free(entries);
+                mybot_json_free_fn(entries[i]);
+        mybot_json_free_fn(entries);
         return 0;
     }
 
@@ -679,28 +683,28 @@ static char *print_array(mybot_utils_cJSON *item, int depth, int fmt) {
                 *ptr++ = ' ';
             *ptr = 0;
         }
-        mybot_utils_cJSON_free(entries[i]);
+        mybot_json_free_fn(entries[i]);
     }
-    mybot_utils_cJSON_free(entries);
+    mybot_json_free_fn(entries);
     *ptr++ = ']';
     *ptr++ = 0;
     return out;
 }
 
 /* Build an object from the text. */
-static const char *parse_object(mybot_utils_cJSON *item, const char *value) {
-    mybot_utils_cJSON *child;
+static const char *parse_object(mybot_json_t *item, const char *value) {
+    mybot_json_t *child;
     if (*value != '{') {
         ep = value;
         return 0;
     } /* not an object! */
 
-    item->type = mybot_utils_cJSON_Object;
+    item->type = MYBOT_JSON_OBJECT;
     value = skip(value + 1);
     if (*value == '}')
         return value + 1; /* empty array. */
 
-    item->child = child = mybot_utils_cJSON_New_Item();
+    item->child = child = mybot_json_new_item();
     if (!item->child)
         return 0;
     value = skip(parse_string(child, skip(value)));
@@ -711,14 +715,14 @@ static const char *parse_object(mybot_utils_cJSON *item, const char *value) {
     if (*value != ':') {
         ep = value;
         return 0;
-    }                                                  /* fail! */
+    } /* fail! */
     value = skip(parse_value(child, skip(value + 1))); /* skip any spacing, get the value. */
     if (!value)
         return 0;
 
     while (*value == ',') {
-        mybot_utils_cJSON *new_item;
-        if (!(new_item = mybot_utils_cJSON_New_Item()))
+        mybot_json_t *new_item;
+        if (!(new_item = mybot_json_new_item()))
             return 0; /* memory fail */
         child->next = new_item;
         new_item->prev = child;
@@ -731,7 +735,7 @@ static const char *parse_object(mybot_utils_cJSON *item, const char *value) {
         if (*value != ':') {
             ep = value;
             return 0;
-        }                                                  /* fail! */
+        } /* fail! */
         value = skip(parse_value(child, skip(value + 1))); /* skip any spacing, get the value. */
         if (!value)
             return 0;
@@ -744,18 +748,18 @@ static const char *parse_object(mybot_utils_cJSON *item, const char *value) {
 }
 
 /* Render an object to text. */
-static char *print_object(mybot_utils_cJSON *item, int depth, int fmt) {
+static char *print_object(mybot_json_t *item, int depth, int fmt) {
     char **entries = 0, **names = 0;
     char *out = 0, *ptr, *ret, *str;
     int len = 7, i = 0, j;
-    mybot_utils_cJSON *child = item->child;
+    mybot_json_t *child = item->child;
     int numentries = 0, fail = 0;
     /* Count the number of entries. */
     while (child)
         numentries++, child = child->next;
     /* Explicitly handle empty object case */
     if (!numentries) {
-        out = (char *)mybot_utils_cJSON_malloc(fmt ? depth + 4 : 3);
+        out = (char *)mybot_json_malloc_fn(fmt ? depth + 4 : 3);
         if (!out)
             return 0;
         ptr = out;
@@ -770,12 +774,12 @@ static char *print_object(mybot_utils_cJSON *item, int depth, int fmt) {
         return out;
     }
     /* Allocate space for the names and the objects */
-    entries = (char **)mybot_utils_cJSON_malloc(numentries * sizeof(char *));
+    entries = (char **)mybot_json_malloc_fn(numentries * sizeof(char *));
     if (!entries)
         return 0;
-    names = (char **)mybot_utils_cJSON_malloc(numentries * sizeof(char *));
+    names = (char **)mybot_json_malloc_fn(numentries * sizeof(char *));
     if (!names) {
-        mybot_utils_cJSON_free(entries);
+        mybot_json_free_fn(entries);
         return 0;
     }
     memset(entries, 0, sizeof(char *) * numentries);
@@ -798,7 +802,7 @@ static char *print_object(mybot_utils_cJSON *item, int depth, int fmt) {
 
     /* Try to allocate the output string */
     if (!fail)
-        out = (char *)mybot_utils_cJSON_malloc(len);
+        out = (char *)mybot_json_malloc_fn(len);
     if (!out)
         fail = 1;
 
@@ -806,12 +810,12 @@ static char *print_object(mybot_utils_cJSON *item, int depth, int fmt) {
     if (fail) {
         for (i = 0; i < numentries; i++) {
             if (names[i])
-                mybot_utils_cJSON_free(names[i]);
+                mybot_json_free_fn(names[i]);
             if (entries[i])
-                mybot_utils_cJSON_free(entries[i]);
+                mybot_json_free_fn(entries[i]);
         }
-        mybot_utils_cJSON_free(names);
-        mybot_utils_cJSON_free(entries);
+        mybot_json_free_fn(names);
+        mybot_json_free_fn(entries);
         return 0;
     }
 
@@ -837,12 +841,12 @@ static char *print_object(mybot_utils_cJSON *item, int depth, int fmt) {
         if (fmt)
             *ptr++ = '\n';
         *ptr = 0;
-        mybot_utils_cJSON_free(names[i]);
-        mybot_utils_cJSON_free(entries[i]);
+        mybot_json_free_fn(names[i]);
+        mybot_json_free_fn(entries[i]);
     }
 
-    mybot_utils_cJSON_free(names);
-    mybot_utils_cJSON_free(entries);
+    mybot_json_free_fn(names);
+    mybot_json_free_fn(entries);
     if (fmt)
         for (i = 0; i < depth - 1; i++)
             *ptr++ = '\t';
@@ -852,48 +856,65 @@ static char *print_object(mybot_utils_cJSON *item, int depth, int fmt) {
 }
 
 /* Get Array size/item / object item. */
-int mybot_utils_cJSON_GetArraySize(mybot_utils_cJSON *array) {
-    mybot_utils_cJSON *c = array->child;
+int mybot_json_get_array_size(mybot_json_t *array) {
+    mybot_json_t *c = array->child;
     int i = 0;
     while (c)
         i++, c = c->next;
     return i;
 }
-mybot_utils_cJSON *mybot_utils_cJSON_GetArrayItem(mybot_utils_cJSON *array, int item) {
-    mybot_utils_cJSON *c = array->child;
+mybot_json_t *mybot_json_get_array_item(mybot_json_t *array, int item) {
+    mybot_json_t *c = array->child;
     while (c && item > 0)
         item--, c = c->next;
     return c;
 }
-mybot_utils_cJSON *mybot_utils_cJSON_GetObjectItem(mybot_utils_cJSON *object, const char *string) {
-    mybot_utils_cJSON *c = object->child;
-    while (c && mybot_utils_cJSON_strcasecmp(c->string, string))
+mybot_json_t *mybot_json_get_object_item(const mybot_json_t *object, const char *string) {
+    if (!object || !string)
+        return NULL;
+
+    mybot_json_t *c = object->child;
+    while (c && mybot_json_strcasecmp(c->string, string))
         c = c->next;
     return c;
 }
 
+const char *mybot_json_get_string(const mybot_json_t *value) {
+    if (!value || (value->type & MYBOT_JSON_TYPE_MASK) != MYBOT_JSON_STRING)
+        return NULL;
+    return value->valuestring;
+}
+
+bool mybot_json_get_integer(const mybot_json_t *value, int64_t *result) {
+    if (!value || !result || (value->type & MYBOT_JSON_TYPE_MASK) != MYBOT_JSON_NUMBER)
+        return false;
+    *result = (int64_t)value->valueint;
+    return true;
+}
+
 /* Utility for array list handling. */
-static void suffix_object(mybot_utils_cJSON *prev, mybot_utils_cJSON *item) {
+static void suffix_object(mybot_json_t *prev, mybot_json_t *item) {
     prev->next = item;
     item->prev = prev;
 }
 /* Utility for handling references. */
-static mybot_utils_cJSON *create_reference(mybot_utils_cJSON *item) {
-    mybot_utils_cJSON *ref = mybot_utils_cJSON_New_Item();
+static mybot_json_t *create_reference(mybot_json_t *item) {
+    mybot_json_t *ref = mybot_json_new_item();
     if (!ref)
         return 0;
-    memcpy(ref, item, sizeof(mybot_utils_cJSON));
+    memcpy(ref, item, sizeof(mybot_json_t));
     ref->string = 0;
-    ref->type |= mybot_utils_cJSON_IsReference;
+    ref->type |= MYBOT_JSON_IS_REFERENCE;
     ref->next = ref->prev = 0;
     return ref;
 }
 
 /* Add item to array/object. */
-void mybot_utils_cJSON_AddItemToArray(mybot_utils_cJSON *array, mybot_utils_cJSON *item) {
-    mybot_utils_cJSON *c = array->child;
-    if (!item)
-        return;
+int mybot_json_add_item_to_array(mybot_json_t *array, mybot_json_t *item) {
+    if (!array || !item)
+        return -1;
+
+    mybot_json_t *c = array->child;
     if (!c) {
         array->child = item;
     } else {
@@ -901,26 +922,91 @@ void mybot_utils_cJSON_AddItemToArray(mybot_utils_cJSON *array, mybot_utils_cJSO
             c = c->next;
         suffix_object(c, item);
     }
-}
-void mybot_utils_cJSON_AddItemToObject(mybot_utils_cJSON *object, const char *string,
-                                       mybot_utils_cJSON *item) {
-    if (!item)
-        return;
-    if (item->string)
-        mybot_utils_cJSON_free(item->string);
-    item->string = mybot_utils_cJSON_strdup(string);
-    mybot_utils_cJSON_AddItemToArray(object, item);
-}
-void mybot_utils_cJSON_AddItemReferenceToArray(mybot_utils_cJSON *array, mybot_utils_cJSON *item) {
-    mybot_utils_cJSON_AddItemToArray(array, create_reference(item));
-}
-void mybot_utils_cJSON_AddItemReferenceToObject(mybot_utils_cJSON *object, const char *string,
-                                                mybot_utils_cJSON *item) {
-    mybot_utils_cJSON_AddItemToObject(object, string, create_reference(item));
+    return 0;
 }
 
-mybot_utils_cJSON *mybot_utils_cJSON_DetachItemFromArray(mybot_utils_cJSON *array, int which) {
-    mybot_utils_cJSON *c = array->child;
+int mybot_json_add_item_to_object(mybot_json_t *object, const char *string, mybot_json_t *item) {
+    if (!object || !string || !item)
+        return -1;
+
+    char *item_name = mybot_json_strdup(string);
+    if (!item_name)
+        return -1;
+
+    if (item->string)
+        mybot_json_free_fn(item->string);
+    item->string = item_name;
+    return mybot_json_add_item_to_array(object, item);
+}
+
+int mybot_json_add_item_reference_to_array(mybot_json_t *array, mybot_json_t *item) {
+    if (!item)
+        return -1;
+
+    mybot_json_t *reference = create_reference(item);
+    if (!reference)
+        return -1;
+
+    int result = mybot_json_add_item_to_array(array, reference);
+    if (result < 0)
+        mybot_json_delete(reference);
+    return result;
+}
+
+int mybot_json_add_item_reference_to_object(mybot_json_t *object, const char *string,
+                                            mybot_json_t *item) {
+    if (!item)
+        return -1;
+
+    mybot_json_t *reference = create_reference(item);
+    if (!reference)
+        return -1;
+
+    int result = mybot_json_add_item_to_object(object, string, reference);
+    if (result < 0)
+        mybot_json_delete(reference);
+    return result;
+}
+
+static int add_created_item(mybot_json_t *object, const char *name, mybot_json_t *item) {
+    if (!object || !name || !item) {
+        mybot_json_delete(item);
+        return -1;
+    }
+
+    int result = mybot_json_add_item_to_object(object, name, item);
+    if (result < 0)
+        mybot_json_delete(item);
+    return result;
+}
+
+int mybot_json_add_null(mybot_json_t *object, const char *name) {
+    return add_created_item(object, name, mybot_json_create_null());
+}
+
+int mybot_json_add_string(mybot_json_t *object, const char *name, const char *value) {
+    if (!value)
+        return -1;
+    return add_created_item(object, name, mybot_json_create_string(value));
+}
+
+int mybot_json_add_number(mybot_json_t *object, const char *name, double value) {
+    return add_created_item(object, name, mybot_json_create_number(value));
+}
+
+int mybot_json_add_bool(mybot_json_t *object, const char *name, bool value) {
+    return add_created_item(object, name, mybot_json_create_bool(value));
+}
+
+int mybot_json_add_item(mybot_json_t *object, const char *name, mybot_json_t *item) {
+    if (!object || !name || !item)
+        return -1;
+
+    return mybot_json_add_item_to_object(object, name, item);
+}
+
+mybot_json_t *mybot_json_detach_item_from_array(mybot_json_t *array, int which) {
+    mybot_json_t *c = array->child;
     while (c && which > 0)
         c = c->next, which--;
     if (!c)
@@ -934,27 +1020,25 @@ mybot_utils_cJSON *mybot_utils_cJSON_DetachItemFromArray(mybot_utils_cJSON *arra
     c->prev = c->next = 0;
     return c;
 }
-void mybot_utils_cJSON_DeleteItemFromArray(mybot_utils_cJSON *array, int which) {
-    mybot_utils_cJSON_Delete(mybot_utils_cJSON_DetachItemFromArray(array, which));
+void mybot_json_delete_item_from_array(mybot_json_t *array, int which) {
+    mybot_json_delete(mybot_json_detach_item_from_array(array, which));
 }
-mybot_utils_cJSON *mybot_utils_cJSON_DetachItemFromObject(mybot_utils_cJSON *object,
-                                                          const char *string) {
+mybot_json_t *mybot_json_detach_item_from_object(mybot_json_t *object, const char *string) {
     int i = 0;
-    mybot_utils_cJSON *c = object->child;
-    while (c && mybot_utils_cJSON_strcasecmp(c->string, string))
+    mybot_json_t *c = object->child;
+    while (c && mybot_json_strcasecmp(c->string, string))
         i++, c = c->next;
     if (c)
-        return mybot_utils_cJSON_DetachItemFromArray(object, i);
+        return mybot_json_detach_item_from_array(object, i);
     return 0;
 }
-void mybot_utils_cJSON_DeleteItemFromObject(mybot_utils_cJSON *object, const char *string) {
-    mybot_utils_cJSON_Delete(mybot_utils_cJSON_DetachItemFromObject(object, string));
+void mybot_json_delete_item_from_object(mybot_json_t *object, const char *string) {
+    mybot_json_delete(mybot_json_detach_item_from_object(object, string));
 }
 
 /* Replace array/object items with new ones. */
-void mybot_utils_cJSON_ReplaceItemInArray(mybot_utils_cJSON *array, int which,
-                                          mybot_utils_cJSON *newitem) {
-    mybot_utils_cJSON *c = array->child;
+void mybot_json_replace_item_in_array(mybot_json_t *array, int which, mybot_json_t *newitem) {
+    mybot_json_t *c = array->child;
     while (c && which > 0)
         c = c->next, which--;
     if (!c)
@@ -968,81 +1052,88 @@ void mybot_utils_cJSON_ReplaceItemInArray(mybot_utils_cJSON *array, int which,
     else
         newitem->prev->next = newitem;
     c->next = c->prev = 0;
-    mybot_utils_cJSON_Delete(c);
+    mybot_json_delete(c);
 }
-void mybot_utils_cJSON_ReplaceItemInObject(mybot_utils_cJSON *object, const char *string,
-                                           mybot_utils_cJSON *newitem) {
+void mybot_json_replace_item_in_object(mybot_json_t *object, const char *string,
+                                       mybot_json_t *newitem) {
     int i = 0;
-    mybot_utils_cJSON *c = object->child;
-    while (c && mybot_utils_cJSON_strcasecmp(c->string, string))
+    mybot_json_t *c = object->child;
+    while (c && mybot_json_strcasecmp(c->string, string))
         i++, c = c->next;
     if (c) {
-        newitem->string = mybot_utils_cJSON_strdup(string);
-        mybot_utils_cJSON_ReplaceItemInArray(object, i, newitem);
+        newitem->string = mybot_json_strdup(string);
+        mybot_json_replace_item_in_array(object, i, newitem);
     }
 }
 
 /* Create basic types: */
-mybot_utils_cJSON *mybot_utils_cJSON_CreateNull(void) {
-    mybot_utils_cJSON *item = mybot_utils_cJSON_New_Item();
+mybot_json_t *mybot_json_create_null(void) {
+    mybot_json_t *item = mybot_json_new_item();
     if (item)
-        item->type = mybot_utils_cJSON_NULL;
+        item->type = MYBOT_JSON_NULL;
     return item;
 }
-mybot_utils_cJSON *mybot_utils_cJSON_CreateTrue(void) {
-    mybot_utils_cJSON *item = mybot_utils_cJSON_New_Item();
+mybot_json_t *mybot_json_create_true(void) {
+    mybot_json_t *item = mybot_json_new_item();
     if (item)
-        item->type = mybot_utils_cJSON_True;
+        item->type = MYBOT_JSON_TRUE;
     return item;
 }
-mybot_utils_cJSON *mybot_utils_cJSON_CreateFalse(void) {
-    mybot_utils_cJSON *item = mybot_utils_cJSON_New_Item();
+mybot_json_t *mybot_json_create_false(void) {
+    mybot_json_t *item = mybot_json_new_item();
     if (item)
-        item->type = mybot_utils_cJSON_False;
+        item->type = MYBOT_JSON_FALSE;
     return item;
 }
-mybot_utils_cJSON *mybot_utils_cJSON_CreateBool(int b) {
-    mybot_utils_cJSON *item = mybot_utils_cJSON_New_Item();
+mybot_json_t *mybot_json_create_bool(int b) {
+    mybot_json_t *item = mybot_json_new_item();
     if (item)
-        item->type = b ? mybot_utils_cJSON_True : mybot_utils_cJSON_False;
+        item->type = b ? MYBOT_JSON_TRUE : MYBOT_JSON_FALSE;
     return item;
 }
-mybot_utils_cJSON *mybot_utils_cJSON_CreateNumber(double num) {
-    mybot_utils_cJSON *item = mybot_utils_cJSON_New_Item();
+mybot_json_t *mybot_json_create_number(double num) {
+    mybot_json_t *item = mybot_json_new_item();
     if (item) {
-        item->type = mybot_utils_cJSON_Number;
+        item->type = MYBOT_JSON_NUMBER;
         item->valuedouble = num;
         item->valueint = (long long)num;
     }
     return item;
 }
-mybot_utils_cJSON *mybot_utils_cJSON_CreateString(const char *string) {
-    mybot_utils_cJSON *item = mybot_utils_cJSON_New_Item();
+mybot_json_t *mybot_json_create_string(const char *string) {
+    if (!string)
+        return NULL;
+
+    mybot_json_t *item = mybot_json_new_item();
     if (item) {
-        item->type = mybot_utils_cJSON_String;
-        item->valuestring = mybot_utils_cJSON_strdup(string);
+        item->type = MYBOT_JSON_STRING;
+        item->valuestring = mybot_json_strdup(string);
+        if (!item->valuestring) {
+            mybot_json_delete(item);
+            return NULL;
+        }
     }
     return item;
 }
-mybot_utils_cJSON *mybot_utils_cJSON_CreateArray(void) {
-    mybot_utils_cJSON *item = mybot_utils_cJSON_New_Item();
+mybot_json_t *mybot_json_create_array(void) {
+    mybot_json_t *item = mybot_json_new_item();
     if (item)
-        item->type = mybot_utils_cJSON_Array;
+        item->type = MYBOT_JSON_ARRAY;
     return item;
 }
-mybot_utils_cJSON *mybot_utils_cJSON_CreateObject(void) {
-    mybot_utils_cJSON *item = mybot_utils_cJSON_New_Item();
+mybot_json_t *mybot_json_create_object(void) {
+    mybot_json_t *item = mybot_json_new_item();
     if (item)
-        item->type = mybot_utils_cJSON_Object;
+        item->type = MYBOT_JSON_OBJECT;
     return item;
 }
 
 /* Create Arrays: */
-mybot_utils_cJSON *mybot_utils_cJSON_CreateIntArray(const int *numbers, int count) {
+mybot_json_t *mybot_json_create_int_array(const int *numbers, int count) {
     int i;
-    mybot_utils_cJSON *n = 0, *p = 0, *a = mybot_utils_cJSON_CreateArray();
+    mybot_json_t *n = 0, *p = 0, *a = mybot_json_create_array();
     for (i = 0; a && i < count; i++) {
-        n = mybot_utils_cJSON_CreateNumber(numbers[i]);
+        n = mybot_json_create_number(numbers[i]);
         if (!i)
             a->child = n;
         else
@@ -1051,11 +1142,11 @@ mybot_utils_cJSON *mybot_utils_cJSON_CreateIntArray(const int *numbers, int coun
     }
     return a;
 }
-mybot_utils_cJSON *mybot_utils_cJSON_CreateFloatArray(const float *numbers, int count) {
+mybot_json_t *mybot_json_create_float_array(const float *numbers, int count) {
     int i;
-    mybot_utils_cJSON *n = 0, *p = 0, *a = mybot_utils_cJSON_CreateArray();
+    mybot_json_t *n = 0, *p = 0, *a = mybot_json_create_array();
     for (i = 0; a && i < count; i++) {
-        n = mybot_utils_cJSON_CreateNumber(numbers[i]);
+        n = mybot_json_create_number(numbers[i]);
         if (!i)
             a->child = n;
         else
@@ -1064,11 +1155,11 @@ mybot_utils_cJSON *mybot_utils_cJSON_CreateFloatArray(const float *numbers, int 
     }
     return a;
 }
-mybot_utils_cJSON *mybot_utils_cJSON_CreateDoubleArray(const double *numbers, int count) {
+mybot_json_t *mybot_json_create_double_array(const double *numbers, int count) {
     int i;
-    mybot_utils_cJSON *n = 0, *p = 0, *a = mybot_utils_cJSON_CreateArray();
+    mybot_json_t *n = 0, *p = 0, *a = mybot_json_create_array();
     for (i = 0; a && i < count; i++) {
-        n = mybot_utils_cJSON_CreateNumber(numbers[i]);
+        n = mybot_json_create_number(numbers[i]);
         if (!i)
             a->child = n;
         else
@@ -1077,11 +1168,11 @@ mybot_utils_cJSON *mybot_utils_cJSON_CreateDoubleArray(const double *numbers, in
     }
     return a;
 }
-mybot_utils_cJSON *mybot_utils_cJSON_CreateStringArray(const char **strings, int count) {
+mybot_json_t *mybot_json_create_string_array(const char **strings, int count) {
     int i;
-    mybot_utils_cJSON *n = 0, *p = 0, *a = mybot_utils_cJSON_CreateArray();
+    mybot_json_t *n = 0, *p = 0, *a = mybot_json_create_array();
     for (i = 0; a && i < count; i++) {
-        n = mybot_utils_cJSON_CreateString(strings[i]);
+        n = mybot_json_create_string(strings[i]);
         if (!i)
             a->child = n;
         else
@@ -1092,29 +1183,29 @@ mybot_utils_cJSON *mybot_utils_cJSON_CreateStringArray(const char **strings, int
 }
 
 /* Duplication */
-mybot_utils_cJSON *mybot_utils_cJSON_Duplicate(mybot_utils_cJSON *item, int recurse) {
-    mybot_utils_cJSON *newitem, *cptr, *nptr = 0, *newchild;
+mybot_json_t *mybot_json_duplicate(mybot_json_t *item, int recurse) {
+    mybot_json_t *newitem, *cptr, *nptr = 0, *newchild;
     /* Bail on bad ptr */
     if (!item)
         return 0;
     /* Create new item */
-    newitem = mybot_utils_cJSON_New_Item();
+    newitem = mybot_json_new_item();
     if (!newitem)
         return 0;
     /* Copy over all vars */
-    newitem->type = item->type & (~mybot_utils_cJSON_IsReference),
-    newitem->valueint = item->valueint, newitem->valuedouble = item->valuedouble;
+    newitem->type = item->type & (~MYBOT_JSON_IS_REFERENCE), newitem->valueint = item->valueint,
+    newitem->valuedouble = item->valuedouble;
     if (item->valuestring) {
-        newitem->valuestring = mybot_utils_cJSON_strdup(item->valuestring);
+        newitem->valuestring = mybot_json_strdup(item->valuestring);
         if (!newitem->valuestring) {
-            mybot_utils_cJSON_Delete(newitem);
+            mybot_json_delete(newitem);
             return 0;
         }
     }
     if (item->string) {
-        newitem->string = mybot_utils_cJSON_strdup(item->string);
+        newitem->string = mybot_json_strdup(item->string);
         if (!newitem->string) {
-            mybot_utils_cJSON_Delete(newitem);
+            mybot_json_delete(newitem);
             return 0;
         }
     }
@@ -1124,10 +1215,10 @@ mybot_utils_cJSON *mybot_utils_cJSON_Duplicate(mybot_utils_cJSON *item, int recu
     /* Walk the ->next chain for the child. */
     cptr = item->child;
     while (cptr) {
-        newchild = mybot_utils_cJSON_Duplicate(
+        newchild = mybot_json_duplicate(
             cptr, 1); /* Duplicate (with recurse) each item in the ->next chain */
         if (!newchild) {
-            mybot_utils_cJSON_Delete(newitem);
+            mybot_json_delete(newitem);
             return 0;
         }
         if (nptr) {
@@ -1143,7 +1234,12 @@ mybot_utils_cJSON *mybot_utils_cJSON_Duplicate(mybot_utils_cJSON *item, int recu
     return newitem;
 }
 
-void mybot_utils_cJSON_Minify(char *json) {
+void mybot_json_free_string(char *text) {
+    if (text)
+        mybot_json_free_fn(text);
+}
+
+void mybot_json_minify(char *json) {
     char *into = json;
     while (*json) {
         if (*json == ' ')

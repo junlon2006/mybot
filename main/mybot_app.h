@@ -10,7 +10,7 @@ extern "C" {
 
 /** Application configuration (parsed from the command line). */
 typedef struct {
-    char server_base[128]; /* device API server base URL */
+    char server_base[128]; /* service base URL */
     char device_id[64];    /* unique device identifier */
     char firmware_ver[32]; /* firmware version (optional) */
     char hw_model[32];     /* hardware model (optional) */
@@ -32,6 +32,9 @@ int mybot_app_start(const mybot_app_config_t *cfg);
 
 /** @brief Check whether the application is still running. */
 bool mybot_app_is_running(void);
+
+/** @brief Process pending platform input events. */
+void mybot_app_poll(void);
 
 /** @brief Request a graceful exit (used by signal handlers / UI keys). */
 void mybot_app_request_exit(void);

@@ -1,4 +1,4 @@
-#include "mybot_utils_ringbuf.h"
+#include "mybot_ringbuf.h"
 
 #include <string.h>
 
@@ -29,7 +29,7 @@ static inline int free_size(ringbuf_internal_t *rb) {
     return rb->size - used - RINGBUF_GUARD_BYTE;
 }
 
-mybot_utils_ringbuf_t mybot_utils_ringbuf_create(int size) {
+mybot_ringbuf_t mybot_ringbuf_create(int size) {
     if (size <= 0) {
         return NULL;
     }
@@ -47,10 +47,10 @@ mybot_utils_ringbuf_t mybot_utils_ringbuf_create(int size) {
     }
     aosl_atomic_set(&rb->head, 0);
     aosl_atomic_set(&rb->tail, 0);
-    return (mybot_utils_ringbuf_t)rb;
+    return (mybot_ringbuf_t)rb;
 }
 
-int mybot_utils_ringbuf_destroy(mybot_utils_ringbuf_t handle) {
+int mybot_ringbuf_destroy(mybot_ringbuf_t handle) {
     if (!handle) {
         return -1;
     }
@@ -60,7 +60,7 @@ int mybot_utils_ringbuf_destroy(mybot_utils_ringbuf_t handle) {
     return 0;
 }
 
-int mybot_utils_ringbuf_clear(mybot_utils_ringbuf_t handle) {
+int mybot_ringbuf_clear(mybot_ringbuf_t handle) {
     if (!handle) {
         return -1;
     }
@@ -70,21 +70,21 @@ int mybot_utils_ringbuf_clear(mybot_utils_ringbuf_t handle) {
     return 0;
 }
 
-int mybot_utils_ringbuf_get_free_size(mybot_utils_ringbuf_t handle) {
+int mybot_ringbuf_get_free_size(mybot_ringbuf_t handle) {
     if (!handle) {
         return -1;
     }
     return free_size((ringbuf_internal_t *)handle);
 }
 
-int mybot_utils_ringbuf_get_data_size(mybot_utils_ringbuf_t handle) {
+int mybot_ringbuf_get_data_size(mybot_ringbuf_t handle) {
     if (!handle) {
         return -1;
     }
     return data_size((ringbuf_internal_t *)handle);
 }
 
-int mybot_utils_ringbuf_write(mybot_utils_ringbuf_t handle, const char *src, int writelen) {
+int mybot_ringbuf_write(mybot_ringbuf_t handle, const char *src, int writelen) {
     if (!handle || !src || writelen <= 0) {
         return -1;
     }
@@ -109,7 +109,7 @@ int mybot_utils_ringbuf_write(mybot_utils_ringbuf_t handle, const char *src, int
     return writelen;
 }
 
-int mybot_utils_ringbuf_read(char *dst, int readlen, mybot_utils_ringbuf_t handle) {
+int mybot_ringbuf_read(char *dst, int readlen, mybot_ringbuf_t handle) {
     if (!handle || !dst || readlen <= 0) {
         return -1;
     }
