@@ -15,7 +15,7 @@ static bool s_flash_write_fails;
 
 static int s_binding_result;
 static char s_binding_status[16];
-static char s_binding_token[MYBOT_DEVICE_API_MAX_TOKEN];
+static char s_binding_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
 static int s_pair_result;
 static int s_pair_call_count;
 static int s_start_result;
@@ -76,9 +76,9 @@ static const mybot_flash_ops_t s_mock_flash_ops = {
     .destroy = mock_flash_destroy,
 };
 
-int mybot_device_api_create_pair_code(const char *base_url, const char *device_id,
-                                      const char *firmware_ver, const char *hw_model,
-                                      mybot_device_pair_code_t *resp) {
+int mybot_device_client_create_pair_code(const char *base_url, const char *device_id,
+                                         const char *firmware_ver, const char *hw_model,
+                                         mybot_device_pair_code_t *resp) {
     (void)base_url;
     (void)device_id;
     (void)firmware_ver;
@@ -94,8 +94,8 @@ int mybot_device_api_create_pair_code(const char *base_url, const char *device_i
     return 0;
 }
 
-int mybot_device_api_get_binding_status(const char *base_url, const char *device_id,
-                                        const char *auth_header, mybot_device_binding_t *resp) {
+int mybot_device_client_get_binding_status(const char *base_url, const char *device_id,
+                                           const char *auth_header, mybot_device_binding_t *resp) {
     (void)base_url;
     (void)device_id;
     (void)auth_header;
@@ -106,9 +106,9 @@ int mybot_device_api_get_binding_status(const char *base_url, const char *device
     return s_binding_result;
 }
 
-int mybot_device_api_start_conversation(const char *base_url, const char *device_id,
-                                        const char *device_token, const char *body_params,
-                                        mybot_device_conversation_t *resp) {
+int mybot_device_client_start_conversation(const char *base_url, const char *device_id,
+                                           const char *device_token, const char *body_params,
+                                           mybot_device_conversation_t *resp) {
     (void)base_url;
     (void)device_id;
     (void)device_token;
@@ -125,9 +125,9 @@ int mybot_device_api_start_conversation(const char *base_url, const char *device
     return 0;
 }
 
-int mybot_device_api_stop_conversation(const char *base_url, const char *device_id,
-                                       const char *device_token, const char *conversation_id,
-                                       const char *reason) {
+int mybot_device_client_stop_conversation(const char *base_url, const char *device_id,
+                                          const char *device_token, const char *conversation_id,
+                                          const char *reason) {
     (void)base_url;
     (void)device_id;
     (void)device_token;

@@ -1,7 +1,7 @@
 #ifndef MYBOT_DEVICE_STATE_H_
 #define MYBOT_DEVICE_STATE_H_
 
-#include "mybot_device_api.h"
+#include "mybot_device_client.h"
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -11,23 +11,23 @@ extern "C" {
 #endif
 
 /* ----------------------------------------------------------
- * Device lifecycle states (DEVICE_API.md §2.1)
+ * Device lifecycle states
  * ---------------------------------------------------------- */
 typedef enum {
     MYBOT_DEVICE_STATE_UNPROVISIONED,   /* no device_token, need pairing */
-    MYBOT_DEVICE_STATE_PAIRING,         /* POST /pair-codes in progress */
-    MYBOT_DEVICE_STATE_AWAITING_CLAIM,  /* polling binding-status with pair_token */
+    MYBOT_DEVICE_STATE_PAIRING,         /* requesting a pair code */
+    MYBOT_DEVICE_STATE_AWAITING_CLAIM,  /* waiting for the device to be claimed */
     MYBOT_DEVICE_STATE_RUNTIME,         /* have device_token, idle */
     MYBOT_DEVICE_STATE_IN_CONVERSATION, /* active RTC call */
 } mybot_device_state_t;
 
 /* Conversation parameters (from server response) */
 typedef struct {
-    char conversation_id[MYBOT_DEVICE_API_MAX_ID];
+    char conversation_id[MYBOT_DEVICE_CLIENT_MAX_ID];
     char rtc_app_id[64];
     char rtc_channel[128];
     char rtc_uid[64]; /* string UID assigned by server */
-    char rtc_token[MYBOT_DEVICE_API_MAX_TOKEN];
+    char rtc_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
 } mybot_conversation_params_t;
 
 /* Callbacks invoked by the state machine onto the app layer */

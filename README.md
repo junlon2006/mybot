@@ -2,7 +2,7 @@
 
 跨平台语音聊天机器人。基于 **Agora RTC** 实时音视频协议实现语音传输，**AOSL** 提供跨平台系统抽象层。
 
-设备端通过 HTTP API 与服务端通信完成配对、认证和对话管理，配对的设备使用 RTC 与 ConvoAI Agent 进行语音交互。
+设备端与服务端通信完成配对、认证和对话管理，配对的设备使用 RTC 与 ConvoAI Agent 进行语音交互。
 
 ## 架构
 
@@ -21,7 +21,7 @@ mybot/
 │   │   └── linux/                  # 板级适配层：Linux ALSA、stdin 按键实现
 │   └── protocols/
 │       ├── mybot_rtc_session.h / .c      # Agora RTC 会话管理
-│       ├── mybot_device_api.h / .c       # 设备端服务 API（配对/对话/轮询）
+│       ├── mybot_device_client.h / .c    # 设备服务客户端（配对/对话/轮询）
 │       └── mybot_device_state.h / .c     # 设备生命周期状态机
 └── components/
     ├── aosl/                       # AOSL 跨平台系统库
@@ -49,8 +49,8 @@ unprovisioned → pairing → awaiting_claim ──→ runtime ←→ in_convers
 
 | 阶段 | 说明 |
 |------|------|
-| `pairing` | 调用 `POST /devices/pair-codes` 获取配对码 |
-| `awaiting_claim` | 轮询 `GET /binding-status`，等待用户在 Web 端认领 |
+| `pairing` | 向服务端申请配对码 |
+| `awaiting_claim` | 等待用户在 Web 端认领设备 |
 | `runtime` | 获得 `device_token`，定期 poll 检测解绑，可启动对话 |
 | `in_conversation` | 通过 RTC 与 ConvoAI Agent 语音交互 |
 
@@ -88,7 +88,6 @@ make -j$(nproc)
 ## 使用
 
 ```bash
-# 需要先启动设备端 API 服务（参考 DEVICE_API.md）
 ./mybot --server http://localhost:3001 --device-id AG-DEMO-001
 ```
 
@@ -99,7 +98,7 @@ Linux 文件型 flash 默认将设备凭证保存在当前目录的 `.mybot-flas
 
 | 参数 | 必填 | 说明 |
 |------|------|------|
-| `--server` | 是 | 设备 API 服务端地址 |
+| `--server` | 是 | 服务端地址 |
 | `--device-id` | 是 | 设备唯一标识符（如 `AG-A1B2C3`） |
 | `--fw-ver` | 否 | 固件版本 |
 | `--hw-model` | 否 | 硬件型号 |
@@ -112,17 +111,6 @@ Linux 文件型 flash 默认将设备凭证保存在当前目录的 `.mybot-flas
 | `q` | 停止对话 |
 | `p` | 重新配对 |
 | `e` | 退出程序（等同 Ctrl+C） |
-
-## 设备 API
-
-服务端端点定义见 [DEVICE_API.md](DEVICE_API.md)，已封装的调用：
-
-| 端点 | 函数 | 用途 |
-|------|------|------|
-| `POST /devices/pair-codes` | `mybot_device_api_create_pair_code()` | 申请配对码 |
-| `GET /devices/{id}/binding-status` | `mybot_device_api_get_binding_status()` | 轮询绑定状态 |
-| `POST /devices/{id}/conversations/start` | `mybot_device_api_start_conversation()` | 启动对话 |
-| `POST /devices/{id}/conversations/stop` | `mybot_device_api_stop_conversation()` | 停止对话 |
 
 ## 跨平台扩展
 

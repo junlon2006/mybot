@@ -1,4 +1,4 @@
-#include "mybot_device_api.h"
+#include "mybot_device_client.h"
 #include "mybot_config.h"
 #include "mybot_utils_http_client.h"
 #include "mybot_utils_cJSON.h"
@@ -50,7 +50,7 @@ static int parse_rtc_block(mybot_utils_cJSON *root, mybot_device_conversation_t 
 }
 
 /* ----------------------------------------------------------
- * Device API — server communication
+ * Device service HTTP client
  * ---------------------------------------------------------- */
 
 /* True if the HTTP response status is a 2xx success. */
@@ -58,9 +58,9 @@ static bool http_response_ok(const mybot_utils_http_response_t *resp) {
     return resp->status_code >= 200 && resp->status_code < 300;
 }
 
-int mybot_device_api_create_pair_code(const char *base_url, const char *device_id,
-                                      const char *firmware_ver, const char *hw_model,
-                                      mybot_device_pair_code_t *resp) {
+int mybot_device_client_create_pair_code(const char *base_url, const char *device_id,
+                                         const char *firmware_ver, const char *hw_model,
+                                         mybot_device_pair_code_t *resp) {
     if (!base_url || !device_id || !resp) {
         return -1;
     }
@@ -82,7 +82,7 @@ int mybot_device_api_create_pair_code(const char *base_url, const char *device_i
         return -1;
     }
 
-    char url[MYBOT_DEVICE_API_MAX_URL];
+    char url[MYBOT_DEVICE_CLIENT_MAX_URL];
     snprintf(url, sizeof(url), "%s/devices/pair-codes", base_url);
 
     AOSL_LOG_INF("POST %s body: %s", url, body);
@@ -156,17 +156,17 @@ int mybot_device_api_create_pair_code(const char *base_url, const char *device_i
     return 0;
 }
 
-int mybot_device_api_get_binding_status(const char *base_url, const char *device_id,
-                                        const char *auth_header, mybot_device_binding_t *resp) {
+int mybot_device_client_get_binding_status(const char *base_url, const char *device_id,
+                                           const char *auth_header, mybot_device_binding_t *resp) {
     if (!base_url || !device_id || !auth_header || !resp) {
         return -1;
     }
     memset(resp, 0, sizeof(*resp));
 
-    char url[MYBOT_DEVICE_API_MAX_URL];
+    char url[MYBOT_DEVICE_CLIENT_MAX_URL];
     snprintf(url, sizeof(url), "%s/devices/%s/binding-status", base_url, device_id);
 
-    char extra_hdrs[MYBOT_DEVICE_API_MAX_TOKEN + 32];
+    char extra_hdrs[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32];
     snprintf(extra_hdrs, sizeof(extra_hdrs), "Authorization: %s\r\n", auth_header);
 
     AOSL_LOG_INF("GET %s (auth=%s...)", url, auth_header);
@@ -238,15 +238,15 @@ int mybot_device_api_get_binding_status(const char *base_url, const char *device
     return 0;
 }
 
-int mybot_device_api_start_conversation(const char *base_url, const char *device_id,
-                                        const char *device_token, const char *body_params,
-                                        mybot_device_conversation_t *resp) {
+int mybot_device_client_start_conversation(const char *base_url, const char *device_id,
+                                           const char *device_token, const char *body_params,
+                                           mybot_device_conversation_t *resp) {
     if (!base_url || !device_id || !device_token || !resp) {
         return -1;
     }
     memset(resp, 0, sizeof(*resp));
 
-    char url[MYBOT_DEVICE_API_MAX_URL];
+    char url[MYBOT_DEVICE_CLIENT_MAX_URL];
     snprintf(url, sizeof(url), "%s/devices/%s/conversations/start", base_url, device_id);
 
     /* Build body: use caller-provided or construct from config macros */
@@ -289,7 +289,7 @@ int mybot_device_api_start_conversation(const char *base_url, const char *device
         }
     }
 
-    char extra_hdrs[MYBOT_DEVICE_API_MAX_TOKEN + 32];
+    char extra_hdrs[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32];
     snprintf(extra_hdrs, sizeof(extra_hdrs), "Authorization: Device %s\r\n", device_token);
 
     AOSL_LOG_INF("POST %s body: %s", url, body);
@@ -355,14 +355,14 @@ int mybot_device_api_start_conversation(const char *base_url, const char *device
     return 0;
 }
 
-int mybot_device_api_stop_conversation(const char *base_url, const char *device_id,
-                                       const char *device_token, const char *conversation_id,
-                                       const char *reason) {
+int mybot_device_client_stop_conversation(const char *base_url, const char *device_id,
+                                          const char *device_token, const char *conversation_id,
+                                          const char *reason) {
     if (!base_url || !device_id || !device_token || !conversation_id) {
         return -1;
     }
 
-    char url[MYBOT_DEVICE_API_MAX_URL];
+    char url[MYBOT_DEVICE_CLIENT_MAX_URL];
     snprintf(url, sizeof(url), "%s/devices/%s/conversations/stop", base_url, device_id);
 
     /* Build body with mybot_utils_cJSON */
@@ -378,7 +378,7 @@ int mybot_device_api_stop_conversation(const char *base_url, const char *device_
         return -1;
     }
 
-    char extra_hdrs[MYBOT_DEVICE_API_MAX_TOKEN + 32];
+    char extra_hdrs[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32];
     snprintf(extra_hdrs, sizeof(extra_hdrs), "Authorization: Device %s\r\n", device_token);
 
     AOSL_LOG_INF("POST %s body: %s", url, body);

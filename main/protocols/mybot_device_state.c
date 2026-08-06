@@ -1,5 +1,5 @@
 #include "mybot_device_state.h"
-#include "mybot_device_api.h"
+#include "mybot_device_client.h"
 #include "flash/mybot_flash_device.h"
 
 #include <api/aosl_log.h>
@@ -15,16 +15,16 @@
 
 typedef struct {
     uint32_t version;
-    char server_base[MYBOT_DEVICE_API_MAX_URL];
-    char device_id[MYBOT_DEVICE_API_MAX_ID];
-    char device_token[MYBOT_DEVICE_API_MAX_TOKEN];
+    char server_base[MYBOT_DEVICE_CLIENT_MAX_URL];
+    char device_id[MYBOT_DEVICE_CLIENT_MAX_ID];
+    char device_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
 } mybot_device_auth_record_t;
 /* ----------------------------------------------------------
  * Internal state
  * ---------------------------------------------------------- */
 static struct {
-    char server_base[MYBOT_DEVICE_API_MAX_URL];
-    char device_id[MYBOT_DEVICE_API_MAX_ID];
+    char server_base[MYBOT_DEVICE_CLIENT_MAX_URL];
+    char device_id[MYBOT_DEVICE_CLIENT_MAX_ID];
     char firmware_ver[64];
     char hw_model[64];
     mybot_device_state_callbacks_t cbs;
@@ -32,20 +32,20 @@ static struct {
     aosl_atomic_t state; /* atomic: also read by the main/SDK threads */
 
     /* Pairing phase */
-    char pair_token[MYBOT_DEVICE_API_MAX_TOKEN];
+    char pair_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
     int pair_poll_interval; /* seconds between polls */
     int pair_tick_counter;  /* counts tick() calls (100ms each) */
     int pair_retry_delay_ticks;
     int pair_retry_ticks_remaining;
 
     /* Runtime phase */
-    char device_token[MYBOT_DEVICE_API_MAX_TOKEN];
+    char device_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
     int runtime_poll_interval;
     int runtime_tick_counter;
 
     /* Requests are atomically published by the main/SDK threads and consumed
      * by the state_mpq thread. */
-    char conversation_id[MYBOT_DEVICE_API_MAX_ID];
+    char conversation_id[MYBOT_DEVICE_CLIENT_MAX_ID];
     aosl_atomic_t conversation_requested; /* user wants to start */
     aosl_atomic_t stop_request;           /* mybot_stop_request_t */
 
@@ -154,14 +154,14 @@ mybot_device_state_t mybot_device_state_get(void) {
 }
 
 /* ----------------------------------------------------------
- * Action: POST /devices/pair-codes
+ * Action: request a pair code
  * ---------------------------------------------------------- */
 static void action_create_pair_code(void) {
     mybot_device_pair_code_t resp;
     memset(&resp, 0, sizeof(resp));
 
-    int ret = mybot_device_api_create_pair_code(s_state.server_base, s_state.device_id,
-                                                s_state.firmware_ver, s_state.hw_model, &resp);
+    int ret = mybot_device_client_create_pair_code(s_state.server_base, s_state.device_id,
+                                                   s_state.firmware_ver, s_state.hw_model, &resp);
     if (ret != 0) {
         if (s_state.pair_retry_delay_ticks == 0) {
             s_state.pair_retry_delay_ticks = MYBOT_PAIR_RETRY_INITIAL_TICKS;
@@ -201,17 +201,17 @@ static void action_create_pair_code(void) {
 }
 
 /* ----------------------------------------------------------
- * Action: poll binding-status (pairing phase)
+ * Action: check claim status during pairing
  * ---------------------------------------------------------- */
 static void action_poll_binding_pair(void) {
-    char auth[MYBOT_DEVICE_API_MAX_TOKEN + 16];
+    char auth[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 16];
     snprintf(auth, sizeof(auth), "Pair %s", s_state.pair_token);
 
     mybot_device_binding_t resp;
     memset(&resp, 0, sizeof(resp));
 
     int ret =
-        mybot_device_api_get_binding_status(s_state.server_base, s_state.device_id, auth, &resp);
+        mybot_device_client_get_binding_status(s_state.server_base, s_state.device_id, auth, &resp);
     if (api_rejected_device_auth(ret)) {
         AOSL_LOG_WRN("pair credential rejected (HTTP %d), requesting a new pair code", ret);
         aosl_atomic_set(&s_state.start_pairing_flag, true);
@@ -259,17 +259,17 @@ static void action_poll_binding_pair(void) {
 }
 
 /* ----------------------------------------------------------
- * Action: poll binding-status (runtime phase)
+ * Action: check binding status during runtime
  * ---------------------------------------------------------- */
 static void action_poll_binding_runtime(void) {
-    char auth[MYBOT_DEVICE_API_MAX_TOKEN + 16];
+    char auth[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 16];
     snprintf(auth, sizeof(auth), "Device %s", s_state.device_token);
 
     mybot_device_binding_t resp;
     memset(&resp, 0, sizeof(resp));
 
     int ret =
-        mybot_device_api_get_binding_status(s_state.server_base, s_state.device_id, auth, &resp);
+        mybot_device_client_get_binding_status(s_state.server_base, s_state.device_id, auth, &resp);
     if (api_rejected_device_auth(ret)) {
         AOSL_LOG_WRN("device credential rejected (HTTP %d), re-pairing", ret);
         restart_pairing_after_auth_rejection();
@@ -297,8 +297,8 @@ static void action_start_conversation(void) {
     mybot_device_conversation_t resp;
     memset(&resp, 0, sizeof(resp));
 
-    int ret = mybot_device_api_start_conversation(s_state.server_base, s_state.device_id,
-                                                  s_state.device_token, NULL, &resp);
+    int ret = mybot_device_client_start_conversation(s_state.server_base, s_state.device_id,
+                                                     s_state.device_token, NULL, &resp);
     if (api_rejected_device_auth(ret)) {
         AOSL_LOG_WRN("device credential rejected while starting conversation (HTTP %d)", ret);
         restart_pairing_after_auth_rejection();
@@ -337,9 +337,9 @@ static void action_stop_conversation(const char *reason) {
         return;
     }
 
-    int ret =
-        mybot_device_api_stop_conversation(s_state.server_base, s_state.device_id,
-                                           s_state.device_token, s_state.conversation_id, reason);
+    int ret = mybot_device_client_stop_conversation(s_state.server_base, s_state.device_id,
+                                                    s_state.device_token, s_state.conversation_id,
+                                                    reason);
 
     AOSL_LOG_INF("conversation stopped");
     s_state.conversation_id[0] = '\0';

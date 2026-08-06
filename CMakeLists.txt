@@ -46,7 +46,7 @@ set(MYBOT_SRC
     components/ringbuf/mybot_utils_ringbuf.c
     components/http_client/mybot_utils_http_client.c
     components/cJSON/mybot_utils_cJSON.c
-    main/protocols/mybot_device_api.c
+    main/protocols/mybot_device_client.c
     main/audio/mybot_audio_device.c
     main/board/linux/mybot_audio_capture_alsa.c
     main/board/linux/mybot_audio_playback_alsa.c

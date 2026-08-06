@@ -31,7 +31,7 @@ static void print_usage(const char *prog) {
     AOSL_LOG_INF("Usage: %s --server <URL> --device-id <ID> [options]\n"
                  "\n"
                  "Required:\n"
-                 "  --server <url>     Device API server base URL\n"
+                 "  --server <url>     Service base URL\n"
                  "                     e.g. http://localhost:3001\n"
                  "  --device-id <id>   Unique device identifier\n"
                  "                     e.g. AG-A1B2C3\n"
