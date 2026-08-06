@@ -41,6 +41,8 @@ set(MYBOT_SRC
     main/mybot_app.c
     main/flash/mybot_flash_device.c
     main/board/linux/mybot_flash_file.c
+    main/key_service/mybot_key_service.c
+    main/board/linux/mybot_key_stdin.c
     components/ringbuf/mybot_utils_ringbuf.c
     components/http_client/mybot_utils_http_client.c
     components/cJSON/mybot_utils_cJSON.c
@@ -57,6 +59,7 @@ add_executable(mybot ${MYBOT_SRC})
 target_include_directories(mybot PRIVATE
     ${CMAKE_SOURCE_DIR}/main
     ${CMAKE_SOURCE_DIR}/main/audio
+    ${CMAKE_SOURCE_DIR}/main/key_service
     ${CMAKE_SOURCE_DIR}/main/protocols
     ${CMAKE_SOURCE_DIR}/components/ringbuf
     ${CMAKE_SOURCE_DIR}/components/http_client
@@ -109,4 +112,11 @@ if(BUILD_TESTING)
         m
     )
     add_test(NAME mybot_utils_http_client_test COMMAND mybot_utils_http_client_test)
+
+    add_executable(mybot_key_service_test
+        tests/key_service_test.c
+        main/key_service/mybot_key_service.c
+    )
+    target_include_directories(mybot_key_service_test PRIVATE ${CMAKE_SOURCE_DIR}/main)
+    add_test(NAME mybot_key_service_test COMMAND mybot_key_service_test)
 endif()

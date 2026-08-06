@@ -9,14 +9,16 @@
 ```
 mybot/
 ├── main/
-│   ├── mybot_main.c                      # 入口：CLI 解析、信号处理、按键循环
+│   ├── mybot_main.c                      # 入口：CLI 解析、信号处理、平台注册
 │   ├── mybot_app.h / .c               # 跨平台应用层：音频/MPQ/状态机，非阻塞启动
 │   ├── audio/
 │   │   └── mybot_audio_device.h / .c     # 音频平台抽象（ops 函数指针注册表）
 │   ├── flash/
 │   │   └── mybot_flash_device.h / .c     # 持久化存储抽象（设备凭证等）
+│   ├── key_service/
+│   │   └── mybot_key_service.h / .c      # 按键事件与平台后端抽象
 │   ├── board/
-│   │   └── linux/                  # 板级适配层：Linux ALSA 采集/播放实现
+│   │   └── linux/                  # 板级适配层：Linux ALSA、stdin 按键实现
 │   └── protocols/
 │       ├── mybot_rtc_session.h / .c      # Agora RTC 会话管理
 │       ├── mybot_device_api.h / .c       # 设备端服务 API（配对/对话/轮询）
@@ -124,7 +126,7 @@ Linux 文件型 flash 默认将设备凭证保存在当前目录的 `.mybot-flas
 
 ## 跨平台扩展
 
-音频设备通过 ops 函数指针表实现平台无关化。板级适配层位于 `main/board/`，添加新平台只需在 `main/board/` 下新建对应平台目录（如 `linux/`）并注册 ops：
+音频设备和按键服务通过 ops 函数指针表实现平台无关化。板级适配层位于 `main/board/`，添加新平台只需在 `main/board/` 下新建对应平台目录（如 `linux/`）并注册 ops：
 
 ```c
 typedef struct {

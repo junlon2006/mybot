@@ -1,7 +1,6 @@
 #include "mybot_app.h"
 
 #include "api/aosl_log.h"
-#include <hal/aosl_hal_socket.h>
 #include <hal/aosl_hal_time.h>
 
 #include <string.h>
@@ -9,14 +8,14 @@
 #include <signal.h>
 
 /* ----------------------------------------------------------
- * Platform-specific audio backend (Linux: ALSA).
- * Registers the capture/playback ops used by the app layer via
- * audio_device_register_*() before mybot_app_start() is called.
+ * Platform backends (Linux: ALSA, file flash, and stdin keys).
+ * Registers the platform ops used by the app layer before
+ * mybot_app_start() is called.
  * ---------------------------------------------------------- */
 void mybot_audio_platform_register_alsa_capture(void);
 void mybot_audio_platform_register_alsa_playback(void);
 void mybot_flash_platform_register_file(void);
-
+void mybot_key_platform_register_stdin(void);
 static volatile sig_atomic_t s_exit_requested;
 
 /* ----------------------------------------------------------
@@ -26,36 +25,6 @@ static void signal_handler(int sig) {
     (void)sig;
     /* Only sig_atomic_t access is performed in the signal handler. */
     s_exit_requested = 1;
-}
-
-/* ----------------------------------------------------------
- * Interactive keys (stdin) — maps to app-level requests.
- * ---------------------------------------------------------- */
-static void handle_key(char ch) {
-    switch (ch) {
-    case 's':
-        AOSL_LOG_INF("[KEY] s -> start conversation");
-        mybot_app_start_conversation();
-        break;
-    case 'q':
-        AOSL_LOG_INF("[KEY] q -> stop conversation");
-        mybot_app_stop_conversation();
-        break;
-    case 'p':
-        AOSL_LOG_INF("[KEY] p -> re-pair");
-        mybot_app_pair();
-        break;
-    case 'e':
-        AOSL_LOG_INF("[KEY] e -> exit");
-        mybot_app_request_exit();
-        break;
-    case '\n':
-    case '\r':
-        break;
-    default:
-        AOSL_LOG_INF("[KEY] '%c' ignored (s=start, q=stop, p=pair, e=exit)", ch);
-        break;
-    }
 }
 
 static void print_usage(const char *prog) {
@@ -123,6 +92,7 @@ int main(int argc, char **argv) {
     mybot_audio_platform_register_alsa_capture();
     mybot_audio_platform_register_alsa_playback();
     mybot_flash_platform_register_file();
+    mybot_key_platform_register_stdin();
 
     /* ---- Install signal handlers ---- */
     signal(SIGINT, signal_handler);
@@ -133,9 +103,6 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    /* ---- Set stdin non-blocking for interactive keys ---- */
-    aosl_hal_sk_set_nonblock((aosl_fd_t)0);
-
     AOSL_LOG_INF("=== mybot ready ===\n"
                  "  s - start conversation\n"
                  "  q - stop conversation\n"
@@ -143,19 +110,16 @@ int main(int argc, char **argv) {
                  "  e - exit\n"
                  "  Ctrl+C - exit");
 
-    /* ---- Main loop: interactive keys only.
+    /* ---- Main loop: platform input only.
      * The app drives itself (device state machine etc.) from its own MPQ
-     * timers, so main() only needs to poll stdin here. ---- */
+     * timers, so main() only needs to poll input here. ---- */
     while (mybot_app_is_running()) {
         if (s_exit_requested) {
             mybot_app_request_exit();
             continue;
         }
 
-        char ch;
-        if (aosl_hal_sk_read((aosl_fd_t)0, &ch, 1) == 1) {
-            handle_key(ch);
-        }
+        mybot_app_poll();
         aosl_hal_msleep(100);
     }
 

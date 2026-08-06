@@ -5,6 +5,7 @@
 #include "protocols/mybot_device_state.h"
 #include "mybot_utils_ringbuf.h"
 #include "flash/mybot_flash_device.h"
+#include "key_service/mybot_key_service.h"
 
 #include "api/aosl.h"
 #include "api/aosl_atomic.h"
@@ -39,6 +40,7 @@ static struct {
     aosl_atomic_t running;
     bool aosl_active;
     bool flash_active;
+    bool key_service_active;
 
     /* Audio capture */
     void *cap_ctx;
@@ -384,6 +386,28 @@ static void dev_on_state_changed(mybot_device_state_t state) {
     (void)state;
 }
 
+static void on_key_event(mybot_key_event_t event, void *user_data) {
+    (void)user_data;
+    switch (event) {
+    case MYBOT_KEY_EVENT_CONVERSATION_START:
+        AOSL_LOG_INF("[KEY] start conversation");
+        mybot_app_start_conversation();
+        break;
+    case MYBOT_KEY_EVENT_CONVERSATION_STOP:
+        AOSL_LOG_INF("[KEY] stop conversation");
+        mybot_app_stop_conversation();
+        break;
+    case MYBOT_KEY_EVENT_PAIR:
+        AOSL_LOG_INF("[KEY] re-pair");
+        mybot_app_pair();
+        break;
+    case MYBOT_KEY_EVENT_EXIT:
+        AOSL_LOG_INF("[KEY] exit");
+        mybot_app_request_exit();
+        break;
+    }
+}
+
 /* Device state machine tick — runs on a dedicated MPQ (state_mpq) because
  * mybot_device_state_tick() performs blocking HTTP polling. */
 static void state_tick_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc,
@@ -483,6 +507,12 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
         goto fail;
     }
     s_app.flash_active = true;
+
+    if (mybot_key_service_init(on_key_event, NULL) < 0) {
+        AOSL_LOG_ERR("key service init failed");
+        goto fail;
+    }
+    s_app.key_service_active = true;
 
     /* ---- 2. Initialize audio devices via the registered platform ops ----
      * The platform backend (e.g. ALSA on Linux) must have registered itself
@@ -601,6 +631,12 @@ bool mybot_app_is_running(void) {
     return aosl_atomic_read(&s_app.running) != 0;
 }
 
+void mybot_app_poll(void) {
+    if (s_app.key_service_active && mybot_key_service_poll() < 0) {
+        AOSL_LOG_ERR("key service poll failed");
+    }
+}
+
 void mybot_app_request_exit(void) {
     aosl_atomic_set(&s_app.running, false);
 }
@@ -630,6 +666,11 @@ void mybot_app_stop(void) {
      * early. The ALSA read/write paths are poll-with-timeout, so each worker
      * exits within a bounded time even when the device yields no data. */
     aosl_atomic_set(&s_app.running, false);
+
+    if (s_app.key_service_active) {
+        mybot_key_service_deinit();
+        s_app.key_service_active = false;
+    }
 
     /* ---- 2. Stop device-state activity ----
      * Wait for any in-flight HTTP operation, prevent further state-machine

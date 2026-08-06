@@ -33,6 +33,9 @@ int mybot_app_start(const mybot_app_config_t *cfg);
 /** @brief Check whether the application is still running. */
 bool mybot_app_is_running(void);
 
+/** @brief Process pending platform input events. */
+void mybot_app_poll(void);
+
 /** @brief Request a graceful exit (used by signal handlers / UI keys). */
 void mybot_app_request_exit(void);
 
