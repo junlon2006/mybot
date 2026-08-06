@@ -27,7 +27,7 @@
 #define FRAMES_20MS 320 /* samples per 20 ms frame @ 16 kHz */
 #define BYTES_20MS 640  /* 320 * 16-bit mono */
 #define RINGBUF_SIZE (BYTES_20MS * 100)
-#define AUDIO_TICK_MS 10 /* MPQ timer cadence driving the audio loops */
+#define AUDIO_FRAME_INTERVAL_MS 20
 /* Device state machine poll interval. Must match the 100 ms/tick assumption
  * in mybot_device_lifecycle_tick() (poll_after_seconds * 10 ticks). */
 #define STATE_TICK_MS 100
@@ -126,7 +126,7 @@ static int cap_mpq_init(void *arg) {
     (void)arg;
     AOSL_LOG_INF("capture MPQ started");
 
-    s_app.cap_timer = aosl_mpq_set_timer(AUDIO_TICK_MS, capture_timer, NULL, 0);
+    s_app.cap_timer = aosl_mpq_set_timer(AUDIO_FRAME_INTERVAL_MS, capture_timer, NULL, 0);
     if (aosl_mpq_timer_invalid(s_app.cap_timer)) {
         AOSL_LOG_ERR("failed to create capture timer");
         return -1;
@@ -210,7 +210,7 @@ static int pb_mpq_init(void *arg) {
     (void)arg;
     AOSL_LOG_INF("playback MPQ started");
 
-    s_app.pb_timer = aosl_mpq_set_timer(AUDIO_TICK_MS, playback_timer, NULL, 0);
+    s_app.pb_timer = aosl_mpq_set_timer(AUDIO_FRAME_INTERVAL_MS, playback_timer, NULL, 0);
     if (aosl_mpq_timer_invalid(s_app.pb_timer)) {
         AOSL_LOG_ERR("failed to create playback timer");
         return -1;
@@ -262,7 +262,7 @@ static void on_rtc_state_changed(mybot_rtc_state_t state) {
 }
 
 /* ----------------------------------------------------------
- * MPQ timer (20ms) — send captured PCM to RTC
+ * MPQ timer (20 ms) — send captured PCM to RTC
  * ---------------------------------------------------------- */
 static void send_audio_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc,
                              uintptr_t argv[]) {
@@ -454,7 +454,7 @@ static int mpq_init(void *arg) {
     (void)arg;
     AOSL_LOG_INF("MPQ loop started");
 
-    s_app.send_timer = aosl_mpq_set_timer(20, send_audio_timer, NULL, 0);
+    s_app.send_timer = aosl_mpq_set_timer(AUDIO_FRAME_INTERVAL_MS, send_audio_timer, NULL, 0);
     if (aosl_mpq_timer_invalid(s_app.send_timer)) {
         AOSL_LOG_ERR("failed to create send timer");
         return -1;

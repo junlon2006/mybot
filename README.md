@@ -63,9 +63,9 @@ unprovisioned → pairing → awaiting_claim ──→ runtime ←→ in_convers
 ### 数据流（对话中）
 
 ```
-麦克风 → cap_mpq 线程(10ms) → capture ringbuf → send_timer(20ms, mybot_mpq) → RTC 发送
+麦克风 → cap_mpq 线程(20 ms) → capture ringbuf → send_timer(20 ms, mybot_mpq) → RTC 发送
                                                                                   ↓
-扬声器 ← pb_mpq 线程(10ms) ← playback ringbuf ← RTC on_audio_data 回调（SDK 线程）
+扬声器 ← pb_mpq 线程(20 ms) ← playback ringbuf ← RTC on_audio_data 回调（SDK 线程）
 ```
 
 设备生命周期状态机运行在独立的 `state_mpq` 线程（100ms 轮询，含阻塞 HTTP 请求），不影响实时音频。上行开启云 AEC 时，`send_timer` 将麦克风 PCM 与扬声器下行 PCM 交错发送。所有线程均通过 `aosl_mpq_create()` 创建（跨平台，不依赖 `aosl_hal_thread_join`）。
