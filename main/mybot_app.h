@@ -19,10 +19,9 @@ typedef struct {
 /**
  * @brief Initialize and start the application.
  *
- * Non-blocking: this spawns the worker threads (audio capture/playback and
- * the MPQ loop) and returns. The application then runs on its own, driven by
- * its MPQ timers; the caller must call mybot_app_stop() before exiting to release
- * all resources.
+ * Blocks while the platform completes APSTA Wi-Fi provisioning. Once STA is connected,
+ * this spawns the worker threads (audio capture/playback and the MPQ loops) and returns.
+ * The application then runs on its own; the caller must call mybot_app_stop() before exiting.
  *
  * @param cfg application configuration.
  * @return 0 on success, -1 on error. On error, all partially initialized

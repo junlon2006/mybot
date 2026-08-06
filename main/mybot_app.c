@@ -6,6 +6,7 @@
 #include "mybot_ringbuf.h"
 #include "storage/mybot_kv_store.h"
 #include "key_service/mybot_key_service.h"
+#include "wifi/mybot_wifi_provisioning.h"
 
 #include "api/aosl.h"
 #include "api/aosl_atomic.h"
@@ -42,6 +43,7 @@
 static struct {
     aosl_atomic_t running;
     bool aosl_active;
+    bool wifi_provisioning_active;
     bool kv_store_active;
     bool key_service_active;
 
@@ -510,6 +512,14 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
     aosl_ctor();
     s_app.aosl_active = true;
 
+    /* ---- 2. Complete APSTA Wi-Fi provisioning before starting any online service. ---- */
+    if (mybot_wifi_provisioning_init(cfg->device_id) < 0) {
+        AOSL_LOG_ERR("wifi provisioning failed");
+        goto fail;
+    }
+    s_app.wifi_provisioning_active = true;
+
+    /* ---- 3. Initialize local storage and key input services. ---- */
     if (mybot_kv_store_init() < 0) {
         AOSL_LOG_ERR("kv store init failed");
         goto fail;
@@ -522,7 +532,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
     }
     s_app.key_service_active = true;
 
-    /* ---- 2. Initialize audio devices via the registered platform ops ----
+    /* ---- 4. Initialize audio devices via the registered platform ops ----
      * The platform backend (e.g. ALSA on Linux) must have registered itself
      * through audio_device_register_*() before mybot_app_start() is called. */
     const mybot_audio_capture_ops_t *cap_ops = mybot_audio_device_get_capture();
@@ -541,7 +551,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
         goto fail;
     }
 
-    /* ---- 3. Create ring buffers ---- */
+    /* ---- 5. Create ring buffers ---- */
     s_app.cap_ringbuf = mybot_ringbuf_create(AUDIO_RINGBUF_SIZE);
     s_app.pb_ringbuf = mybot_ringbuf_create(AUDIO_RINGBUF_SIZE);
     if (!s_app.cap_ringbuf || !s_app.pb_ringbuf) {
@@ -557,7 +567,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
     AOSL_LOG_INF("cloud AEC enabled, ref ringbuf created");
 #endif
 
-    /* ---- 4. Start audio devices ---- */
+    /* ---- 6. Start audio devices ---- */
     if (!cap_ops->start || cap_ops->start(s_app.cap_ctx) < 0) {
         AOSL_LOG_ERR("capture start failed");
         goto fail;
@@ -570,7 +580,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
     }
     s_app.pb_started = true;
 
-    /* ---- 5. Create the capture/playback worker MPQs ----
+    /* ---- 7. Create the capture/playback worker MPQs ----
      * Each worker is an MPQ created with aosl_mpq_create(), which spawns the
      * thread and gives us join semantics through aosl_mpq_destroy_wait() —
      * the thread HAL (aosl_hal_thread_join) is not available on every
@@ -590,7 +600,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
         goto fail;
     }
 
-    /* ---- 6. Initialize the device state machine ---- */
+    /* ---- 8. Initialize the device state machine ---- */
     mybot_device_lifecycle_callbacks_t dev_cbs;
     memset(&dev_cbs, 0, sizeof(dev_cbs));
     dev_cbs.on_pair_code = dev_on_pair_code;
@@ -604,7 +614,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
         goto fail;
     }
 
-    /* ---- 7. Create the MPQ and run its loop in a dedicated thread ----
+    /* ---- 9. Create the MPQ and run its loop in a dedicated thread ----
      * Use aosl_mpq_create() instead of aosl_main_start(): the latter
      * registers an atexit() hook that re-runs aosl_main_exit_wait() after
      * main() returns, which aborts once aosl_dtor() has finalized AOSL.
@@ -617,7 +627,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
         goto fail;
     }
 
-    /* ---- 8. Create the device-state MPQ ----
+    /* ---- 10. Create the device-state MPQ ----
      * Dedicated thread: mybot_device_lifecycle_tick() does blocking HTTP polling that
      * must not delay the real-time audio timers. */
     s_app.state_mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MPQ_STACK_SIZE, 1000, "state_mpq",
@@ -737,14 +747,20 @@ void mybot_app_stop(void) {
         s_app.pb_ctx = NULL;
     }
 
-    /* ---- 7. Finalize RTC ----
+    /* ---- 7. Stop Wi-Fi after all network users have exited. ---- */
+    if (s_app.wifi_provisioning_active) {
+        mybot_wifi_provisioning_deinit();
+        s_app.wifi_provisioning_active = false;
+    }
+
+    /* ---- 8. Finalize RTC ----
      * The SDK waits for its callback queue before returning, so no callback can
      * access pb_ringbuf after this point. It also finalizes AOSL when active. */
     AOSL_LOG_INF("app stopped cleanly");
     s_app.aosl_active = false;
     bool rtc_finalized_aosl = mybot_rtc_session_fini();
 
-    /* ---- 8. Destroy ring buffers ----
+    /* ---- 9. Destroy ring buffers ----
      * The AOSL HAL allocator is independent of the AOSL global lifecycle. */
     if (s_app.cap_ringbuf) {
         mybot_ringbuf_destroy(s_app.cap_ringbuf);
@@ -761,7 +777,7 @@ void mybot_app_stop(void) {
     }
 #endif
 
-    /* ---- 9. Finalize AOSL when RTC never owned it ---- */
+    /* ---- 10. Finalize AOSL when RTC never owned it ---- */
     if (!rtc_finalized_aosl) {
         aosl_dtor();
     }

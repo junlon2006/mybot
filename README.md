@@ -17,6 +17,8 @@ mybot/
 │   │   └── mybot_kv_store.h / .c         # 键值存储抽象（设备凭证等）
 │   ├── key_service/
 │   │   └── mybot_key_service.h / .c      # 按键事件与平台后端抽象
+│   ├── wifi/
+│   │   └── mybot_wifi_provisioning.h / .c # APSTA Wi-Fi 配网抽象
 │   ├── device/
 │   │   ├── mybot_device_client.h / .c    # 设备服务客户端（配对/对话/轮询）
 │   │   └── mybot_device_lifecycle.h / .c # 设备生命周期状态机
@@ -28,7 +30,8 @@ mybot/
 │           ├── mybot_main.c              # Linux 入口、CLI 与信号处理
 │           ├── mybot_audio_*_alsa.c      # ALSA 音频后端
 │           ├── mybot_kv_store_file.c     # 文件型键值存储后端
-│           └── mybot_key_stdin.c         # stdin 按键后端
+│           ├── mybot_key_stdin.c         # stdin 按键后端
+│           └── mybot_wifi_host_network.c # Linux 宿主网络后端
 └── components/
     ├── aosl/                              # AOSL 跨平台系统库
     ├── agora_rtsa_sdk/                    # Agora RTSA SDK
@@ -47,14 +50,20 @@ find main tests components/ringbuf components/http_client components/json \\
 ### 生命周期
 
 ```
-unprovisioned → pairing → awaiting_claim ──→ runtime ←→ in_conversation
-                              │               │
-                          expired         unbound
-                          重启配对        回到起始
+APSTA provisioning → STA connected → unprovisioned → pairing → awaiting_claim ──→ runtime ←→ in_conversation
+                                                                        │               │
+                                                                    expired         unbound
+                                                                    重启配对        回到起始
 ```
+
+Wi-Fi 配网是应用启动后的第一个业务阶段。只有 STA 连接成功后，才会继续初始化持久化、
+按键、音频、设备服务配对和 RTC。平台后端固定使用 APSTA，不提供其他 Wi-Fi mode 选择。
+Linux 开发后端复用宿主机已经配置的网络，因此会立即报告 STA 已连接。
 
 | 阶段 | 说明 |
 |------|------|
+| `APSTA provisioning` | 启动 AP 配网入口并由 STA 建立上行网络连接 |
+| `STA connected` | 首次联网屏障已通过，允许启动其余应用服务 |
 | `pairing` | 向服务端申请配对码 |
 | `awaiting_claim` | 等待用户在 Web 端认领设备 |
 | `runtime` | 获得 `device_token`，定期 poll 检测解绑，可启动对话 |
@@ -126,7 +135,7 @@ Linux 文件型键值存储默认将设备凭证保存在当前目录的 `.mybot
 
 ## 跨平台扩展
 
-音频设备、持久化存储和按键服务通过 ops 函数指针表实现平台无关化。平台适配层位于 `main/platform/`，添加新平台时在该目录下新建对应平台目录并注册 ops：
+Wi-Fi 配网、音频设备、持久化存储和按键服务通过 ops 函数指针表实现平台无关化。平台适配层位于 `main/platform/`，添加新平台时在该目录下新建对应平台目录并注册 ops：
 
 ```c
 typedef struct {
@@ -152,7 +161,8 @@ typedef struct {
 | `main/device/` | 设备服务客户端与生命周期状态机 |
 | `main/storage/` | 平台无关的键值存储接口 |
 | `main/rtc/` | RTC 会话接口及服务商实现 |
-| `main/platform/` | 平台后端（当前为 Linux ALSA、文件存储和 stdin） |
+| `main/wifi/` | APSTA Wi-Fi 配网抽象 |
+| `main/platform/` | 平台后端（当前为 Linux 宿主网络、ALSA、文件存储和 stdin） |
 | `components/aosl/` | 跨平台系统抽象层（线程/内存/网络/日志） |
 | `components/agora_rtsa_sdk/` | Agora RTSA SDK v1.10.1 |
 | `components/ringbuf/` | 通用锁无关 SPSC 环缓冲 |

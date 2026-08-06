@@ -39,6 +39,8 @@ set_target_properties(agora-rtc-sdk PROPERTIES
 set(MYBOT_SRC
     main/platform/linux/mybot_main.c
     main/mybot_app.c
+    main/wifi/mybot_wifi_provisioning.c
+    main/platform/linux/mybot_wifi_host_network.c
     main/storage/mybot_kv_store.c
     main/platform/linux/mybot_kv_store_file.c
     main/key_service/mybot_key_service.c
@@ -62,6 +64,7 @@ target_include_directories(mybot PRIVATE
     ${CMAKE_SOURCE_DIR}/main/device
     ${CMAKE_SOURCE_DIR}/main/key_service
     ${CMAKE_SOURCE_DIR}/main/rtc
+    ${CMAKE_SOURCE_DIR}/main/wifi
     ${CMAKE_SOURCE_DIR}/components/ringbuf
     ${CMAKE_SOURCE_DIR}/components/http_client
     ${CMAKE_SOURCE_DIR}/components/json
@@ -169,6 +172,24 @@ if(BUILD_TESTING)
     )
     add_test(NAME mybot_key_stdin_test COMMAND mybot_key_stdin_test)
 
+    add_executable(mybot_wifi_provisioning_test
+        tests/wifi_provisioning_test.c
+        main/wifi/mybot_wifi_provisioning.c
+    )
+    target_include_directories(mybot_wifi_provisioning_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/main
+        ${AOSL_DIR}/include
+        ${AOSL_DIR}/platform/include
+    )
+    target_link_libraries(mybot_wifi_provisioning_test PRIVATE
+        aosl
+        pthread
+        dl
+        rt
+        m
+    )
+    add_test(NAME mybot_wifi_provisioning_test COMMAND mybot_wifi_provisioning_test)
+
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         foreach(test_target IN ITEMS
             mybot_device_lifecycle_test
@@ -177,6 +198,7 @@ if(BUILD_TESTING)
             mybot_json_test
             mybot_key_service_test
             mybot_key_stdin_test
+            mybot_wifi_provisioning_test
         )
             target_compile_options(${test_target} PRIVATE -UNDEBUG)
         endforeach()
