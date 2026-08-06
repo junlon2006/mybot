@@ -231,6 +231,7 @@ int mybot_rtc_session_join(const char *channel, const char *token, const char *u
     ch_opt.auto_subscribe_audio = true;
     ch_opt.auto_subscribe_video = false;
     ch_opt.enable_audio_jitter_buffer = true;
+    ch_opt.audio_jitter_frame_duration = MYBOT_AUDIO_PTIME_MS;
     ch_opt.enable_audio_mixer = false; /* per-user audio callback */
     ch_opt.enable_audio_decode = true;
 #if MYBOT_CLOUD_AEC
@@ -244,16 +245,18 @@ int mybot_rtc_session_join(const char *channel, const char *token, const char *u
     ch_opt.audio_codec_opt.audio_codec_type = AUDIO_CODEC_TYPE_G722;
     ch_opt.audio_codec_opt.pcm_sample_rate = 16000;
     ch_opt.audio_codec_opt.pcm_channel_num = 1;
-    ch_opt.audio_codec_opt.pcm_duration = 20; /* ms */
+    ch_opt.audio_codec_opt.pcm_duration = MYBOT_AUDIO_PTIME_MS;
 
     const char *p_token = (token && token[0]) ? token : NULL;
     const char *p_user = (user_account && user_account[0]) ? user_account : "default_user";
 
     AOSL_LOG_INF("joining channel: conn_id=%u, channel=%s, user=%s, has_token=%d", s_rtc.conn_id,
                  channel, p_user, p_token ? 1 : 0);
-    AOSL_LOG_INF("audio_codec=%d, pcm_rate=%d, pcm_chan=%d, pcm_duration=%d",
+    AOSL_LOG_INF("audio_codec=%d, pcm_rate=%d, pcm_chan=%d, pcm_duration=%d, "
+                 "jitter_frame_duration=%d",
                  ch_opt.audio_codec_opt.audio_codec_type, ch_opt.audio_codec_opt.pcm_sample_rate,
-                 ch_opt.audio_codec_opt.pcm_channel_num, ch_opt.audio_codec_opt.pcm_duration);
+                 ch_opt.audio_codec_opt.pcm_channel_num, ch_opt.audio_codec_opt.pcm_duration,
+                 ch_opt.audio_jitter_frame_duration);
 
     set_state(MYBOT_RTC_STATE_CONNECTING);
 

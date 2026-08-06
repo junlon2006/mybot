@@ -14,11 +14,13 @@ typedef enum {
 
 typedef void (*mybot_key_event_handler_t)(mybot_key_event_t event, void *user_data);
 
-/** Platform key input operations. A backend may emit events from poll() or its own task. */
+/**
+ * Platform key input operations. init() starts the backend event source; destroy() stops it
+ * and waits for any in-flight event handler to return.
+ */
 typedef struct {
     const char *name;
     int (*init)(void **ctx, mybot_key_event_handler_t emit, void *user_data);
-    int (*poll)(void *ctx);
     void (*destroy)(void *ctx);
 } mybot_key_service_ops_t;
 
@@ -28,10 +30,7 @@ int mybot_key_service_register(const mybot_key_service_ops_t *ops);
 /** Initialize the registered backend and install the application event handler. */
 int mybot_key_service_init(mybot_key_event_handler_t handler, void *user_data);
 
-/** Poll a backend that requires polling. Returns 0 when no event is available. */
-int mybot_key_service_poll(void);
-
-/** Stop the backend and release its resources. Idempotent. */
+/** Stop the backend and release its resources. No events are emitted after return. */
 void mybot_key_service_deinit(void);
 
 #ifdef __cplusplus

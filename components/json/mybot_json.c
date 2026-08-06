@@ -103,59 +103,6 @@ void mybot_json_delete(mybot_json_t *c) {
     }
 }
 
-#if 0
-/* Parse the input text to generate a number, and populate the result into item. */
-static const char *parse_number(mybot_json_t *item,const char *num)
-{
-  double n=0,sign=1,scale=0;int subscale=0,signsubscale=1;
-
-  if (*num=='-') {
-    sign = -1;
-    num++;	/* Has sign? */
-  }
-  if (*num=='0') {
-    num++;			/* is zero */
-  }
-  if (*num >= '1' && *num <= '9')	{
-    do {
-      n = (n * 10.0) + (*num -'0');
-      num++;
-    } while (*num>='0' && *num<='9');	/* Number? */
-  }
-
-  if (*num=='.' && num[1]>='0' && num[1]<='9') {
-    num++;
-    do {
-      n = (n * 10.0) + (*num -'0');
-      scale --;
-      num ++;
-    } while (*num>='0' && *num<='9');
-  }	/* Fractional part? */
-
-  if (*num=='e' || *num=='E') /* Exponent? */ {
-    num++;
-    if (*num=='+') {
-      num++;
-    }
-    else if (*num=='-') {
-      signsubscale = -1;
-      num++;		/* With sign? */
-    }
-    while (*num>='0' && *num<='9') {
-      subscale = (subscale * 10) + (*num - '0');	/* Number? */
-      num++;
-    }
-  }
-
-  n = sign*n*pow(10.0,(scale+subscale*signsubscale));	/* number = +/- number.fraction * 10^+/- exponent */
-
-  item->valuedouble = n;
-  item->valueint    = (int)n;
-  item->type        = MYBOT_JSON_NUMBER;
-  return num;
-}
-#endif
-
 static const char *parse_number_u64(mybot_json_t *item, const char *num) {
     // double n=0,sign=1,scale=0;int subscale=0,signsubscale=1;
     long long n = 0;

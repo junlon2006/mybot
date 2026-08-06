@@ -17,6 +17,10 @@ mybot/
 │   │   └── mybot_kv_store.h / .c         # 键值存储抽象（设备凭证等）
 │   ├── key_service/
 │   │   └── mybot_key_service.h / .c      # 按键事件与平台后端抽象
+│   ├── lcd/
+│   │   └── mybot_lcd.h / .c              # LCD 关键工作流显示抽象
+│   ├── wifi/
+│   │   └── mybot_wifi_provisioning.h / .c # APSTA Wi-Fi 配网抽象
 │   ├── device/
 │   │   ├── mybot_device_client.h / .c    # 设备服务客户端（配对/对话/轮询）
 │   │   └── mybot_device_lifecycle.h / .c # 设备生命周期状态机
@@ -28,7 +32,9 @@ mybot/
 │           ├── mybot_main.c              # Linux 入口、CLI 与信号处理
 │           ├── mybot_audio_*_alsa.c      # ALSA 音频后端
 │           ├── mybot_kv_store_file.c     # 文件型键值存储后端
-│           └── mybot_key_stdin.c         # stdin 按键后端
+│           ├── mybot_key_stdin.c         # stdin 按键后端
+│           ├── mybot_lcd_console.c       # 高亮红色控制台 LCD 模拟后端
+│           └── mybot_wifi_host_network.c # Linux 宿主网络后端
 └── components/
     ├── aosl/                              # AOSL 跨平台系统库
     ├── agora_rtsa_sdk/                    # Agora RTSA SDK
@@ -47,14 +53,22 @@ find main tests components/ringbuf components/http_client components/json \\
 ### 生命周期
 
 ```
-unprovisioned → pairing → awaiting_claim ──→ runtime ←→ in_conversation
-                              │               │
-                          expired         unbound
-                          重启配对        回到起始
+APSTA provisioning → STA connected → unprovisioned → pairing → awaiting_claim ──→ runtime ←→ in_conversation
+                                                                        │               │
+                                                                    expired         unbound
+                                                                    重启配对        回到起始
 ```
+
+Wi-Fi 配网是应用启动后的第一个业务阶段。`mybot_wifi_provisioning_init()` 只启动平台后端
+并立即返回，不等待用户完成配网。平台事件驱动配网状态变化；只有状态进入 `CONNECTED`
+后，应用启动队列才会继续初始化持久化、按键、音频、设备服务配对和 RTC，因此配网未完成
+不会永久阻塞调用线程。平台后端固定使用 APSTA，不提供其他 Wi-Fi mode 选择。Linux 开发
+后端复用宿主机已经配置的网络，因此会立即报告 STA 已连接。
 
 | 阶段 | 说明 |
 |------|------|
+| `APSTA provisioning` | 启动 AP 配网入口并由 STA 建立上行网络连接 |
+| `STA connected` | 首次联网屏障已通过，允许启动其余应用服务 |
 | `pairing` | 向服务端申请配对码 |
 | `awaiting_claim` | 等待用户在 Web 端认领设备 |
 | `runtime` | 获得 `device_token`，定期 poll 检测解绑，可启动对话 |
@@ -63,9 +77,9 @@ unprovisioned → pairing → awaiting_claim ──→ runtime ←→ in_convers
 ### 数据流（对话中）
 
 ```
-麦克风 → cap_mpq 线程(10ms) → capture ringbuf → send_timer(20ms, mybot_mpq) → RTC 发送
+麦克风 → cap_mpq 线程(ptime) → capture ringbuf → send_timer(ptime, mybot_mpq) → RTC 发送
                                                                                   ↓
-扬声器 ← pb_mpq 线程(10ms) ← playback ringbuf ← RTC on_audio_data 回调（SDK 线程）
+扬声器 ← pb_mpq 线程(ptime) ← playback ringbuf ← RTC on_audio_data 回调（SDK 线程）
 ```
 
 设备生命周期状态机运行在独立的 `state_mpq` 线程（100ms 轮询，含阻塞 HTTP 请求），不影响实时音频。上行开启云 AEC 时，`send_timer` 将麦克风 PCM 与扬声器下行 PCM 交错发送。所有线程均通过 `aosl_mpq_create()` 创建（跨平台，不依赖 `aosl_hal_thread_join`）。
@@ -89,6 +103,12 @@ cd mybot
 mkdir -p build && cd build
 cmake .. -DCONFIG_PLATFORM=linux
 make -j$(nproc)
+```
+
+音频包时长由 `main/mybot_build_config.h` 中的 `MYBOT_AUDIO_PTIME_MS` 配置，支持 20、40、60 ms，默认 60 ms。Agora 上行 PCM 编码时长与下行 jitter buffer 输出帧长均使用该值。可通过编译参数覆盖：
+
+```bash
+cmake .. -DCONFIG_PLATFORM=linux -DCMAKE_C_FLAGS="-DMYBOT_AUDIO_PTIME_MS=20"
 ```
 
 ## 使用
@@ -120,7 +140,9 @@ Linux 文件型键值存储默认将设备凭证保存在当前目录的 `.mybot
 
 ## 跨平台扩展
 
-音频设备、持久化存储和按键服务通过 ops 函数指针表实现平台无关化。平台适配层位于 `main/platform/`，添加新平台时在该目录下新建对应平台目录并注册 ops：
+Wi-Fi 配网、音频设备、持久化存储、按键服务和 LCD 通过 ops 函数指针表实现平台无关化。平台适配层位于 `main/platform/`，添加新平台时在该目录下新建对应平台目录并注册 ops。LCD 后端接收语义化内容（配网、配对码、就绪、对话中、故障等），由 MCU 平台自行决定字体、图标和布局。Linux 注册高亮红色控制台模拟后端；非交互输出或设置 `NO_COLOR` 时不输出 ANSI 颜色码，可设置 `MYBOT_LCD_COLOR=1` 强制开启。
+
+音频后端示例：
 
 ```c
 typedef struct {
@@ -145,8 +167,10 @@ typedef struct {
 | `main/` | 跨平台应用层与各子系统接口 |
 | `main/device/` | 设备服务客户端与生命周期状态机 |
 | `main/storage/` | 平台无关的键值存储接口 |
+| `main/lcd/` | LCD 关键工作流显示抽象 |
 | `main/rtc/` | RTC 会话接口及服务商实现 |
-| `main/platform/` | 平台后端（当前为 Linux ALSA、文件存储和 stdin） |
+| `main/wifi/` | APSTA Wi-Fi 配网抽象 |
+| `main/platform/` | 平台后端（当前为 Linux 宿主网络、ALSA、文件存储、stdin 和控制台 LCD） |
 | `components/aosl/` | 跨平台系统抽象层（线程/内存/网络/日志） |
 | `components/agora_rtsa_sdk/` | Agora RTSA SDK v1.10.1 |
 | `components/ringbuf/` | 通用锁无关 SPSC 环缓冲 |

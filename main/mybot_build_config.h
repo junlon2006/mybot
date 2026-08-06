@@ -1,6 +1,15 @@
 #ifndef MYBOT_BUILD_CONFIG_H_
 #define MYBOT_BUILD_CONFIG_H_
 
+/* Audio packetization interval in milliseconds. Agora supports 20, 40, or 60 ms. */
+#ifndef MYBOT_AUDIO_PTIME_MS
+#define MYBOT_AUDIO_PTIME_MS 60
+#endif
+
+#if MYBOT_AUDIO_PTIME_MS != 20 && MYBOT_AUDIO_PTIME_MS != 40 && MYBOT_AUDIO_PTIME_MS != 60
+#error "MYBOT_AUDIO_PTIME_MS must be 20, 40, or 60"
+#endif
+
 /*
  * Feature flags for voice chat capabilities.
  * Default to enabled. Override via compiler flags (-DMYBOT_CLOUD_AEC=0).

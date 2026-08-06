@@ -8,7 +8,7 @@
 #include <signal.h>
 
 /* ----------------------------------------------------------
- * Platform backends (Linux: ALSA, file-backed key-value storage, and stdin keys).
+ * Platform backends (Linux: host network, ALSA, file-backed storage, stdin keys, and console LCD).
  * Registers the platform ops used by the app layer before
  * mybot_app_start() is called.
  * ---------------------------------------------------------- */
@@ -16,6 +16,8 @@ void mybot_audio_platform_register_alsa_capture(void);
 void mybot_audio_platform_register_alsa_playback(void);
 void mybot_kv_store_platform_register_file(void);
 void mybot_key_platform_register_stdin(void);
+void mybot_lcd_platform_register_console(void);
+void mybot_wifi_platform_register_host_network(void);
 static volatile sig_atomic_t s_exit_requested;
 
 /* ----------------------------------------------------------
@@ -88,11 +90,13 @@ int main(int argc, char **argv) {
         AOSL_LOG_INF("  hw-model : %s", cfg.hw_model);
     }
 
-    /* ---- Register the platform audio backend (Linux: ALSA) ---- */
+    /* ---- Register platform backends. Wi-Fi provisioning is the first app stage. ---- */
+    mybot_wifi_platform_register_host_network();
     mybot_audio_platform_register_alsa_capture();
     mybot_audio_platform_register_alsa_playback();
     mybot_kv_store_platform_register_file();
     mybot_key_platform_register_stdin();
+    mybot_lcd_platform_register_console();
 
     /* ---- Install signal handlers ---- */
     signal(SIGINT, signal_handler);
@@ -103,23 +107,24 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    AOSL_LOG_INF("=== mybot ready ===\n"
-                 "  s - start conversation\n"
-                 "  q - stop conversation\n"
-                 "  p - re-pair device\n"
-                 "  e - exit\n"
-                 "  Ctrl+C - exit");
-
-    /* ---- Main loop: platform input only.
-     * The app drives itself (device state machine etc.) from its own MPQ
-     * timers, so main() only needs to poll input here. ---- */
+    /* ---- Main loop: wait for a key event or process signal to request exit. ---- */
+    bool interactive_help_printed = false;
     while (mybot_app_is_running()) {
+        if (!interactive_help_printed && mybot_app_get_state() == MYBOT_APP_STATE_READY) {
+            AOSL_LOG_INF("=== mybot ready ===\n"
+                         "  s - start conversation\n"
+                         "  q - stop conversation\n"
+                         "  p - re-pair device\n"
+                         "  e - exit\n"
+                         "  Ctrl+C - exit");
+            interactive_help_printed = true;
+        }
+
         if (s_exit_requested) {
             mybot_app_request_exit();
             continue;
         }
 
-        mybot_app_poll();
         aosl_hal_msleep(100);
     }
 

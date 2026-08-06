@@ -6,6 +6,8 @@
 #include "mybot_ringbuf.h"
 #include "storage/mybot_kv_store.h"
 #include "key_service/mybot_key_service.h"
+#include "lcd/mybot_lcd.h"
+#include "wifi/mybot_wifi_provisioning.h"
 
 #include "api/aosl.h"
 #include "api/aosl_atomic.h"
@@ -24,10 +26,13 @@
 #define SAMPLE_RATE 16000 /* Hz */
 #define CHANNELS 1
 #define BITS_PER_SAMPLE 16
-#define FRAMES_20MS 320 /* samples per 20 ms frame @ 16 kHz */
-#define BYTES_20MS 640  /* 320 * 16-bit mono */
-#define RINGBUF_SIZE (BYTES_20MS * 100)
-#define AUDIO_TICK_MS 10 /* MPQ timer cadence driving the audio loops */
+#define BYTES_PER_SAMPLE (BITS_PER_SAMPLE / 8)
+#define AUDIO_FRAME_DURATION_MS MYBOT_AUDIO_PTIME_MS
+#define AUDIO_FRAME_SAMPLES (SAMPLE_RATE * AUDIO_FRAME_DURATION_MS / 1000)
+#define AUDIO_FRAME_BYTES (AUDIO_FRAME_SAMPLES * CHANNELS * BYTES_PER_SAMPLE)
+#define AUDIO_RINGBUF_DURATION_MS 2000
+#define AUDIO_RINGBUF_SIZE                                                                         \
+    (SAMPLE_RATE * AUDIO_RINGBUF_DURATION_MS / 1000 * CHANNELS * BYTES_PER_SAMPLE)
 /* Device state machine poll interval. Must match the 100 ms/tick assumption
  * in mybot_device_lifecycle_tick() (poll_after_seconds * 10 ticks). */
 #define STATE_TICK_MS 100
@@ -38,9 +43,14 @@
  * ---------------------------------------------------------- */
 static struct {
     aosl_atomic_t running;
+    aosl_atomic_t state;
     bool aosl_active;
+    bool wifi_provisioning_active;
     bool kv_store_active;
     bool key_service_active;
+    bool lcd_active;
+    mybot_app_config_t config;
+    aosl_mpq_t startup_mpq;
 
     /* Audio capture */
     void *cap_ctx;
@@ -48,6 +58,7 @@ static struct {
     aosl_mpq_t cap_mpq;     /* capture worker thread (aosl_mpq_create) */
     aosl_timer_t cap_timer; /* drives the capture read loop */
     mybot_ringbuf_t cap_ringbuf;
+    uint8_t cap_frame[AUDIO_FRAME_BYTES];
 
     /* Audio playback */
     void *pb_ctx;
@@ -55,13 +66,15 @@ static struct {
     aosl_mpq_t pb_mpq;     /* playback worker thread (aosl_mpq_create) */
     aosl_timer_t pb_timer; /* drives the playback write loop */
     mybot_ringbuf_t pb_ringbuf;
-    uint8_t pb_pending[BYTES_20MS];
+    uint8_t pb_pending[AUDIO_FRAME_BYTES];
     int pb_pending_offset; /* frames already written */
     int pb_pending_frames; /* frames still to write */
 
 #if MYBOT_CLOUD_AEC
     /* AEC reference ringbuf: holds downlink PCM fed to the speaker */
     mybot_ringbuf_t ref_ringbuf;
+    int16_t aec_reference_frame[AUDIO_FRAME_SAMPLES];
+    int16_t aec_interleaved_frame[AUDIO_FRAME_SAMPLES * 2];
 #endif
 
     /* RTC session state */
@@ -73,7 +86,8 @@ static struct {
 
     /* MPQ handles — all real-time audio timers share this one thread */
     aosl_mpq_t mpq;
-    aosl_timer_t send_timer; /* 20 ms — send captured PCM to RTC */
+    aosl_timer_t send_timer; /* ptime cadence — send captured PCM to RTC */
+    int16_t send_frame[AUDIO_FRAME_SAMPLES * CHANNELS];
 
     /* Device state machine MPQ — dedicated thread because
      * mybot_device_lifecycle_tick() does blocking HTTP polling that must not delay
@@ -82,9 +96,21 @@ static struct {
     aosl_timer_t state_timer; /* 100 ms — drive the device state machine */
 } s_app;
 
+static void lcd_show_screen(mybot_lcd_screen_t screen) {
+    if (s_app.lcd_active && mybot_lcd_show_screen(screen) < 0) {
+        AOSL_LOG_WRN("failed to render LCD screen %d", (int)screen);
+    }
+}
+
+static void lcd_show_pair_code(const char *code) {
+    if (s_app.lcd_active && mybot_lcd_show_pair_code(code) < 0) {
+        AOSL_LOG_WRN("failed to render LCD pair code");
+    }
+}
+
 /* ----------------------------------------------------------
  * Capture — runs on the capture MPQ thread (cap_mpq).
- * A periodic timer reads one 20 ms mic frame and feeds cap_ringbuf.
+ * A periodic timer reads one ptime-sized mic frame and feeds cap_ringbuf.
  * ---------------------------------------------------------- */
 static void capture_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc, uintptr_t argv[]) {
     (void)id;
@@ -96,14 +122,14 @@ static void capture_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc,
     }
 
     const mybot_audio_capture_ops_t *ops = mybot_audio_device_get_capture();
-    uint8_t pcm[BYTES_20MS];
 
-    int frames = ops->read(s_app.cap_ctx, pcm, FRAMES_20MS);
+    int frames = ops->read(s_app.cap_ctx, s_app.cap_frame, AUDIO_FRAME_SAMPLES);
     if (frames <= 0) {
         return;
     }
-    if (frames > FRAMES_20MS) {
-        AOSL_LOG_ERR("capture backend returned invalid frame count: %d > %d", frames, FRAMES_20MS);
+    if (frames > AUDIO_FRAME_SAMPLES) {
+        AOSL_LOG_ERR("capture backend returned invalid frame count: %d > %d", frames,
+                     AUDIO_FRAME_SAMPLES);
         return;
     }
 
@@ -112,9 +138,9 @@ static void capture_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc,
         return;
     }
 
-    const int frame_bytes = CHANNELS * BITS_PER_SAMPLE / 8;
+    const int frame_bytes = CHANNELS * BYTES_PER_SAMPLE;
     const int bytes_read = frames * frame_bytes;
-    if (mybot_ringbuf_write(s_app.cap_ringbuf, (char *)pcm, bytes_read) < 0) {
+    if (mybot_ringbuf_write(s_app.cap_ringbuf, (char *)s_app.cap_frame, bytes_read) < 0) {
         static int dc = 0;
         if (++dc % 100 == 0) {
             AOSL_LOG_WRN("cap ringbuf full, dropped %d", dc);
@@ -126,7 +152,7 @@ static int cap_mpq_init(void *arg) {
     (void)arg;
     AOSL_LOG_INF("capture MPQ started");
 
-    s_app.cap_timer = aosl_mpq_set_timer(AUDIO_TICK_MS, capture_timer, NULL, 0);
+    s_app.cap_timer = aosl_mpq_set_timer(AUDIO_FRAME_DURATION_MS, capture_timer, NULL, 0);
     if (aosl_mpq_timer_invalid(s_app.cap_timer)) {
         AOSL_LOG_ERR("failed to create capture timer");
         return -1;
@@ -147,7 +173,7 @@ static void cap_mpq_fini(void *arg) {
 
 /* ----------------------------------------------------------
  * Playback — runs on the playback MPQ thread (pb_mpq).
- * A periodic timer pulls one 20 ms frame from pb_ringbuf and
+ * A periodic timer pulls one ptime-sized frame from pb_ringbuf and
  * writes it to the speaker.
  * ---------------------------------------------------------- */
 static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc,
@@ -163,23 +189,23 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
     const mybot_audio_playback_ops_t *ops = mybot_audio_device_get_playback();
 
     if (s_app.pb_pending_frames == 0) {
-        if (mybot_ringbuf_get_data_size(s_app.pb_ringbuf) < BYTES_20MS) {
+        if (mybot_ringbuf_get_data_size(s_app.pb_ringbuf) < AUDIO_FRAME_BYTES) {
             return;
         }
-        if (mybot_ringbuf_read((char *)s_app.pb_pending, BYTES_20MS, s_app.pb_ringbuf) !=
-            BYTES_20MS) {
+        if (mybot_ringbuf_read((char *)s_app.pb_pending, AUDIO_FRAME_BYTES, s_app.pb_ringbuf) !=
+            AUDIO_FRAME_BYTES) {
             return;
         }
         s_app.pb_pending_offset = 0;
-        s_app.pb_pending_frames = FRAMES_20MS;
+        s_app.pb_pending_frames = AUDIO_FRAME_SAMPLES;
 #if MYBOT_CLOUD_AEC
         /* Preserve the existing AEC reference timing: publish once when the
          * playback frame is first dequeued. */
-        mybot_ringbuf_write(s_app.ref_ringbuf, (char *)s_app.pb_pending, BYTES_20MS);
+        mybot_ringbuf_write(s_app.ref_ringbuf, (char *)s_app.pb_pending, AUDIO_FRAME_BYTES);
 #endif
     }
 
-    const int frame_bytes = CHANNELS * BITS_PER_SAMPLE / 8;
+    const int frame_bytes = CHANNELS * BYTES_PER_SAMPLE;
     int written = ops->write(s_app.pb_ctx, s_app.pb_pending + s_app.pb_pending_offset * frame_bytes,
                              s_app.pb_pending_frames);
     if (written < 0) {
@@ -210,7 +236,7 @@ static int pb_mpq_init(void *arg) {
     (void)arg;
     AOSL_LOG_INF("playback MPQ started");
 
-    s_app.pb_timer = aosl_mpq_set_timer(AUDIO_TICK_MS, playback_timer, NULL, 0);
+    s_app.pb_timer = aosl_mpq_set_timer(AUDIO_FRAME_DURATION_MS, playback_timer, NULL, 0);
     if (aosl_mpq_timer_invalid(s_app.pb_timer)) {
         AOSL_LOG_ERR("failed to create playback timer");
         return -1;
@@ -262,7 +288,7 @@ static void on_rtc_state_changed(mybot_rtc_state_t state) {
 }
 
 /* ----------------------------------------------------------
- * MPQ timer (20ms) — send captured PCM to RTC
+ * MPQ timer (ptime cadence) — send captured PCM to RTC
  * ---------------------------------------------------------- */
 static void send_audio_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc,
                              uintptr_t argv[]) {
@@ -275,33 +301,34 @@ static void send_audio_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t ar
         return;
     }
 
-    uint8_t pcm[BYTES_20MS];
-    if (mybot_ringbuf_get_data_size(s_app.cap_ringbuf) < BYTES_20MS) {
+    if (mybot_ringbuf_get_data_size(s_app.cap_ringbuf) < AUDIO_FRAME_BYTES) {
         return;
     }
 
-    if (mybot_ringbuf_read((char *)pcm, BYTES_20MS, s_app.cap_ringbuf) == BYTES_20MS) {
+    if (mybot_ringbuf_read((char *)s_app.send_frame, AUDIO_FRAME_BYTES, s_app.cap_ringbuf) ==
+        AUDIO_FRAME_BYTES) {
 #if MYBOT_CLOUD_AEC
         /* Interleave mic PCM with AEC reference (downlink PCM):
          * output = [mic[0], ref[0], mic[1], ref[1], ...] */
-        int16_t *mic = (int16_t *)pcm;
-        size_t samples = BYTES_20MS / sizeof(int16_t);         /* 320 */
-        int16_t interleaved[BYTES_20MS * 2 / sizeof(int16_t)]; /* 640 samples */
+        int16_t *mic = s_app.send_frame;
+        size_t samples = AUDIO_FRAME_SAMPLES;
 
         /* Use silence if insufficient ref data available */
-        int16_t ref[320] = {0};
-        if (mybot_ringbuf_get_data_size(s_app.ref_ringbuf) >= BYTES_20MS) {
-            mybot_ringbuf_read((char *)ref, BYTES_20MS, s_app.ref_ringbuf);
+        memset(s_app.aec_reference_frame, 0, sizeof(s_app.aec_reference_frame));
+        if (mybot_ringbuf_get_data_size(s_app.ref_ringbuf) >= AUDIO_FRAME_BYTES) {
+            mybot_ringbuf_read((char *)s_app.aec_reference_frame, AUDIO_FRAME_BYTES,
+                               s_app.ref_ringbuf);
         }
 
         for (size_t i = 0; i < samples; i++) {
-            interleaved[i * 2] = mic[i];
-            interleaved[i * 2 + 1] = ref[i];
+            s_app.aec_interleaved_frame[i * 2] = mic[i];
+            s_app.aec_interleaved_frame[i * 2 + 1] = s_app.aec_reference_frame[i];
         }
 
-        mybot_rtc_session_send_audio(interleaved, sizeof(interleaved));
+        mybot_rtc_session_send_audio(s_app.aec_interleaved_frame,
+                                     sizeof(s_app.aec_interleaved_frame));
 #else
-        mybot_rtc_session_send_audio(pcm, BYTES_20MS);
+        mybot_rtc_session_send_audio(s_app.send_frame, AUDIO_FRAME_BYTES);
 #endif
     }
 }
@@ -314,6 +341,11 @@ static void dev_on_pair_code(const char *code) {
     AOSL_LOG_INF("==== PAIR CODE ====");
     AOSL_LOG_INF("*** PAIR CODE: %s ***", code);
     AOSL_LOG_INF("*** Enter this code in the web UI to claim the device ***");
+    mybot_app_state_t app_state = mybot_app_get_state();
+    if (app_state == MYBOT_APP_STATE_STOPPING || app_state == MYBOT_APP_STATE_FAILED) {
+        return;
+    }
+    lcd_show_pair_code(code);
 }
 
 static void dev_on_conversation_start(const mybot_conversation_params_t *params) {
@@ -383,7 +415,26 @@ static void dev_on_conversation_stop(void) {
 }
 
 static void dev_on_state_changed(mybot_device_state_t state) {
-    (void)state;
+    mybot_app_state_t app_state = mybot_app_get_state();
+    if (app_state == MYBOT_APP_STATE_STOPPING || app_state == MYBOT_APP_STATE_FAILED) {
+        return;
+    }
+
+    switch (state) {
+    case MYBOT_DEVICE_STATE_UNPROVISIONED:
+    case MYBOT_DEVICE_STATE_PAIRING:
+        lcd_show_screen(MYBOT_LCD_SCREEN_PAIRING);
+        break;
+    case MYBOT_DEVICE_STATE_AWAITING_CLAIM:
+        /* Keep the pair-code screen rendered by dev_on_pair_code(). */
+        break;
+    case MYBOT_DEVICE_STATE_RUNTIME:
+        lcd_show_screen(MYBOT_LCD_SCREEN_READY);
+        break;
+    case MYBOT_DEVICE_STATE_IN_CONVERSATION:
+        lcd_show_screen(MYBOT_LCD_SCREEN_IN_CONVERSATION);
+        break;
+    }
 }
 
 static void on_key_event(mybot_key_event_t event, void *user_data) {
@@ -454,7 +505,7 @@ static int mpq_init(void *arg) {
     (void)arg;
     AOSL_LOG_INF("MPQ loop started");
 
-    s_app.send_timer = aosl_mpq_set_timer(20, send_audio_timer, NULL, 0);
+    s_app.send_timer = aosl_mpq_set_timer(AUDIO_FRAME_DURATION_MS, send_audio_timer, NULL, 0);
     if (aosl_mpq_timer_invalid(s_app.send_timer)) {
         AOSL_LOG_ERR("failed to create send timer");
         return -1;
@@ -478,30 +529,10 @@ static void mpq_fini(void *arg) {
     mybot_rtc_session_leave();
 }
 
-/* ----------------------------------------------------------
- * Public API
- * ---------------------------------------------------------- */
+static int start_services(void) {
+    const mybot_app_config_t *cfg = &s_app.config;
 
-int mybot_app_start(const mybot_app_config_t *cfg) {
-    if (!cfg) {
-        return -1;
-    }
-
-    memset(&s_app, 0, sizeof(s_app));
-    aosl_atomic_set(&s_app.running, true);
-    s_app.mpq = AOSL_MPQ_INVALID;
-    s_app.send_timer = AOSL_MPQ_TIMER_INVALID;
-    s_app.cap_mpq = AOSL_MPQ_INVALID;
-    s_app.cap_timer = AOSL_MPQ_TIMER_INVALID;
-    s_app.pb_mpq = AOSL_MPQ_INVALID;
-    s_app.pb_timer = AOSL_MPQ_TIMER_INVALID;
-    s_app.state_mpq = AOSL_MPQ_INVALID;
-    s_app.state_timer = AOSL_MPQ_TIMER_INVALID;
-
-    /* ---- 1. Initialize AOSL ---- */
-    aosl_ctor();
-    s_app.aosl_active = true;
-
+    /* ---- 1. Initialize local storage and key input services. ---- */
     if (mybot_kv_store_init() < 0) {
         AOSL_LOG_ERR("kv store init failed");
         goto fail;
@@ -534,14 +565,14 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
     }
 
     /* ---- 3. Create ring buffers ---- */
-    s_app.cap_ringbuf = mybot_ringbuf_create(RINGBUF_SIZE);
-    s_app.pb_ringbuf = mybot_ringbuf_create(RINGBUF_SIZE);
+    s_app.cap_ringbuf = mybot_ringbuf_create(AUDIO_RINGBUF_SIZE);
+    s_app.pb_ringbuf = mybot_ringbuf_create(AUDIO_RINGBUF_SIZE);
     if (!s_app.cap_ringbuf || !s_app.pb_ringbuf) {
         AOSL_LOG_ERR("ringbuf creation failed");
         goto fail;
     }
 #if MYBOT_CLOUD_AEC
-    s_app.ref_ringbuf = mybot_ringbuf_create(RINGBUF_SIZE);
+    s_app.ref_ringbuf = mybot_ringbuf_create(AUDIO_RINGBUF_SIZE);
     if (!s_app.ref_ringbuf) {
         AOSL_LOG_ERR("ref ringbuf creation failed");
         goto fail;
@@ -602,7 +633,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
      * main() returns, which aborts once aosl_dtor() has finalized AOSL.
      * Creating the queue explicitly keeps teardown fully in our control. */
     AOSL_LOG_INF("starting MPQ loop...");
-    s_app.mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MPQ_STACK_SIZE, 10000, "mybot_mpq", mpq_init,
+    s_app.mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MPQ_STACK_SIZE, 1000, "mybot_mpq", mpq_init,
                                 mpq_fini, NULL);
     if (aosl_mpq_invalid(s_app.mpq)) {
         AOSL_LOG_ERR("aosl_mpq_create failed");
@@ -619,10 +650,136 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
         goto fail;
     }
 
-    AOSL_LOG_INF("app started");
     return 0;
 
 fail:
+    return -1;
+}
+
+static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, uintptr_t argc,
+                              uintptr_t argv[]) {
+    (void)queued_ts;
+    (void)robj;
+    if (argc != 1) {
+        return;
+    }
+
+    mybot_app_state_t app_state = mybot_app_get_state();
+    if (app_state == MYBOT_APP_STATE_STOPPING || app_state == MYBOT_APP_STATE_FAILED) {
+        return;
+    }
+
+    mybot_wifi_provisioning_state_t wifi_state = (mybot_wifi_provisioning_state_t)argv[0];
+    if (wifi_state == MYBOT_WIFI_PROVISIONING_STATE_FAILED) {
+        if (aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING,
+                                MYBOT_APP_STATE_FAILED) == MYBOT_APP_STATE_WIFI_PROVISIONING) {
+            lcd_show_screen(MYBOT_LCD_SCREEN_FAILED);
+            AOSL_LOG_ERR("wifi provisioning failed");
+            aosl_atomic_set(&s_app.running, false);
+        }
+        return;
+    }
+
+    if (wifi_state == MYBOT_WIFI_PROVISIONING_STATE_DISCONNECTED) {
+        lcd_show_screen(MYBOT_LCD_SCREEN_WIFI_DISCONNECTED);
+        return;
+    }
+
+    if (wifi_state != MYBOT_WIFI_PROVISIONING_STATE_CONNECTED ||
+        aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING,
+                            MYBOT_APP_STATE_STARTING_SERVICES) !=
+            MYBOT_APP_STATE_WIFI_PROVISIONING) {
+        return;
+    }
+
+    lcd_show_screen(MYBOT_LCD_SCREEN_STARTING_SERVICES);
+    if (start_services() < 0) {
+        if (aosl_atomic_read(&s_app.state) != MYBOT_APP_STATE_STOPPING) {
+            lcd_show_screen(MYBOT_LCD_SCREEN_FAILED);
+            aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_FAILED);
+            aosl_atomic_set(&s_app.running, false);
+        }
+        return;
+    }
+
+    if (aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_STARTING_SERVICES,
+                            MYBOT_APP_STATE_READY) == MYBOT_APP_STATE_STARTING_SERVICES) {
+        dev_on_state_changed(mybot_device_lifecycle_get_state());
+    }
+}
+
+static void on_wifi_state_changed(mybot_wifi_provisioning_state_t state, void *user_data) {
+    (void)user_data;
+    if (mybot_app_get_state() != MYBOT_APP_STATE_WIFI_PROVISIONING) {
+        return;
+    }
+
+    if (aosl_mpq_queue(s_app.startup_mpq, AOSL_MPQ_INVALID, AOSL_REF_INVALID, "handle_wifi_state",
+                       handle_wifi_state, 1, (uintptr_t)state) < 0) {
+        AOSL_LOG_ERR("failed to queue wifi state transition");
+        if (aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING,
+                                MYBOT_APP_STATE_FAILED) == MYBOT_APP_STATE_WIFI_PROVISIONING) {
+            lcd_show_screen(MYBOT_LCD_SCREEN_FAILED);
+            aosl_atomic_set(&s_app.running, false);
+        }
+    }
+}
+
+/* ----------------------------------------------------------
+ * Public API
+ * ---------------------------------------------------------- */
+
+int mybot_app_start(const mybot_app_config_t *cfg) {
+    if (!cfg) {
+        return -1;
+    }
+
+    memset(&s_app, 0, sizeof(s_app));
+    memcpy(&s_app.config, cfg, sizeof(s_app.config));
+    aosl_atomic_set(&s_app.running, true);
+    aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_STOPPED);
+    s_app.startup_mpq = AOSL_MPQ_INVALID;
+    s_app.mpq = AOSL_MPQ_INVALID;
+    s_app.send_timer = AOSL_MPQ_TIMER_INVALID;
+    s_app.cap_mpq = AOSL_MPQ_INVALID;
+    s_app.cap_timer = AOSL_MPQ_TIMER_INVALID;
+    s_app.pb_mpq = AOSL_MPQ_INVALID;
+    s_app.pb_timer = AOSL_MPQ_TIMER_INVALID;
+    s_app.state_mpq = AOSL_MPQ_INVALID;
+    s_app.state_timer = AOSL_MPQ_TIMER_INVALID;
+
+    aosl_ctor();
+    s_app.aosl_active = true;
+
+    if (mybot_lcd_is_registered()) {
+        if (mybot_lcd_init() < 0) {
+            AOSL_LOG_ERR("LCD init failed");
+            goto fail;
+        }
+        s_app.lcd_active = true;
+        lcd_show_screen(MYBOT_LCD_SCREEN_STARTING);
+    }
+
+    s_app.startup_mpq =
+        aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MPQ_STACK_SIZE, 32, "startup_mpq", NULL, NULL, NULL);
+    if (aosl_mpq_invalid(s_app.startup_mpq)) {
+        AOSL_LOG_ERR("startup_mpq create failed");
+        goto fail;
+    }
+
+    aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING);
+    lcd_show_screen(MYBOT_LCD_SCREEN_WIFI_PROVISIONING);
+    if (mybot_wifi_provisioning_init(s_app.config.device_id, on_wifi_state_changed, NULL) < 0) {
+        AOSL_LOG_ERR("wifi provisioning init failed");
+        goto fail;
+    }
+    s_app.wifi_provisioning_active = true;
+    AOSL_LOG_INF("wifi provisioning started");
+    return 0;
+
+fail:
+    lcd_show_screen(MYBOT_LCD_SCREEN_FAILED);
+    aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_FAILED);
     mybot_app_stop();
     return -1;
 }
@@ -631,10 +788,8 @@ bool mybot_app_is_running(void) {
     return aosl_atomic_read(&s_app.running) != 0;
 }
 
-void mybot_app_poll(void) {
-    if (s_app.key_service_active && mybot_key_service_poll() < 0) {
-        AOSL_LOG_ERR("key service poll failed");
-    }
+mybot_app_state_t mybot_app_get_state(void) {
+    return (mybot_app_state_t)aosl_atomic_read(&s_app.state);
 }
 
 void mybot_app_request_exit(void) {
@@ -642,14 +797,23 @@ void mybot_app_request_exit(void) {
 }
 
 void mybot_app_start_conversation(void) {
+    if (mybot_app_get_state() != MYBOT_APP_STATE_READY) {
+        return;
+    }
     mybot_device_lifecycle_request_start();
 }
 
 void mybot_app_stop_conversation(void) {
+    if (mybot_app_get_state() != MYBOT_APP_STATE_READY) {
+        return;
+    }
     mybot_device_lifecycle_request_stop();
 }
 
 void mybot_app_pair(void) {
+    if (mybot_app_get_state() != MYBOT_APP_STATE_READY) {
+        return;
+    }
     mybot_device_lifecycle_request_pair();
 }
 
@@ -661,11 +825,23 @@ void mybot_app_stop(void) {
 
     AOSL_LOG_INF("stopping app...");
 
-    /* ---- 1. Signal workers to stop ----
+    /* ---- 1. Block further startup transitions and signal workers to stop ----
      * Set BEFORE any AOSL/audio teardown so the MPQ timer callbacks return
      * early. The ALSA read/write paths are poll-with-timeout, so each worker
      * exits within a bounded time even when the device yields no data. */
+    mybot_app_state_t previous_state = mybot_app_get_state();
+    aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_STOPPING);
     aosl_atomic_set(&s_app.running, false);
+    if (previous_state != MYBOT_APP_STATE_FAILED) {
+        lcd_show_screen(MYBOT_LCD_SCREEN_STOPPING);
+    }
+
+    /* A Wi-Fi event may already be running start_services() on this queue.
+     * Joining it before teardown serializes partial startup with cleanup. */
+    if (!aosl_mpq_invalid(s_app.startup_mpq)) {
+        aosl_mpq_destroy_wait(s_app.startup_mpq);
+        s_app.startup_mpq = AOSL_MPQ_INVALID;
+    }
 
     if (s_app.key_service_active) {
         mybot_key_service_deinit();
@@ -680,6 +856,10 @@ void mybot_app_stop(void) {
         aosl_mpq_destroy_wait(s_app.state_mpq);
         s_app.state_mpq = AOSL_MPQ_INVALID;
     }
+
+    /* Reassert the terminal screen after all device workflow callbacks have drained. */
+    lcd_show_screen(previous_state == MYBOT_APP_STATE_FAILED ? MYBOT_LCD_SCREEN_FAILED
+                                                             : MYBOT_LCD_SCREEN_STOPPING);
 
     /* ---- 3. Stop the MPQ loop ----
      * Its fini callback kills the send timer and leaves the RTC channel.
@@ -735,14 +915,26 @@ void mybot_app_stop(void) {
         s_app.pb_ctx = NULL;
     }
 
-    /* ---- 7. Finalize RTC ----
+    /* ---- 7. Stop Wi-Fi after all network users have exited. ---- */
+    if (s_app.wifi_provisioning_active) {
+        mybot_wifi_provisioning_deinit();
+        s_app.wifi_provisioning_active = false;
+    }
+
+    /* ---- 8. Stop the LCD after all workflow event sources have exited. ---- */
+    if (s_app.lcd_active) {
+        mybot_lcd_deinit();
+        s_app.lcd_active = false;
+    }
+
+    /* ---- 9. Finalize RTC ----
      * The SDK waits for its callback queue before returning, so no callback can
      * access pb_ringbuf after this point. It also finalizes AOSL when active. */
     AOSL_LOG_INF("app stopped cleanly");
     s_app.aosl_active = false;
     bool rtc_finalized_aosl = mybot_rtc_session_fini();
 
-    /* ---- 8. Destroy ring buffers ----
+    /* ---- 10. Destroy ring buffers ----
      * The AOSL HAL allocator is independent of the AOSL global lifecycle. */
     if (s_app.cap_ringbuf) {
         mybot_ringbuf_destroy(s_app.cap_ringbuf);
@@ -759,8 +951,10 @@ void mybot_app_stop(void) {
     }
 #endif
 
-    /* ---- 9. Finalize AOSL when RTC never owned it ---- */
+    /* ---- 11. Finalize AOSL when RTC never owned it ---- */
     if (!rtc_finalized_aosl) {
         aosl_dtor();
     }
+
+    aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_STOPPED);
 }

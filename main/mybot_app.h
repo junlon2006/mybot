@@ -16,13 +16,21 @@ typedef struct {
     char hw_model[32];     /* hardware model (optional) */
 } mybot_app_config_t;
 
+typedef enum {
+    MYBOT_APP_STATE_STOPPED = 0,
+    MYBOT_APP_STATE_WIFI_PROVISIONING,
+    MYBOT_APP_STATE_STARTING_SERVICES,
+    MYBOT_APP_STATE_READY,
+    MYBOT_APP_STATE_FAILED,
+    MYBOT_APP_STATE_STOPPING,
+} mybot_app_state_t;
+
 /**
  * @brief Initialize and start the application.
  *
- * Non-blocking: this spawns the worker threads (audio capture/playback and
- * the MPQ loop) and returns. The application then runs on its own, driven by
- * its MPQ timers; the caller must call mybot_app_stop() before exiting to release
- * all resources.
+ * Non-blocking: starts APSTA Wi-Fi provisioning and returns. The remaining services are
+ * initialized asynchronously after Wi-Fi reaches MYBOT_WIFI_PROVISIONING_STATE_CONNECTED.
+ * The caller must call mybot_app_stop() before exiting.
  *
  * @param cfg application configuration.
  * @return 0 on success, -1 on error. On error, all partially initialized
@@ -33,8 +41,8 @@ int mybot_app_start(const mybot_app_config_t *cfg);
 /** @brief Check whether the application is still running. */
 bool mybot_app_is_running(void);
 
-/** @brief Process pending platform input events. */
-void mybot_app_poll(void);
+/** @brief Return the current application startup/runtime state. */
+mybot_app_state_t mybot_app_get_state(void);
 
 /** @brief Request a graceful exit (used by signal handlers / UI keys). */
 void mybot_app_request_exit(void);
