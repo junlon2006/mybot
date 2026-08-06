@@ -105,15 +105,19 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    AOSL_LOG_INF("=== mybot ready ===\n"
-                 "  s - start conversation\n"
-                 "  q - stop conversation\n"
-                 "  p - re-pair device\n"
-                 "  e - exit\n"
-                 "  Ctrl+C - exit");
-
     /* ---- Main loop: wait for a key event or process signal to request exit. ---- */
+    bool interactive_help_printed = false;
     while (mybot_app_is_running()) {
+        if (!interactive_help_printed && mybot_app_get_state() == MYBOT_APP_STATE_READY) {
+            AOSL_LOG_INF("=== mybot ready ===\n"
+                         "  s - start conversation\n"
+                         "  q - stop conversation\n"
+                         "  p - re-pair device\n"
+                         "  e - exit\n"
+                         "  Ctrl+C - exit");
+            interactive_help_printed = true;
+        }
+
         if (s_exit_requested) {
             mybot_app_request_exit();
             continue;

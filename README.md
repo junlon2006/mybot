@@ -56,9 +56,11 @@ APSTA provisioning → STA connected → unprovisioned → pairing → awaiting_
                                                                     重启配对        回到起始
 ```
 
-Wi-Fi 配网是应用启动后的第一个业务阶段。只有 STA 连接成功后，才会继续初始化持久化、
-按键、音频、设备服务配对和 RTC。平台后端固定使用 APSTA，不提供其他 Wi-Fi mode 选择。
-Linux 开发后端复用宿主机已经配置的网络，因此会立即报告 STA 已连接。
+Wi-Fi 配网是应用启动后的第一个业务阶段。`mybot_wifi_provisioning_init()` 只启动平台后端
+并立即返回，不等待用户完成配网。平台事件驱动配网状态变化；只有状态进入 `CONNECTED`
+后，应用启动队列才会继续初始化持久化、按键、音频、设备服务配对和 RTC，因此配网未完成
+不会永久阻塞调用线程。平台后端固定使用 APSTA，不提供其他 Wi-Fi mode 选择。Linux 开发
+后端复用宿主机已经配置的网络，因此会立即报告 STA 已连接。
 
 | 阶段 | 说明 |
 |------|------|

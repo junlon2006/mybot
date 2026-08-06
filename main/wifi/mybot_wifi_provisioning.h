@@ -1,8 +1,6 @@
 #ifndef MYBOT_WIFI_PROVISIONING_H_
 #define MYBOT_WIFI_PROVISIONING_H_
 
-#include <stdbool.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -13,7 +11,17 @@ typedef enum {
     MYBOT_WIFI_PROVISIONING_EVENT_FAILED,
 } mybot_wifi_provisioning_event_t;
 
+typedef enum {
+    MYBOT_WIFI_PROVISIONING_STATE_IDLE = 0,
+    MYBOT_WIFI_PROVISIONING_STATE_PROVISIONING,
+    MYBOT_WIFI_PROVISIONING_STATE_CONNECTED,
+    MYBOT_WIFI_PROVISIONING_STATE_DISCONNECTED,
+    MYBOT_WIFI_PROVISIONING_STATE_FAILED,
+} mybot_wifi_provisioning_state_t;
+
 typedef void (*mybot_wifi_provisioning_event_handler_t)(mybot_wifi_provisioning_event_t event,
+                                                        void *user_data);
+typedef void (*mybot_wifi_provisioning_state_handler_t)(mybot_wifi_provisioning_state_t state,
                                                         void *user_data);
 
 /**
@@ -31,11 +39,16 @@ typedef struct {
 /** Register the APSTA provisioning backend for the current platform. */
 int mybot_wifi_provisioning_register(const mybot_wifi_provisioning_ops_t *ops);
 
-/** Start APSTA provisioning and block until STA connects or provisioning fails. */
-int mybot_wifi_provisioning_init(const char *device_id);
+/**
+ * Start APSTA provisioning without waiting for STA to connect.
+ * A successful return means the backend started; subsequent connection results are reported
+ * through handler and mybot_wifi_provisioning_get_state().
+ */
+int mybot_wifi_provisioning_init(const char *device_id,
+                                 mybot_wifi_provisioning_state_handler_t handler, void *user_data);
 
-/** Return whether the backend currently reports an active STA connection. */
-bool mybot_wifi_provisioning_is_connected(void);
+/** Return the current provisioning state. */
+mybot_wifi_provisioning_state_t mybot_wifi_provisioning_get_state(void);
 
 /** Stop APSTA provisioning and release its resources. Idempotent. */
 void mybot_wifi_provisioning_deinit(void);

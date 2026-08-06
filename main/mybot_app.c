@@ -42,10 +42,13 @@
  * ---------------------------------------------------------- */
 static struct {
     aosl_atomic_t running;
+    aosl_atomic_t state;
     bool aosl_active;
     bool wifi_provisioning_active;
     bool kv_store_active;
     bool key_service_active;
+    mybot_app_config_t config;
+    aosl_mpq_t startup_mpq;
 
     /* Audio capture */
     void *cap_ctx;
@@ -488,38 +491,10 @@ static void mpq_fini(void *arg) {
     mybot_rtc_session_leave();
 }
 
-/* ----------------------------------------------------------
- * Public API
- * ---------------------------------------------------------- */
+static int start_services(void) {
+    const mybot_app_config_t *cfg = &s_app.config;
 
-int mybot_app_start(const mybot_app_config_t *cfg) {
-    if (!cfg) {
-        return -1;
-    }
-
-    memset(&s_app, 0, sizeof(s_app));
-    aosl_atomic_set(&s_app.running, true);
-    s_app.mpq = AOSL_MPQ_INVALID;
-    s_app.send_timer = AOSL_MPQ_TIMER_INVALID;
-    s_app.cap_mpq = AOSL_MPQ_INVALID;
-    s_app.cap_timer = AOSL_MPQ_TIMER_INVALID;
-    s_app.pb_mpq = AOSL_MPQ_INVALID;
-    s_app.pb_timer = AOSL_MPQ_TIMER_INVALID;
-    s_app.state_mpq = AOSL_MPQ_INVALID;
-    s_app.state_timer = AOSL_MPQ_TIMER_INVALID;
-
-    /* ---- 1. Initialize AOSL ---- */
-    aosl_ctor();
-    s_app.aosl_active = true;
-
-    /* ---- 2. Complete APSTA Wi-Fi provisioning before starting any online service. ---- */
-    if (mybot_wifi_provisioning_init(cfg->device_id) < 0) {
-        AOSL_LOG_ERR("wifi provisioning failed");
-        goto fail;
-    }
-    s_app.wifi_provisioning_active = true;
-
-    /* ---- 3. Initialize local storage and key input services. ---- */
+    /* ---- 1. Initialize local storage and key input services. ---- */
     if (mybot_kv_store_init() < 0) {
         AOSL_LOG_ERR("kv store init failed");
         goto fail;
@@ -532,7 +507,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
     }
     s_app.key_service_active = true;
 
-    /* ---- 4. Initialize audio devices via the registered platform ops ----
+    /* ---- 2. Initialize audio devices via the registered platform ops ----
      * The platform backend (e.g. ALSA on Linux) must have registered itself
      * through audio_device_register_*() before mybot_app_start() is called. */
     const mybot_audio_capture_ops_t *cap_ops = mybot_audio_device_get_capture();
@@ -551,7 +526,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
         goto fail;
     }
 
-    /* ---- 5. Create ring buffers ---- */
+    /* ---- 3. Create ring buffers ---- */
     s_app.cap_ringbuf = mybot_ringbuf_create(AUDIO_RINGBUF_SIZE);
     s_app.pb_ringbuf = mybot_ringbuf_create(AUDIO_RINGBUF_SIZE);
     if (!s_app.cap_ringbuf || !s_app.pb_ringbuf) {
@@ -567,7 +542,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
     AOSL_LOG_INF("cloud AEC enabled, ref ringbuf created");
 #endif
 
-    /* ---- 6. Start audio devices ---- */
+    /* ---- 4. Start audio devices ---- */
     if (!cap_ops->start || cap_ops->start(s_app.cap_ctx) < 0) {
         AOSL_LOG_ERR("capture start failed");
         goto fail;
@@ -580,7 +555,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
     }
     s_app.pb_started = true;
 
-    /* ---- 7. Create the capture/playback worker MPQs ----
+    /* ---- 5. Create the capture/playback worker MPQs ----
      * Each worker is an MPQ created with aosl_mpq_create(), which spawns the
      * thread and gives us join semantics through aosl_mpq_destroy_wait() —
      * the thread HAL (aosl_hal_thread_join) is not available on every
@@ -600,7 +575,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
         goto fail;
     }
 
-    /* ---- 8. Initialize the device state machine ---- */
+    /* ---- 6. Initialize the device state machine ---- */
     mybot_device_lifecycle_callbacks_t dev_cbs;
     memset(&dev_cbs, 0, sizeof(dev_cbs));
     dev_cbs.on_pair_code = dev_on_pair_code;
@@ -614,7 +589,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
         goto fail;
     }
 
-    /* ---- 9. Create the MPQ and run its loop in a dedicated thread ----
+    /* ---- 7. Create the MPQ and run its loop in a dedicated thread ----
      * Use aosl_mpq_create() instead of aosl_main_start(): the latter
      * registers an atexit() hook that re-runs aosl_main_exit_wait() after
      * main() returns, which aborts once aosl_dtor() has finalized AOSL.
@@ -627,7 +602,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
         goto fail;
     }
 
-    /* ---- 10. Create the device-state MPQ ----
+    /* ---- 8. Create the device-state MPQ ----
      * Dedicated thread: mybot_device_lifecycle_tick() does blocking HTTP polling that
      * must not delay the real-time audio timers. */
     s_app.state_mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MPQ_STACK_SIZE, 1000, "state_mpq",
@@ -637,10 +612,108 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
         goto fail;
     }
 
-    AOSL_LOG_INF("app started");
     return 0;
 
 fail:
+    return -1;
+}
+
+static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, uintptr_t argc,
+                              uintptr_t argv[]) {
+    (void)queued_ts;
+    (void)robj;
+    if (argc != 1) {
+        return;
+    }
+
+    mybot_wifi_provisioning_state_t wifi_state = (mybot_wifi_provisioning_state_t)argv[0];
+    if (wifi_state == MYBOT_WIFI_PROVISIONING_STATE_FAILED) {
+        if (aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING,
+                                MYBOT_APP_STATE_FAILED) == MYBOT_APP_STATE_WIFI_PROVISIONING) {
+            AOSL_LOG_ERR("wifi provisioning failed");
+            aosl_atomic_set(&s_app.running, false);
+        }
+        return;
+    }
+
+    if (wifi_state != MYBOT_WIFI_PROVISIONING_STATE_CONNECTED ||
+        aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING,
+                            MYBOT_APP_STATE_STARTING_SERVICES) !=
+            MYBOT_APP_STATE_WIFI_PROVISIONING) {
+        return;
+    }
+
+    if (start_services() < 0) {
+        if (aosl_atomic_read(&s_app.state) != MYBOT_APP_STATE_STOPPING) {
+            aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_FAILED);
+            aosl_atomic_set(&s_app.running, false);
+        }
+        return;
+    }
+
+    aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_STARTING_SERVICES, MYBOT_APP_STATE_READY);
+}
+
+static void on_wifi_state_changed(mybot_wifi_provisioning_state_t state, void *user_data) {
+    (void)user_data;
+    if (aosl_atomic_read(&s_app.state) != MYBOT_APP_STATE_WIFI_PROVISIONING) {
+        return;
+    }
+
+    if (aosl_mpq_queue(s_app.startup_mpq, AOSL_MPQ_INVALID, AOSL_REF_INVALID, "handle_wifi_state",
+                       handle_wifi_state, 1, (uintptr_t)state) < 0) {
+        AOSL_LOG_ERR("failed to queue wifi state transition");
+        if (aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING,
+                                MYBOT_APP_STATE_FAILED) == MYBOT_APP_STATE_WIFI_PROVISIONING) {
+            aosl_atomic_set(&s_app.running, false);
+        }
+    }
+}
+
+/* ----------------------------------------------------------
+ * Public API
+ * ---------------------------------------------------------- */
+
+int mybot_app_start(const mybot_app_config_t *cfg) {
+    if (!cfg) {
+        return -1;
+    }
+
+    memset(&s_app, 0, sizeof(s_app));
+    memcpy(&s_app.config, cfg, sizeof(s_app.config));
+    aosl_atomic_set(&s_app.running, true);
+    aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_STOPPED);
+    s_app.startup_mpq = AOSL_MPQ_INVALID;
+    s_app.mpq = AOSL_MPQ_INVALID;
+    s_app.send_timer = AOSL_MPQ_TIMER_INVALID;
+    s_app.cap_mpq = AOSL_MPQ_INVALID;
+    s_app.cap_timer = AOSL_MPQ_TIMER_INVALID;
+    s_app.pb_mpq = AOSL_MPQ_INVALID;
+    s_app.pb_timer = AOSL_MPQ_TIMER_INVALID;
+    s_app.state_mpq = AOSL_MPQ_INVALID;
+    s_app.state_timer = AOSL_MPQ_TIMER_INVALID;
+
+    aosl_ctor();
+    s_app.aosl_active = true;
+
+    s_app.startup_mpq =
+        aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MPQ_STACK_SIZE, 32, "startup_mpq", NULL, NULL, NULL);
+    if (aosl_mpq_invalid(s_app.startup_mpq)) {
+        AOSL_LOG_ERR("startup_mpq create failed");
+        goto fail;
+    }
+
+    aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING);
+    if (mybot_wifi_provisioning_init(s_app.config.device_id, on_wifi_state_changed, NULL) < 0) {
+        AOSL_LOG_ERR("wifi provisioning init failed");
+        goto fail;
+    }
+    s_app.wifi_provisioning_active = true;
+    AOSL_LOG_INF("wifi provisioning started");
+    return 0;
+
+fail:
+    aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_FAILED);
     mybot_app_stop();
     return -1;
 }
@@ -649,19 +722,32 @@ bool mybot_app_is_running(void) {
     return aosl_atomic_read(&s_app.running) != 0;
 }
 
+mybot_app_state_t mybot_app_get_state(void) {
+    return (mybot_app_state_t)aosl_atomic_read(&s_app.state);
+}
+
 void mybot_app_request_exit(void) {
     aosl_atomic_set(&s_app.running, false);
 }
 
 void mybot_app_start_conversation(void) {
+    if (mybot_app_get_state() != MYBOT_APP_STATE_READY) {
+        return;
+    }
     mybot_device_lifecycle_request_start();
 }
 
 void mybot_app_stop_conversation(void) {
+    if (mybot_app_get_state() != MYBOT_APP_STATE_READY) {
+        return;
+    }
     mybot_device_lifecycle_request_stop();
 }
 
 void mybot_app_pair(void) {
+    if (mybot_app_get_state() != MYBOT_APP_STATE_READY) {
+        return;
+    }
     mybot_device_lifecycle_request_pair();
 }
 
@@ -673,11 +759,19 @@ void mybot_app_stop(void) {
 
     AOSL_LOG_INF("stopping app...");
 
-    /* ---- 1. Signal workers to stop ----
+    /* ---- 1. Block further startup transitions and signal workers to stop ----
      * Set BEFORE any AOSL/audio teardown so the MPQ timer callbacks return
      * early. The ALSA read/write paths are poll-with-timeout, so each worker
      * exits within a bounded time even when the device yields no data. */
+    aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_STOPPING);
     aosl_atomic_set(&s_app.running, false);
+
+    /* A Wi-Fi event may already be running start_services() on this queue.
+     * Joining it before teardown serializes partial startup with cleanup. */
+    if (!aosl_mpq_invalid(s_app.startup_mpq)) {
+        aosl_mpq_destroy_wait(s_app.startup_mpq);
+        s_app.startup_mpq = AOSL_MPQ_INVALID;
+    }
 
     if (s_app.key_service_active) {
         mybot_key_service_deinit();
@@ -781,4 +875,6 @@ void mybot_app_stop(void) {
     if (!rtc_finalized_aosl) {
         aosl_dtor();
     }
+
+    aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_STOPPED);
 }

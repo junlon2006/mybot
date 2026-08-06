@@ -1,6 +1,7 @@
 #include "wifi/mybot_wifi_provisioning.h"
 
 #include "api/aosl.h"
+#include "api/aosl_atomic.h"
 #include "hal/aosl_hal_time.h"
 
 #include <assert.h>
@@ -21,6 +22,8 @@ static bool s_emit_async;
 static bool s_emit_thread_active;
 static int s_init_count;
 static int s_destroy_count;
+static aosl_atomic_t s_state_change_count;
+static aosl_atomic_t s_last_state;
 
 static void *emit_initial_event(void *arg) {
     (void)arg;
@@ -56,6 +59,12 @@ static void fake_destroy(void *ctx) {
     s_destroy_count++;
 }
 
+static void on_state_changed(mybot_wifi_provisioning_state_t state, void *user_data) {
+    assert(user_data == &s_state_change_count);
+    aosl_atomic_set(&s_last_state, state);
+    aosl_atomic_inc(&s_state_change_count);
+}
+
 int main(void) {
     const mybot_wifi_provisioning_ops_t incomplete_ops = {0};
     const mybot_wifi_provisioning_ops_t fake_ops = {
@@ -68,30 +77,45 @@ int main(void) {
     assert(mybot_wifi_provisioning_register(NULL) < 0);
     assert(mybot_wifi_provisioning_register(&incomplete_ops) < 0);
     assert(mybot_wifi_provisioning_register(&fake_ops) == 0);
-    assert(mybot_wifi_provisioning_init(NULL) < 0);
+    assert(mybot_wifi_provisioning_init(NULL, on_state_changed, &s_state_change_count) < 0);
 
     s_initial_event = MYBOT_WIFI_PROVISIONING_EVENT_STA_CONNECTED;
-    assert(mybot_wifi_provisioning_init("device-001") == 0);
+    assert(mybot_wifi_provisioning_init("device-001", on_state_changed, &s_state_change_count) ==
+           0);
     assert(s_init_count == 1);
-    assert(mybot_wifi_provisioning_is_connected());
+    assert(mybot_wifi_provisioning_get_state() == MYBOT_WIFI_PROVISIONING_STATE_CONNECTED);
+    assert(aosl_atomic_read(&s_state_change_count) == 1);
+    assert(aosl_atomic_read(&s_last_state) == MYBOT_WIFI_PROVISIONING_STATE_CONNECTED);
     assert(mybot_wifi_provisioning_register(&fake_ops) < 0);
 
     s_fake.emit(MYBOT_WIFI_PROVISIONING_EVENT_STA_DISCONNECTED, s_fake.user_data);
-    assert(!mybot_wifi_provisioning_is_connected());
+    assert(mybot_wifi_provisioning_get_state() == MYBOT_WIFI_PROVISIONING_STATE_DISCONNECTED);
     s_fake.emit(MYBOT_WIFI_PROVISIONING_EVENT_STA_CONNECTED, s_fake.user_data);
-    assert(mybot_wifi_provisioning_is_connected());
+    assert(mybot_wifi_provisioning_get_state() == MYBOT_WIFI_PROVISIONING_STATE_CONNECTED);
 
     mybot_wifi_provisioning_deinit();
     mybot_wifi_provisioning_deinit();
     assert(s_destroy_count == 1);
-    assert(!mybot_wifi_provisioning_is_connected());
+    assert(mybot_wifi_provisioning_get_state() == MYBOT_WIFI_PROVISIONING_STATE_IDLE);
 
     s_initial_event = MYBOT_WIFI_PROVISIONING_EVENT_FAILED;
     s_emit_async = true;
-    assert(mybot_wifi_provisioning_init("device-001") < 0);
+    intptr_t previous_state_changes = aosl_atomic_read(&s_state_change_count);
+    assert(mybot_wifi_provisioning_init("device-001", on_state_changed, &s_state_change_count) ==
+           0);
     assert(s_init_count == 2);
+    assert(mybot_wifi_provisioning_get_state() == MYBOT_WIFI_PROVISIONING_STATE_PROVISIONING);
+
+    for (int i = 0; i < 1000 && aosl_atomic_read(&s_state_change_count) == previous_state_changes;
+         ++i) {
+        aosl_hal_msleep(1);
+    }
+    assert(mybot_wifi_provisioning_get_state() == MYBOT_WIFI_PROVISIONING_STATE_FAILED);
+    assert(aosl_atomic_read(&s_state_change_count) == previous_state_changes + 1);
+    assert(aosl_atomic_read(&s_last_state) == MYBOT_WIFI_PROVISIONING_STATE_FAILED);
+
+    mybot_wifi_provisioning_deinit();
     assert(s_destroy_count == 2);
-    assert(!mybot_wifi_provisioning_is_connected());
 
     aosl_dtor();
     return 0;
