@@ -21,7 +21,8 @@
 - [ ] Run provisioning, pairing, bidirectional audio, hangup, shutdown, and reboot on real hardware.
 - [ ] Test network loss, audio-device loss, storage failure, and partial startup failure.
 - [ ] Confirm logs and release archives contain no credentials.
-- [ ] Review HTTP-only transport risk; do not approve production deployment without protection.
+- [ ] Confirm HTTPS certificate-chain, hostname, SNI, timeout and trust-store behavior on hardware.
+- [ ] Confirm `MYBOT_ALLOW_INSECURE_HTTP=OFF` in every release configuration.
 
 ## Publish
 
@@ -29,4 +30,3 @@
 - [ ] Attach source and binary artifacts only after third-party authorization review.
 - [ ] Include `LICENSE`, `THIRD_PARTY_NOTICES.md`, changelog, and checksums.
 - [ ] Mark the GitHub release as a prerelease and list known limitations.
-

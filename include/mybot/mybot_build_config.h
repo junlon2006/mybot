@@ -55,4 +55,24 @@
 #error "MYBOT_SHOW_TRANSCRIPT must be 0 or 1"
 #endif
 
+#ifndef MYBOT_ENABLE_HTTPS
+#define MYBOT_ENABLE_HTTPS 1 /* accept HTTPS using a registered platform TLS transport */
+#endif
+
+#if MYBOT_ENABLE_HTTPS != 0 && MYBOT_ENABLE_HTTPS != 1
+#error "MYBOT_ENABLE_HTTPS must be 0 or 1"
+#endif
+
+#ifndef MYBOT_ALLOW_INSECURE_HTTP
+#define MYBOT_ALLOW_INSECURE_HTTP 0 /* development only: allow plaintext service traffic */
+#endif
+
+#if MYBOT_ALLOW_INSECURE_HTTP != 0 && MYBOT_ALLOW_INSECURE_HTTP != 1
+#error "MYBOT_ALLOW_INSECURE_HTTP must be 0 or 1"
+#endif
+
+#if !MYBOT_ENABLE_HTTPS && !MYBOT_ALLOW_INSECURE_HTTP
+#error "Enable HTTPS or explicitly allow insecure HTTP"
+#endif
+
 #endif /* MYBOT_BUILD_CONFIG_H_ */

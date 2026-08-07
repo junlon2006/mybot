@@ -7,6 +7,7 @@ between release candidates.
 
 ### Added
 
+- HTTPS-by-default device-service transport with a platform TLS contract and Linux OpenSSL backend.
 - Cross-platform porting guide, release checklist, security and contribution policies.
 - CI coverage for Linux builds, tests, public headers, and external CMake host integration.
 
@@ -22,6 +23,6 @@ between release candidates.
 
 ### Known limitations
 
-- Device-service transport is HTTP-only and is unsuitable for untrusted networks.
+- MCU ports must provide a certificate-validating TLS backend and CA trust store.
 - API/ABI is not stable; the runtime uses singleton registries and process-global dependencies.
 - Bundled Agora RTSA artifacts are x86_64 Linux only and require separate license verification.

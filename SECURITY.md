@@ -14,9 +14,14 @@ reproduction steps, and suggested mitigations. Never include live credentials or
 This community project has no response SLA. Disclosure should be coordinated after a fix or
 mitigation is available.
 
+## Transport security
+
+- HTTPS is enabled by default. Platform TLS backends must validate the certificate chain and
+  hostname, send SNI, and use a maintained trust store.
+- Plain HTTP is rejected unless `MYBOT_ALLOW_INSECURE_HTTP=ON` is explicitly compiled for an
+  isolated development environment. It must not be enabled in device or release builds.
+
 ## Known security limitations
 
-- The built-in device-service client supports plain HTTP only.
 - The Linux file backend is not a production secret store.
 - Third-party security advisories and licenses must be reviewed separately.
-

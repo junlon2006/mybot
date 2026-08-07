@@ -11,6 +11,8 @@
 - 本地 ASR 唤醒词为可选平台后端，默认关闭；唤醒行为与物理按键启动会话一致。
 - LCD 接收配网、配对码、就绪和会话中等语义状态，由平台决定具体显示方式。
 - RTC 实现专用于 Agora RTSA，不提供其他 RTC 协议适配层。
+- 设备服务默认只接受 HTTPS。Linux 使用 OpenSSL 和系统 CA；MCU 由平台接入 mbedTLS
+  或芯片厂商 TLS，并必须验证证书链和服务端主机名。
 - 设备服务端不属于本仓库；运行示例需要兼容的服务地址。
 
 ## 仓库结构
@@ -35,11 +37,11 @@ mybot/
 
 ## Linux 快速开始
 
-环境要求：Linux x86_64、CMake 3.16+、C99 编译器、ALSA 开发包。仓库当前附带的 Agora RTSA 静态库也是 x86_64 Linux 版本。
+环境要求：Linux x86_64、CMake 3.16+、C99 编译器、ALSA 和 OpenSSL 开发包。仓库当前附带的 Agora RTSA 静态库也是 x86_64 Linux 版本。
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y build-essential cmake libasound2-dev
+sudo apt-get install -y build-essential cmake libasound2-dev libssl-dev
 cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=OFF
 cmake --build build -j
 ctest --test-dir build --output-on-failure
@@ -49,7 +51,7 @@ ctest --test-dir build --output-on-failure
 
 ```bash
 ./build/examples/linux/mybot \
-  --server http://127.0.0.1:3001 \
+  --server https://api.example.com \
   --device-id AG-DEMO-001 \
   --fw-ver 0.1.0-rc.1 \
   --hw-model linux-reference
@@ -71,12 +73,17 @@ set(MYBOT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(MYBOT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(MYBOT_AUDIO_PTIME_MS 60 CACHE STRING "" FORCE)
 set(MYBOT_WAKE_WORDS OFF CACHE BOOL "" FORCE)
+set(MYBOT_ENABLE_HTTPS ON CACHE BOOL "" FORCE)
 
 add_subdirectory(third_party/mybot)
 target_link_libraries(device_firmware PRIVATE mybot::sdk)
 ```
 
-平台必须在 `mybot_app_start()` 之前注册 Wi-Fi、KV、按键、音频采集和音频播放后端。LCD 可选；只有 `MYBOT_WAKE_WORDS=ON` 时才必须注册本地 ASR 后端。完整实现顺序、最小代码、线程约束和验收清单见 [docs/PORTING.md](docs/PORTING.md)。
+平台必须在 `mybot_app_start()` 之前注册 Wi-Fi、KV、按键、音频采集、音频播放和
+HTTPS 传输后端。LCD 可选；只有 `MYBOT_WAKE_WORDS=ON` 时才必须注册本地 ASR 后端。
+Linux 平台自动注册 OpenSSL 后端；其他平台实现
+`mybot_https_transport_ops_t`。完整实现顺序、最小代码、线程约束和验收清单见
+[docs/PORTING.md](docs/PORTING.md)。
 
 最小应用生命周期：
 
@@ -103,6 +110,8 @@ mybot_app_stop();
 | `MYBOT_AI_QOS` | `ON` | Agora AI QoS |
 | `MYBOT_FAST_SEND_MULTIPLIER` | `3` | 快发倍数，只接受 1 到 5 |
 | `MYBOT_SHOW_TRANSCRIPT` | `OFF` | 请求实时转写数据流 |
+| `MYBOT_ENABLE_HTTPS` | `ON` | 启用平台 HTTPS 传输，生产构建应保持开启 |
+| `MYBOT_ALLOW_INSECURE_HTTP` | `OFF` | 仅本地开发：显式允许明文 HTTP |
 | `MYBOT_ENABLE_ASAN` | `OFF` | GCC/Clang 地址消毒器，建议在宿主测试中开启 |
 
 例如：
@@ -115,6 +124,10 @@ cmake -S . -B build-wake \
 ```
 
 Linux 参考平台没有本地 ASR 后端，因此开启 `MYBOT_WAKE_WORDS` 后需要由宿主额外注册后端，否则应用会明确启动失败。
+
+明文 HTTP 不会自动回退。仅在隔离的本地开发环境中，可显式配置
+`-DMYBOT_ENABLE_HTTPS=OFF -DMYBOT_ALLOW_INSECURE_HTTP=ON`。该组合会传输设备凭据和
+RTC 参数的明文，不得用于设备、共享网络或发布构建。
 
 ## 工作流
 

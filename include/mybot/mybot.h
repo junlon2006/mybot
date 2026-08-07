@@ -10,7 +10,7 @@ extern "C" {
 
 /** SDK configuration supplied by the host application. */
 typedef struct {
-    char server_base[128]; /* service base URL */
+    char server_base[128]; /* HTTPS service base URL */
     char device_id[64];    /* unique device identifier */
     char firmware_ver[32]; /* firmware version (optional) */
     char hw_model[32];     /* hardware model (optional) */

@@ -6,6 +6,7 @@
 #include <mybot/platform/mybot_lcd.h>
 #include <mybot/platform/mybot_wake_words.h>
 #include <mybot/platform/mybot_wifi.h>
+#include <mybot/platform/mybot_https_transport.h>
 
 #include "mybot_device_lifecycle.h"
 #include "mybot_ringbuf.h"
@@ -388,7 +389,7 @@ static void dev_on_conversation_start(const mybot_conversation_params_t *params)
     AOSL_LOG_INF("  rtc channel    : %s", params->rtc_channel);
     AOSL_LOG_INF("  rtc uid        : %s", params->rtc_uid);
     AOSL_LOG_INF("  rtc app_id     : %s", params->rtc_app_id);
-    AOSL_LOG_INF("  rtc token      : %s...", params->rtc_token);
+    AOSL_LOG_INF("  rtc token      : %s", params->rtc_token[0] ? "present" : "absent");
 
     /* Save RTC params and join channel */
     strncpy(s_app.rtc_app_id, params->rtc_app_id, sizeof(s_app.rtc_app_id) - 1);
@@ -774,7 +775,27 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
         !memchr(cfg->device_id, '\0', sizeof(cfg->device_id)) ||
         !memchr(cfg->firmware_ver, '\0', sizeof(cfg->firmware_ver)) ||
         !memchr(cfg->hw_model, '\0', sizeof(cfg->hw_model)) || !cfg->server_base[0] ||
-        !cfg->device_id[0] || strncmp(cfg->server_base, "http://", 7) != 0) {
+        !cfg->device_id[0]) {
+        return -1;
+    }
+
+    bool use_https = strncmp(cfg->server_base, "https://", 8) == 0;
+    bool use_http = strncmp(cfg->server_base, "http://", 7) == 0;
+#if MYBOT_ENABLE_HTTPS
+    if (use_https && !mybot_https_transport_is_registered()) {
+        return -1;
+    }
+#else
+    if (use_https) {
+        return -1;
+    }
+#endif
+#if !MYBOT_ALLOW_INSECURE_HTTP
+    if (use_http) {
+        return -1;
+    }
+#endif
+    if (!use_https && !use_http) {
         return -1;
     }
 

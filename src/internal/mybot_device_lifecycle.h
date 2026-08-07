@@ -50,7 +50,7 @@ typedef struct {
  * ---------------------------------------------------------- */
 
 /** Initialize the device state machine.
- *  @param server_base  Server URL (e.g. "http://your-server:3001")
+ *  @param server_base  HTTPS device-service URL.
  *  @param device_id    Unique device identifier (e.g. "AG-A1B2C3")
  *  @param firmware_ver Firmware version string (may be NULL)
  *  @param hw_model     Hardware model string (may be NULL)

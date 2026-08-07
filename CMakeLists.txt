@@ -31,6 +31,13 @@ option(MYBOT_AI_QOS "Enable Agora AI-driven QoS optimization" ON)
 set(MYBOT_FAST_SEND_MULTIPLIER "3" CACHE STRING "Agora fast-send multiplier: 1 through 5")
 set_property(CACHE MYBOT_FAST_SEND_MULTIPLIER PROPERTY STRINGS 1 2 3 4 5)
 option(MYBOT_SHOW_TRANSCRIPT "Receive real-time transcripts over the data stream" OFF)
+option(MYBOT_ENABLE_HTTPS "Enable HTTPS device-service transport" ON)
+option(MYBOT_ALLOW_INSECURE_HTTP "Allow plaintext HTTP for local development" OFF)
+
+if(NOT MYBOT_ENABLE_HTTPS AND NOT MYBOT_ALLOW_INSECURE_HTTP)
+    message(FATAL_ERROR
+        "Enable MYBOT_ENABLE_HTTPS or explicitly set MYBOT_ALLOW_INSECURE_HTTP=ON")
+endif()
 
 if(NOT MYBOT_AUDIO_PTIME_MS MATCHES "^(20|40|60)$")
     message(FATAL_ERROR "MYBOT_AUDIO_PTIME_MS must be 20, 40, or 60")
@@ -89,6 +96,7 @@ add_library(mybot_sdk STATIC
     src/media/mybot_audio.c
     src/media/mybot_wake_words.c
     src/platform/mybot_key.c
+    src/platform/mybot_https_transport.c
     src/platform/mybot_kv_store.c
     src/platform/mybot_lcd.c
     src/platform/mybot_wifi.c
@@ -115,6 +123,8 @@ target_compile_definitions(mybot_sdk PUBLIC
     MYBOT_AI_QOS=$<BOOL:${MYBOT_AI_QOS}>
     MYBOT_FAST_SEND_MULTIPLIER=${MYBOT_FAST_SEND_MULTIPLIER}
     MYBOT_SHOW_TRANSCRIPT=$<BOOL:${MYBOT_SHOW_TRANSCRIPT}>
+    MYBOT_ENABLE_HTTPS=$<BOOL:${MYBOT_ENABLE_HTTPS}>
+    MYBOT_ALLOW_INSECURE_HTTP=$<BOOL:${MYBOT_ALLOW_INSECURE_HTTP}>
 )
 target_link_libraries(mybot_sdk PUBLIC aosl agora-rtc-sdk)
 if(UNIX)
