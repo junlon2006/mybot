@@ -16,6 +16,21 @@ static void copy_json_string(const mybot_json_t *object, const char *name, char 
     }
 }
 
+static int copy_required_json_string(const mybot_json_t *object, const char *name,
+                                     char *destination, size_t destination_size) {
+    const char *value = mybot_json_get_string(mybot_json_get_object_item(object, name));
+    if (!value || !value[0] || destination_size == 0) {
+        return -1;
+    }
+
+    size_t len = strlen(value);
+    if (len >= destination_size) {
+        return -1;
+    }
+    memcpy(destination, value, len + 1);
+    return 0;
+}
+
 static void copy_json_integer(const mybot_json_t *object, const char *name, int *destination) {
     int64_t value;
     if (mybot_json_get_integer(mybot_json_get_object_item(object, name), &value)) {
@@ -329,7 +344,13 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
         return -1;
     }
 
-    copy_json_string(data, "conversation_id", resp->conversation_id, sizeof(resp->conversation_id));
+    if (copy_required_json_string(data, "conversation_id", resp->conversation_id,
+                                  sizeof(resp->conversation_id)) < 0) {
+        AOSL_LOG_ERR("conversation response missing or invalid conversation_id");
+        mybot_json_delete(root);
+        mybot_http_client_response_free(&raw);
+        return -1;
+    }
 
     /* Parse nested "rtc":{...} block — required to join RTC. */
     if (parse_rtc_block(data, resp) < 0) {

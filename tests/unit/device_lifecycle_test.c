@@ -19,6 +19,8 @@ static char s_binding_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
 static int s_pair_result;
 static int s_pair_call_count;
 static int s_start_result;
+static bool s_start_missing_conversation_id;
+static int s_start_call_count;
 static int s_stop_call_count;
 static int s_conversation_start_count;
 static int s_conversation_stop_count;
@@ -113,11 +115,14 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
     (void)device_id;
     (void)device_token;
     (void)body_params;
+    s_start_call_count++;
     if (s_start_result != 0) {
         return s_start_result;
     }
     memset(resp, 0, sizeof(*resp));
-    strcpy(resp->conversation_id, "conversation-1");
+    if (!s_start_missing_conversation_id) {
+        strcpy(resp->conversation_id, "conversation-1");
+    }
     strcpy(resp->rtc_app_id, "rtc-app-id");
     strcpy(resp->rtc_channel, "rtc-channel");
     strcpy(resp->rtc_uid, "rtc-uid");
@@ -221,10 +226,20 @@ int main(void) {
         .on_conversation_stop = on_conversation_stop,
     };
     assert(mybot_device_lifecycle_init("http://server", "device-1", NULL, NULL, &callbacks) == 0);
+
+    s_start_missing_conversation_id = true;
+    mybot_device_lifecycle_request_start();
+    mybot_device_lifecycle_tick();
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_RUNTIME);
+    assert(s_conversation_start_count == 0);
+    assert(s_start_call_count == 1);
+
+    s_start_missing_conversation_id = false;
     mybot_device_lifecycle_request_start();
     mybot_device_lifecycle_tick();
     assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION);
     assert(s_conversation_start_count == 1);
+    assert(s_start_call_count == 2);
 
     mybot_device_lifecycle_shutdown();
     assert(s_stop_call_count == 1);

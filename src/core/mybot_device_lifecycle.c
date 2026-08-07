@@ -309,6 +309,12 @@ static void action_start_conversation(void) {
         return;
     }
 
+    if (!memchr(resp.conversation_id, '\0', sizeof(resp.conversation_id)) ||
+        resp.conversation_id[0] == '\0') {
+        AOSL_LOG_ERR("start conversation returned an invalid conversation_id");
+        return;
+    }
+
     strncpy(s_state.conversation_id, resp.conversation_id, sizeof(s_state.conversation_id) - 1);
 
     AOSL_LOG_INF("conversation started: %s, channel=%s, uid=%s", s_state.conversation_id,
@@ -334,6 +340,11 @@ static void action_start_conversation(void) {
  * ---------------------------------------------------------- */
 static void action_stop_conversation(const char *reason) {
     if (!s_state.conversation_id[0]) {
+        AOSL_LOG_ERR("active conversation has no conversation_id; completing local cleanup");
+        if (s_state.cbs.on_conversation_stop) {
+            s_state.cbs.on_conversation_stop();
+        }
+        set_state(MYBOT_DEVICE_STATE_RUNTIME);
         return;
     }
 

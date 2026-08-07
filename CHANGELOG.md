@@ -5,6 +5,11 @@ between release candidates.
 
 ## [Unreleased]
 
+### Fixed
+
+- Reject conversation-start responses without a valid conversation ID before entering the active
+  conversation state.
+
 ### Added
 
 - HTTPS-by-default device-service transport with a platform TLS contract and Linux OpenSSL backend.
