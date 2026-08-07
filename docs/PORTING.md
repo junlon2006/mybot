@@ -1,5 +1,7 @@
 # Porting mybot to a new platform
 
+> [English](PORTING.md) | [简体中文](PORTING.zh-CN.md)
+
 This document defines the platform contract for mybot 0.1.0-rc.1. Public APIs may change before
 1.0. Platform code must include only headers under `include/mybot` and link `mybot::sdk`.
 

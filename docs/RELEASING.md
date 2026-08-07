@@ -1,5 +1,7 @@
 # Release checklist
 
+> [English](RELEASING.md) | [简体中文](RELEASING.zh-CN.md)
+
 ## Prepare
 
 - [ ] Choose a semantic prerelease version and update `CMakeLists.txt`,
