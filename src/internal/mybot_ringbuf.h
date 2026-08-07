@@ -13,6 +13,11 @@ extern "C" {
  *
  * Thread-safe only when used in SPSC mode (one writer, one reader).
  * All operations are non-blocking (no locks).
+ *
+ * Memory ordering: the payload is made visible to the peer before the index is
+ * published (release) and the peer observes the published index before touching
+ * the payload (acquire). This is guaranteed via AOSL barriers and holds on
+ * weak-memory platforms.
  */
 
 typedef void *mybot_ringbuf_t;
