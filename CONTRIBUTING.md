@@ -2,6 +2,8 @@
 
 Contributions are welcome for the 0.1 release-candidate series. Public APIs may still change.
 
+> [English](CONTRIBUTING.md) | [简体中文](CONTRIBUTING.zh-CN.md)
+
 ## Workflow
 
 1. Discuss large API, platform, dependency, or protocol changes in an issue first.

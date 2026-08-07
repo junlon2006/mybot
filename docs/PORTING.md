@@ -3,6 +3,10 @@
 This document defines the platform contract for mybot 0.1.0-rc.1. Public APIs may change before
 1.0. Platform code must include only headers under `include/mybot` and link `mybot::sdk`.
 
+mybot is designed to be portable to virtually any platform — Linux, an RTOS, or bare metal — as
+long as AOSL has a `CONFIG_PLATFORM` port for it and an Agora RTSA library exists for the target
+ABI. The contract below is identical regardless of the host operating system or silicon vendor.
+
 ## Step 1: Verify prerequisites
 
 Provide a C99 compiler, CMake 3.16+, an AOSL `CONFIG_PLATFORM` port, and an Agora RTSA header and

@@ -23,6 +23,10 @@ between release candidates.
 - HTTPS-by-default device-service transport with a platform TLS contract and Linux OpenSSL backend.
 - Cross-platform porting guide, release checklist, security and contribution policies.
 - CI coverage for Linux builds, tests, public headers, and external CMake host integration.
+- Bilingual (English / Simplified Chinese) README with an AI-conversation product overview and
+  layered architecture diagrams.
+- Bilingual (English / Simplified Chinese) community docs: contributing, support, security, and
+  code of conduct.
 
 ## [0.1.0-rc.1] - Unreleased
 
