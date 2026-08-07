@@ -286,7 +286,7 @@ static const mybot_audio_capture_ops_t g_alsa_capture_ops = {
     .destroy = alsa_capture_destroy,
 };
 
-void mybot_audio_platform_register_alsa_capture(void) {
+void linux_audio_platform_register_alsa_capture(void) {
     mybot_audio_device_register_capture(&g_alsa_capture_ops);
     AOSL_LOG_INF("platform registered");
 }

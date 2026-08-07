@@ -7,7 +7,7 @@
 typedef struct {
     mybot_wifi_provisioning_event_handler_t emit;
     void *user_data;
-} mybot_wifi_host_network_ctx_t;
+} linux_wifi_host_network_ctx_t;
 
 static int wifi_host_network_init(void **out_ctx, const char *device_id,
                                   mybot_wifi_provisioning_event_handler_t emit, void *user_data) {
@@ -15,7 +15,7 @@ static int wifi_host_network_init(void **out_ctx, const char *device_id,
         return -1;
     }
 
-    mybot_wifi_host_network_ctx_t *ctx = calloc(1, sizeof(*ctx));
+    linux_wifi_host_network_ctx_t *ctx = calloc(1, sizeof(*ctx));
     if (!ctx) {
         return -1;
     }
@@ -39,7 +39,7 @@ static const mybot_wifi_provisioning_ops_t s_wifi_host_network_ops = {
     .destroy = wifi_host_network_destroy,
 };
 
-void mybot_wifi_platform_register_host_network(void) {
+void linux_wifi_platform_register_host_network(void) {
     if (mybot_wifi_provisioning_register(&s_wifi_host_network_ops) < 0) {
         AOSL_LOG_ERR("wifi provisioning platform registration failed");
     }

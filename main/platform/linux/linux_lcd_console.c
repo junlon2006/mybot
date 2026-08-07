@@ -12,7 +12,7 @@
 
 typedef struct {
     bool color_enabled;
-} mybot_lcd_console_ctx_t;
+} linux_lcd_console_ctx_t;
 
 static bool console_color_enabled(void) {
     if (getenv("NO_COLOR") != NULL) {
@@ -62,7 +62,7 @@ static int lcd_console_init(void **out_ctx) {
         return -1;
     }
 
-    mybot_lcd_console_ctx_t *ctx = calloc(1, sizeof(*ctx));
+    linux_lcd_console_ctx_t *ctx = calloc(1, sizeof(*ctx));
     if (!ctx) {
         return -1;
     }
@@ -77,7 +77,7 @@ static int lcd_console_render(void *opaque, const mybot_lcd_content_t *content) 
         return -1;
     }
 
-    mybot_lcd_console_ctx_t *ctx = opaque;
+    linux_lcd_console_ctx_t *ctx = opaque;
     const char *color = ctx->color_enabled ? ANSI_BRIGHT_RED : "";
     const char *reset = ctx->color_enabled ? ANSI_RESET : "";
 
@@ -101,7 +101,7 @@ static const mybot_lcd_ops_t s_lcd_console_ops = {
     .destroy = lcd_console_destroy,
 };
 
-void mybot_lcd_platform_register_console(void) {
+void linux_lcd_platform_register_console(void) {
     if (mybot_lcd_register(&s_lcd_console_ops) < 0) {
         AOSL_LOG_ERR("LCD console platform registration failed");
     }

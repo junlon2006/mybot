@@ -20,7 +20,7 @@
 
 typedef struct {
     char root[PATH_MAX];
-} mybot_kv_store_file_ctx_t;
+} linux_kv_store_file_ctx_t;
 
 static bool valid_key(const char *key) {
     if (!key || !key[0]) {
@@ -35,7 +35,7 @@ static bool valid_key(const char *key) {
     return true;
 }
 
-static int make_path(const mybot_kv_store_file_ctx_t *ctx, const char *key, const char *suffix,
+static int make_path(const linux_kv_store_file_ctx_t *ctx, const char *key, const char *suffix,
                      char *path, size_t path_size) {
     if (!valid_key(key)) {
         return -1;
@@ -49,7 +49,7 @@ static int kv_store_file_init(void **out_ctx) {
         return -1;
     }
 
-    mybot_kv_store_file_ctx_t *ctx = calloc(1, sizeof(*ctx));
+    linux_kv_store_file_ctx_t *ctx = calloc(1, sizeof(*ctx));
     if (!ctx) {
         return -1;
     }
@@ -82,7 +82,7 @@ static int kv_store_file_init(void **out_ctx) {
 
 static int kv_store_file_get(void *opaque, const char *key, void *value, size_t capacity,
                              size_t *out_len) {
-    mybot_kv_store_file_ctx_t *ctx = opaque;
+    linux_kv_store_file_ctx_t *ctx = opaque;
     char path[PATH_MAX];
     if (make_path(ctx, key, NULL, path, sizeof(path)) < 0) {
         return -1;
@@ -137,7 +137,7 @@ static int write_all(int fd, const void *data, size_t len) {
 }
 
 static int kv_store_file_set(void *opaque, const char *key, const void *value, size_t len) {
-    mybot_kv_store_file_ctx_t *ctx = opaque;
+    linux_kv_store_file_ctx_t *ctx = opaque;
     char path[PATH_MAX];
     char temp_path[PATH_MAX];
     if (make_path(ctx, key, NULL, path, sizeof(path)) < 0 ||
@@ -167,7 +167,7 @@ static int kv_store_file_set(void *opaque, const char *key, const void *value, s
 }
 
 static int kv_store_file_erase(void *opaque, const char *key) {
-    mybot_kv_store_file_ctx_t *ctx = opaque;
+    linux_kv_store_file_ctx_t *ctx = opaque;
     char path[PATH_MAX];
     if (make_path(ctx, key, NULL, path, sizeof(path)) < 0) {
         return -1;
@@ -188,7 +188,7 @@ static const mybot_kv_store_ops_t s_kv_store_file_ops = {
     .destroy = kv_store_file_destroy,
 };
 
-void mybot_kv_store_platform_register_file(void) {
+void linux_kv_store_platform_register_file(void) {
     if (mybot_kv_store_register(&s_kv_store_file_ops) < 0) {
         AOSL_LOG_ERR("kv store platform registration failed");
     }

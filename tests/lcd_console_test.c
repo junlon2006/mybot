@@ -5,13 +5,13 @@
 
 #include <assert.h>
 
-void mybot_lcd_platform_register_console(void);
+void linux_lcd_platform_register_console(void);
 
 int main(void) {
     aosl_ctor();
     aosl_set_log_level(AOSL_LOG_INFO);
 
-    mybot_lcd_platform_register_console();
+    linux_lcd_platform_register_console();
     assert(mybot_lcd_is_registered());
     assert(mybot_lcd_init() == 0);
 

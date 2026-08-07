@@ -31,12 +31,12 @@ mybot/
 │   │   └── mybot_rtc_session.c           # Agora RTC 会话实现
 │   └── platform/
 │       └── linux/
-│           ├── mybot_main.c              # Linux 入口、CLI 与信号处理
-│           ├── mybot_audio_*_alsa.c      # ALSA 音频后端
-│           ├── mybot_kv_store_file.c     # 文件型键值存储后端
-│           ├── mybot_key_stdin.c         # stdin 按键后端
-│           ├── mybot_lcd_console.c       # 高亮红色控制台 LCD 模拟后端
-│           └── mybot_wifi_host_network.c # Linux 宿主网络后端
+│           ├── linux_main.c              # Linux 入口、CLI 与信号处理
+│           ├── linux_audio_*_alsa.c      # ALSA 音频后端
+│           ├── linux_kv_store_file.c     # 文件型键值存储后端
+│           ├── linux_key_stdin.c         # stdin 按键后端
+│           ├── linux_lcd_console.c       # 高亮红色控制台 LCD 模拟后端
+│           └── linux_wifi_host_network.c # Linux 宿主网络后端
 └── components/
     ├── aosl/                              # AOSL 跨平台系统库
     ├── agora_rtsa_sdk/                    # Agora RTSA SDK

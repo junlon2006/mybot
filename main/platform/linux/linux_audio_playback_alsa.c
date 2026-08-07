@@ -238,7 +238,7 @@ static const mybot_audio_playback_ops_t g_alsa_playback_ops = {
     .destroy = alsa_playback_destroy,
 };
 
-void mybot_audio_platform_register_alsa_playback(void) {
+void linux_audio_platform_register_alsa_playback(void) {
     mybot_audio_device_register_playback(&g_alsa_playback_ops);
     AOSL_LOG_INF("platform registered");
 }

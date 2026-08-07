@@ -18,9 +18,9 @@ typedef struct {
     void *user_data;
     aosl_mpq_t mpq;
     bool stdin_registered;
-} mybot_key_stdin_ctx_t;
+} linux_key_stdin_ctx_t;
 
-static void key_stdin_detach(mybot_key_stdin_ctx_t *ctx) {
+static void key_stdin_detach(linux_key_stdin_ctx_t *ctx) {
     if (!ctx->stdin_registered) {
         return;
     }
@@ -31,7 +31,7 @@ static void key_stdin_detach(mybot_key_stdin_ctx_t *ctx) {
     }
 }
 
-static void key_stdin_emit_char(mybot_key_stdin_ctx_t *ctx, char ch) {
+static void key_stdin_emit_char(linux_key_stdin_ctx_t *ctx, char ch) {
     switch (ch) {
     case 's':
         ctx->emit(MYBOT_KEY_EVENT_CONVERSATION_START, ctx->user_data);
@@ -64,7 +64,7 @@ static isize_t key_stdin_check_packet(const void *data, size_t len, uintptr_t ar
 
 static void key_stdin_on_data(void *data, size_t len, uintptr_t argc, uintptr_t argv[]) {
     (void)argc;
-    mybot_key_stdin_ctx_t *ctx = (mybot_key_stdin_ctx_t *)argv[0];
+    linux_key_stdin_ctx_t *ctx = (linux_key_stdin_ctx_t *)argv[0];
     if (len == 0) {
         return;
     }
@@ -78,7 +78,7 @@ static void key_stdin_on_data(void *data, size_t len, uintptr_t argc, uintptr_t 
 static void key_stdin_on_event(aosl_fd_t fd, int event, uintptr_t argc, uintptr_t argv[]) {
     (void)fd;
     (void)argc;
-    mybot_key_stdin_ctx_t *ctx = (mybot_key_stdin_ctx_t *)argv[0];
+    linux_key_stdin_ctx_t *ctx = (linux_key_stdin_ctx_t *)argv[0];
     if (event == AOSL_IOFD_HUP || event < 0) {
         ctx->stdin_registered = false;
         AOSL_LOG_WRN("[KEY] stdin event source closed (event=%d)", event);
@@ -86,7 +86,7 @@ static void key_stdin_on_event(aosl_fd_t fd, int event, uintptr_t argc, uintptr_
 }
 
 static int key_stdin_mpq_init(void *arg) {
-    mybot_key_stdin_ctx_t *ctx = arg;
+    linux_key_stdin_ctx_t *ctx = arg;
     if (aosl_mpq_add_fd(STDIN_FILENO, KEY_STDIN_READ_BUFFER_SIZE, AOSL_DEFAULT_READ_FN, NULL,
                         key_stdin_check_packet, key_stdin_on_data, key_stdin_on_event, 1,
                         (uintptr_t)ctx) < 0) {
@@ -107,7 +107,7 @@ static int key_stdin_init(void **out_ctx, mybot_key_event_handler_t emit, void *
         return -1;
     }
 
-    mybot_key_stdin_ctx_t *ctx = calloc(1, sizeof(*ctx));
+    linux_key_stdin_ctx_t *ctx = calloc(1, sizeof(*ctx));
     if (!ctx) {
         return -1;
     }
@@ -127,7 +127,7 @@ static int key_stdin_init(void **out_ctx, mybot_key_event_handler_t emit, void *
 }
 
 static void key_stdin_destroy(void *opaque) {
-    mybot_key_stdin_ctx_t *ctx = opaque;
+    linux_key_stdin_ctx_t *ctx = opaque;
     aosl_mpq_destroy_wait(ctx->mpq);
     free(ctx);
 }
@@ -138,7 +138,7 @@ static const mybot_key_service_ops_t s_key_stdin_ops = {
     .destroy = key_stdin_destroy,
 };
 
-void mybot_key_platform_register_stdin(void) {
+void linux_key_platform_register_stdin(void) {
     if (mybot_key_service_register(&s_key_stdin_ops) < 0) {
         AOSL_LOG_ERR("key platform registration failed");
     }

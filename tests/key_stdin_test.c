@@ -8,7 +8,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-void mybot_key_platform_register_stdin(void);
+void linux_key_platform_register_stdin(void);
 
 static aosl_atomic_t s_event_count;
 static aosl_atomic_t s_last_event;
@@ -35,7 +35,7 @@ int main(void) {
     close(pipe_fds[0]);
 
     aosl_ctor();
-    mybot_key_platform_register_stdin();
+    linux_key_platform_register_stdin();
     assert(mybot_key_service_init(on_key, &s_event_count) == 0);
 
     assert(write(pipe_fds[1], "p", 1) == 1);

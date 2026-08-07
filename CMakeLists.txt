@@ -37,24 +37,24 @@ set_target_properties(agora-rtc-sdk PROPERTIES
 # mybot executable
 # ------------------------------------------------------------
 set(MYBOT_SRC
-    main/platform/linux/mybot_main.c
+    main/platform/linux/linux_main.c
     main/mybot_app.c
     main/wifi/mybot_wifi_provisioning.c
-    main/platform/linux/mybot_wifi_host_network.c
+    main/platform/linux/linux_wifi_host_network.c
     main/storage/mybot_kv_store.c
-    main/platform/linux/mybot_kv_store_file.c
+    main/platform/linux/linux_kv_store_file.c
     main/key_service/mybot_key_service.c
     main/lcd/mybot_lcd.c
     main/wake_words/mybot_wake_words.c
-    main/platform/linux/mybot_lcd_console.c
-    main/platform/linux/mybot_key_stdin.c
+    main/platform/linux/linux_lcd_console.c
+    main/platform/linux/linux_key_stdin.c
     components/ringbuf/mybot_ringbuf.c
     components/http_client/mybot_http_client.c
     components/json/mybot_json.c
     main/device/mybot_device_client.c
     main/audio/mybot_audio_device.c
-    main/platform/linux/mybot_audio_capture_alsa.c
-    main/platform/linux/mybot_audio_playback_alsa.c
+    main/platform/linux/linux_audio_capture_alsa.c
+    main/platform/linux/linux_audio_playback_alsa.c
     main/rtc/mybot_rtc_session.c
     main/device/mybot_device_lifecycle.c
 )
@@ -161,7 +161,7 @@ if(BUILD_TESTING)
     add_executable(mybot_key_stdin_test
         tests/key_stdin_test.c
         main/key_service/mybot_key_service.c
-        main/platform/linux/mybot_key_stdin.c
+        main/platform/linux/linux_key_stdin.c
     )
     target_include_directories(mybot_key_stdin_test PRIVATE
         ${CMAKE_SOURCE_DIR}/main
@@ -198,7 +198,7 @@ if(BUILD_TESTING)
     add_executable(mybot_lcd_console_test
         tests/lcd_console_test.c
         main/lcd/mybot_lcd.c
-        main/platform/linux/mybot_lcd_console.c
+        main/platform/linux/linux_lcd_console.c
     )
     target_include_directories(mybot_lcd_console_test PRIVATE
         ${CMAKE_SOURCE_DIR}/main
