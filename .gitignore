@@ -1,3 +1,6 @@
 /.mybot-flash/
 /DEVICE_API.md
-build
+/build/
+/build-*/
+/.mybot-kv-store/
+compile_commands.json

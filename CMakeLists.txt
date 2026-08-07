@@ -1,248 +1,148 @@
 cmake_minimum_required(VERSION 3.16)
 project(mybot VERSION 0.1.0 LANGUAGES C)
 
+include(GNUInstallDirs)
+
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-option(MYBOT_ENABLE_ASAN "Enable AddressSanitizer for runtime memory diagnostics" ON)
-if(MYBOT_ENABLE_ASAN)
-    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-        add_compile_options(-fsanitize=address -fno-omit-frame-pointer -g)
-        add_link_options(-fsanitize=address)
-    else()
-        message(FATAL_ERROR "MYBOT_ENABLE_ASAN requires a GNU or Clang compatible compiler")
-    endif()
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(MYBOT_TOP_LEVEL ON)
+else()
+    set(MYBOT_TOP_LEVEL OFF)
 endif()
 
-# ------------------------------------------------------------
-# AOSL subsystem
-# ------------------------------------------------------------
-set(AOSL_DIR ${CMAKE_SOURCE_DIR}/components/aosl)
-set(CMAKE_TOOLCHAIN_FILE ${CMAKE_SOURCE_DIR}/cmake/toolchain_native.cmake)
-set(AOSL_COMPILE_TEST OFF CACHE BOOL "Compile aosl_test")
-add_subdirectory(components/aosl)
-
-# ------------------------------------------------------------
-# Agora RTSA SDK
-# ------------------------------------------------------------
-set(AGORA_SDK_DIR ${CMAKE_SOURCE_DIR}/components/agora_rtsa_sdk/agora_sdk)
-set(AGORA_LIB_DIR ${AGORA_SDK_DIR}/lib/x86_64)
-
-add_library(agora-rtc-sdk STATIC IMPORTED)
-set_target_properties(agora-rtc-sdk PROPERTIES
-    IMPORTED_LOCATION ${AGORA_LIB_DIR}/libagora-rtc-sdk.a
-)
-
-# ------------------------------------------------------------
-# mybot executable
-# ------------------------------------------------------------
-set(MYBOT_SRC
-    main/platform/linux/mybot_main.c
-    main/mybot_app.c
-    main/wifi/mybot_wifi_provisioning.c
-    main/platform/linux/mybot_wifi_host_network.c
-    main/storage/mybot_kv_store.c
-    main/platform/linux/mybot_kv_store_file.c
-    main/key_service/mybot_key_service.c
-    main/lcd/mybot_lcd.c
-    main/platform/linux/mybot_lcd_console.c
-    main/platform/linux/mybot_key_stdin.c
-    components/ringbuf/mybot_ringbuf.c
-    components/http_client/mybot_http_client.c
-    components/json/mybot_json.c
-    main/device/mybot_device_client.c
-    main/audio/mybot_audio_device.c
-    main/platform/linux/mybot_audio_capture_alsa.c
-    main/platform/linux/mybot_audio_playback_alsa.c
-    main/rtc/mybot_rtc_session.c
-    main/device/mybot_device_lifecycle.c
-)
-
-add_executable(mybot ${MYBOT_SRC})
-
-target_include_directories(mybot PRIVATE
-    ${CMAKE_SOURCE_DIR}/main
-    ${CMAKE_SOURCE_DIR}/main/audio
-    ${CMAKE_SOURCE_DIR}/main/device
-    ${CMAKE_SOURCE_DIR}/main/key_service
-    ${CMAKE_SOURCE_DIR}/main/lcd
-    ${CMAKE_SOURCE_DIR}/main/rtc
-    ${CMAKE_SOURCE_DIR}/main/wifi
-    ${CMAKE_SOURCE_DIR}/components/ringbuf
-    ${CMAKE_SOURCE_DIR}/components/http_client
-    ${CMAKE_SOURCE_DIR}/components/json
-    ${AGORA_SDK_DIR}/include
-    ${AOSL_DIR}/include
-    ${AOSL_DIR}/platform/include
-)
-
-target_link_libraries(mybot PRIVATE
-    aosl
-    agora-rtc-sdk
-    asound
-    pthread
-    dl
-    rt
-    m
-)
-include(CTest)
-if(BUILD_TESTING)
-    add_executable(mybot_device_lifecycle_test
-        tests/device_lifecycle_test.c
-        main/device/mybot_device_lifecycle.c
-        main/storage/mybot_kv_store.c
-    )
-    target_include_directories(mybot_device_lifecycle_test PRIVATE
-        ${CMAKE_SOURCE_DIR}/main
-        ${AOSL_DIR}/include
-        ${AOSL_DIR}/platform/include
-    )
-    target_link_libraries(mybot_device_lifecycle_test PRIVATE
-        aosl
-        pthread
-        dl
-        rt
-        m
-    )
-    add_test(NAME mybot_device_lifecycle_test COMMAND mybot_device_lifecycle_test)
-
-    add_executable(mybot_device_client_test
-        tests/device_client_test.c
-        main/device/mybot_device_client.c
-        components/json/mybot_json.c
-    )
-    target_include_directories(mybot_device_client_test PRIVATE
-        ${CMAKE_SOURCE_DIR}/main
-        ${CMAKE_SOURCE_DIR}/components/http_client
-        ${CMAKE_SOURCE_DIR}/components/json
-        ${AOSL_DIR}/include
-        ${AOSL_DIR}/platform/include
-    )
-    target_link_libraries(mybot_device_client_test PRIVATE
-        aosl
-        pthread
-        dl
-        rt
-        m
-    )
-    add_test(NAME mybot_device_client_test COMMAND mybot_device_client_test)
-
-    add_executable(mybot_http_client_test tests/http_client_test.c)
-    target_include_directories(mybot_http_client_test PRIVATE
-        ${AOSL_DIR}/include
-        ${AOSL_DIR}/platform/include
-    )
-    target_link_libraries(mybot_http_client_test PRIVATE
-        aosl
-        pthread
-        dl
-        rt
-        m
-    )
-    add_test(NAME mybot_http_client_test COMMAND mybot_http_client_test)
-
-    add_executable(mybot_json_test
-        tests/json_test.c
-        components/json/mybot_json.c
-    )
-    target_include_directories(mybot_json_test PRIVATE ${CMAKE_SOURCE_DIR}/components/json)
-    target_link_libraries(mybot_json_test PRIVATE m)
-    add_test(NAME mybot_json_test COMMAND mybot_json_test)
-
-    add_executable(mybot_key_service_test
-        tests/key_service_test.c
-        main/key_service/mybot_key_service.c
-    )
-    target_include_directories(mybot_key_service_test PRIVATE ${CMAKE_SOURCE_DIR}/main)
-    add_test(NAME mybot_key_service_test COMMAND mybot_key_service_test)
-
-    add_executable(mybot_key_stdin_test
-        tests/key_stdin_test.c
-        main/key_service/mybot_key_service.c
-        main/platform/linux/mybot_key_stdin.c
-    )
-    target_include_directories(mybot_key_stdin_test PRIVATE
-        ${CMAKE_SOURCE_DIR}/main
-        ${AOSL_DIR}/include
-        ${AOSL_DIR}/platform/include
-    )
-    target_link_libraries(mybot_key_stdin_test PRIVATE
-        aosl
-        pthread
-        dl
-        rt
-        m
-    )
-    add_test(NAME mybot_key_stdin_test COMMAND mybot_key_stdin_test)
-
-    add_executable(mybot_lcd_test
-        tests/lcd_test.c
-        main/lcd/mybot_lcd.c
-    )
-    target_include_directories(mybot_lcd_test PRIVATE
-        ${CMAKE_SOURCE_DIR}/main
-        ${AOSL_DIR}/include
-        ${AOSL_DIR}/platform/include
-    )
-    target_link_libraries(mybot_lcd_test PRIVATE
-        aosl
-        pthread
-        dl
-        rt
-        m
-    )
-    add_test(NAME mybot_lcd_test COMMAND mybot_lcd_test)
-
-    add_executable(mybot_lcd_console_test
-        tests/lcd_console_test.c
-        main/lcd/mybot_lcd.c
-        main/platform/linux/mybot_lcd_console.c
-    )
-    target_include_directories(mybot_lcd_console_test PRIVATE
-        ${CMAKE_SOURCE_DIR}/main
-        ${AOSL_DIR}/include
-        ${AOSL_DIR}/platform/include
-    )
-    target_link_libraries(mybot_lcd_console_test PRIVATE
-        aosl
-        pthread
-        dl
-        rt
-        m
-    )
-    add_test(NAME mybot_lcd_console_test COMMAND mybot_lcd_console_test)
-
-    add_executable(mybot_wifi_provisioning_test
-        tests/wifi_provisioning_test.c
-        main/wifi/mybot_wifi_provisioning.c
-    )
-    target_include_directories(mybot_wifi_provisioning_test PRIVATE
-        ${CMAKE_SOURCE_DIR}/main
-        ${AOSL_DIR}/include
-        ${AOSL_DIR}/platform/include
-    )
-    target_link_libraries(mybot_wifi_provisioning_test PRIVATE
-        aosl
-        pthread
-        dl
-        rt
-        m
-    )
-    add_test(NAME mybot_wifi_provisioning_test COMMAND mybot_wifi_provisioning_test)
-
-    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-        foreach(test_target IN ITEMS
-            mybot_device_lifecycle_test
-            mybot_device_client_test
-            mybot_http_client_test
-            mybot_json_test
-            mybot_key_service_test
-            mybot_key_stdin_test
-            mybot_lcd_test
-            mybot_lcd_console_test
-            mybot_wifi_provisioning_test
-        )
-            target_compile_options(${test_target} PRIVATE -UNDEBUG)
-        endforeach()
-    endif()
+if(MYBOT_TOP_LEVEL AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(MYBOT_LINUX_DEFAULT ON)
+else()
+    set(MYBOT_LINUX_DEFAULT OFF)
 endif()
+
+option(MYBOT_BUILD_LINUX_PLATFORM "Build the bundled Linux platform backend" ${MYBOT_LINUX_DEFAULT})
+option(MYBOT_BUILD_EXAMPLES "Build mybot example applications" ${MYBOT_LINUX_DEFAULT})
+option(MYBOT_BUILD_TESTS "Build mybot tests" ${MYBOT_LINUX_DEFAULT})
+option(MYBOT_ENABLE_ASAN "Enable AddressSanitizer for mybot targets" OFF)
+
+set(MYBOT_AUDIO_PTIME_MS "60" CACHE STRING "Audio packet duration: 20, 40, or 60 ms")
+set_property(CACHE MYBOT_AUDIO_PTIME_MS PROPERTY STRINGS 20 40 60)
+option(MYBOT_CLOUD_AEC "Enable server-side acoustic echo cancellation" ON)
+option(MYBOT_WAKE_WORDS "Enable the platform local-ASR wake-word backend" OFF)
+option(MYBOT_AI_QOS "Enable Agora AI-driven QoS optimization" ON)
+set(MYBOT_FAST_SEND_MULTIPLIER "3" CACHE STRING "Agora fast-send multiplier: 1 through 5")
+set_property(CACHE MYBOT_FAST_SEND_MULTIPLIER PROPERTY STRINGS 1 2 3 4 5)
+option(MYBOT_SHOW_TRANSCRIPT "Receive real-time transcripts over the data stream" OFF)
+
+if(NOT MYBOT_AUDIO_PTIME_MS MATCHES "^(20|40|60)$")
+    message(FATAL_ERROR "MYBOT_AUDIO_PTIME_MS must be 20, 40, or 60")
+endif()
+if(NOT MYBOT_FAST_SEND_MULTIPLIER MATCHES "^[1-5]$")
+    message(FATAL_ERROR "MYBOT_FAST_SEND_MULTIPLIER must be an integer from 1 through 5")
+endif()
+
+set(AOSL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/aosl" CACHE PATH
+    "Path to the AOSL source tree")
+set(AGORA_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/agora_rtsa_sdk/agora_sdk" CACHE PATH
+    "Path to the Agora RTSA SDK package")
+set(AGORA_RTC_LIBRARY "${AGORA_SDK_DIR}/lib/x86_64/libagora-rtc-sdk.a" CACHE FILEPATH
+    "Path to the Agora RTSA library for the target architecture")
+
+if(NOT TARGET aosl)
+    set(AOSL_DECLARE_PROJECT OFF CACHE BOOL "Build AOSL as a standalone project" FORCE)
+    set(AOSL_COMPILE_TEST OFF CACHE BOOL "Build AOSL tests" FORCE)
+    include("${AOSL_DIR}/CMakeLists.txt")
+    add_library(aosl STATIC ${AOSL_ADD_SOURCES})
+    target_include_directories(aosl
+        PUBLIC ${AOSL_ADD_INCLUDES_PUBLIC}
+        PRIVATE ${AOSL_ADD_INCLUDES_PRIVATE}
+    )
+    target_compile_options(aosl PRIVATE ${AOSL_ADD_OPTIONS})
+    target_compile_definitions(aosl PRIVATE ${AOSL_ADD_DEFINITIONS})
+endif()
+
+if(NOT TARGET agora-rtc-sdk)
+    if(NOT EXISTS "${AGORA_SDK_DIR}/include/agora_rtc_api.h")
+        message(FATAL_ERROR
+            "Agora RTSA headers were not found under AGORA_SDK_DIR=${AGORA_SDK_DIR}")
+    endif()
+    if(NOT EXISTS "${AGORA_RTC_LIBRARY}")
+        message(FATAL_ERROR "Agora RTSA library was not found: ${AGORA_RTC_LIBRARY}")
+    endif()
+
+    add_library(agora-rtc-sdk STATIC IMPORTED GLOBAL)
+    set_target_properties(agora-rtc-sdk PROPERTIES
+        IMPORTED_LOCATION "${AGORA_RTC_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${AGORA_SDK_DIR}/include"
+    )
+endif()
+
+function(mybot_enable_sanitizers target)
+    if(MYBOT_ENABLE_ASAN AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(${target} PRIVATE -fsanitize=address -fno-omit-frame-pointer -g)
+        target_link_options(${target} PRIVATE -fsanitize=address)
+    endif()
+endfunction()
+
+add_library(mybot_sdk STATIC
+    src/core/mybot_app.c
+    src/core/mybot_device_lifecycle.c
+    src/core/mybot_version.c
+    src/media/mybot_audio.c
+    src/media/mybot_wake_words.c
+    src/platform/mybot_key.c
+    src/platform/mybot_kv_store.c
+    src/platform/mybot_lcd.c
+    src/platform/mybot_wifi.c
+    src/rtc/mybot_agora_rtc.c
+    src/service/mybot_device_client.c
+    src/support/mybot_http_client.c
+    src/support/mybot_json.c
+    src/support/mybot_ringbuf.c
+)
+add_library(mybot::sdk ALIAS mybot_sdk)
+set_target_properties(mybot_sdk PROPERTIES EXPORT_NAME sdk)
+
+target_include_directories(mybot_sdk
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/internal
+)
+target_compile_definitions(mybot_sdk PUBLIC
+    MYBOT_AUDIO_PTIME_MS=${MYBOT_AUDIO_PTIME_MS}
+    MYBOT_CLOUD_AEC=$<BOOL:${MYBOT_CLOUD_AEC}>
+    MYBOT_WAKE_WORDS=$<BOOL:${MYBOT_WAKE_WORDS}>
+    MYBOT_AI_QOS=$<BOOL:${MYBOT_AI_QOS}>
+    MYBOT_FAST_SEND_MULTIPLIER=${MYBOT_FAST_SEND_MULTIPLIER}
+    MYBOT_SHOW_TRANSCRIPT=$<BOOL:${MYBOT_SHOW_TRANSCRIPT}>
+)
+target_link_libraries(mybot_sdk PUBLIC aosl agora-rtc-sdk)
+if(UNIX)
+    find_package(Threads REQUIRED)
+    target_link_libraries(mybot_sdk PUBLIC Threads::Threads ${CMAKE_DL_LIBS} m)
+endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_link_libraries(mybot_sdk PUBLIC rt)
+endif()
+mybot_enable_sanitizers(mybot_sdk)
+
+if(MYBOT_BUILD_LINUX_PLATFORM)
+    add_subdirectory(platforms/linux)
+endif()
+
+if(MYBOT_BUILD_EXAMPLES)
+    if(NOT MYBOT_BUILD_LINUX_PLATFORM)
+        message(FATAL_ERROR "MYBOT_BUILD_EXAMPLES currently requires MYBOT_BUILD_LINUX_PLATFORM=ON")
+    endif()
+    add_subdirectory(examples/linux)
+endif()
+
+if(MYBOT_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
+install(TARGETS mybot_sdk
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+install(DIRECTORY include/mybot DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

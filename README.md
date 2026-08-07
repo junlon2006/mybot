@@ -1,182 +1,155 @@
 # mybot
 
-跨平台语音聊天机器人。基于 **Agora RTC** 实时音视频协议实现语音传输，**AOSL** 提供跨平台系统抽象层。
+`mybot` 是面向设备端的跨平台语音机器人 SDK。它负责 APSTA 配网、设备配对和认证、会话状态机、双向音频、Agora RTC 连接、按键/LCD 工作流，以及可选的本地唤醒词识别。平台相关能力通过小型 `ops` 接口注册，SDK 核心不依赖 Linux ALSA、stdin 或文件系统实现。
 
-设备端与服务端通信完成配对、认证和对话管理，配对的设备使用 RTC 与 ConvoAI Agent 进行语音交互。
+当前版本为 **0.1.0-rc.1**，公开 API 尚未承诺稳定。仓库内置的 Agora RTSA 二进制和 AOSL 有独立的许可及使用条件；用于产品前请先阅读[许可证与第三方依赖](#许可证与第三方依赖)。
 
-## 架构
+## 能力与边界
 
-```
+- 音频固定为 16 kHz、单声道、16-bit PCM；`ptime` 可配置为 20/40/60 ms，默认 60 ms。
+- Wi-Fi 接口面向 APSTA 配网，非阻塞启动，通过事件推进应用状态机。
+- 本地 ASR 唤醒词为可选平台后端，默认关闭；唤醒行为与物理按键启动会话一致。
+- LCD 接收配网、配对码、就绪和会话中等语义状态，由平台决定具体显示方式。
+- RTC 实现专用于 Agora RTSA，不提供其他 RTC 协议适配层。
+- 设备服务端不属于本仓库；运行示例需要兼容的服务地址。
+
+## 仓库结构
+
+```text
 mybot/
-├── main/
-│   ├── mybot_app.h / .c                  # 跨平台应用编排
-│   ├── mybot_build_config.h              # 编译期功能配置
-│   ├── audio/
-│   │   └── mybot_audio_device.h / .c     # 音频平台抽象（ops 函数指针注册表）
-│   ├── storage/
-│   │   └── mybot_kv_store.h / .c         # 键值存储抽象（设备凭证等）
-│   ├── key_service/
-│   │   └── mybot_key_service.h / .c      # 按键事件与平台后端抽象
-│   ├── lcd/
-│   │   └── mybot_lcd.h / .c              # LCD 关键工作流显示抽象
-│   ├── wifi/
-│   │   └── mybot_wifi_provisioning.h / .c # APSTA Wi-Fi 配网抽象
-│   ├── device/
-│   │   ├── mybot_device_client.h / .c    # 设备服务客户端（配对/对话/轮询）
-│   │   └── mybot_device_lifecycle.h / .c # 设备生命周期状态机
-│   ├── rtc/
-│   │   ├── mybot_rtc_session.h           # RTC 会话接口
-│   │   └── mybot_rtc_session.c           # Agora RTC 会话实现
-│   └── platform/
-│       └── linux/
-│           ├── mybot_main.c              # Linux 入口、CLI 与信号处理
-│           ├── mybot_audio_*_alsa.c      # ALSA 音频后端
-│           ├── mybot_kv_store_file.c     # 文件型键值存储后端
-│           ├── mybot_key_stdin.c         # stdin 按键后端
-│           ├── mybot_lcd_console.c       # 高亮红色控制台 LCD 模拟后端
-│           └── mybot_wifi_host_network.c # Linux 宿主网络后端
-└── components/
-    ├── aosl/                              # AOSL 跨平台系统库
-    ├── agora_rtsa_sdk/                    # Agora RTSA SDK
-    ├── ringbuf/                           # SPSC 环缓冲（mybot_ringbuf_*）
-    ├── http_client/                       # HTTP 客户端（mybot_http_client_*）
-    └── json/                              # 命名空间化 cJSON 实现（mybot_json_*）
+├── include/mybot/          # SDK 公共头文件和平台契约
+├── src/                    # 跨平台实现；internal/ 不属于公共 API
+├── platforms/linux/        # Linux 参考后端（ALSA/stdin/file/console）
+├── examples/linux/         # Linux 示例应用入口
+├── tests/                  # 单元、平台和宿主集成测试
+├── docs/PORTING.md         # 新平台逐步移植指南和验收契约
+├── cmake/                  # 工具链辅助文件
+└── third_party/            # AOSL 与 Agora RTSA SDK
 ```
 
-仓库根目录的 `.clang-format` 是唯一的 C 代码格式规范。格式化自研源码时执行：
+主要 CMake 目标：
+
+- `mybot::sdk`：跨平台 SDK 核心。
+- `mybot::platform_linux`：Linux 参考后端，不属于跨平台核心。
+- `mybot::linux_example`：Linux CLI 示例。
+
+## Linux 快速开始
+
+环境要求：Linux x86_64、CMake 3.16+、C99 编译器、ALSA 开发包。仓库当前附带的 Agora RTSA 静态库也是 x86_64 Linux 版本。
 
 ```bash
-find main tests components/ringbuf components/http_client components/json \\
-    -type f \\( -name '*.c' -o -name '*.h' \\) -exec clang-format -i {} +
+sudo apt-get update
+sudo apt-get install -y build-essential cmake libasound2-dev
+cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=OFF
+cmake --build build -j
+ctest --test-dir build --output-on-failure
 ```
 
-### 生命周期
-
-```
-APSTA provisioning → STA connected → unprovisioned → pairing → awaiting_claim ──→ runtime ←→ in_conversation
-                                                                        │               │
-                                                                    expired         unbound
-                                                                    重启配对        回到起始
-```
-
-Wi-Fi 配网是应用启动后的第一个业务阶段。`mybot_wifi_provisioning_init()` 只启动平台后端
-并立即返回，不等待用户完成配网。平台事件驱动配网状态变化；只有状态进入 `CONNECTED`
-后，应用启动队列才会继续初始化持久化、按键、音频、设备服务配对和 RTC，因此配网未完成
-不会永久阻塞调用线程。平台后端固定使用 APSTA，不提供其他 Wi-Fi mode 选择。Linux 开发
-后端复用宿主机已经配置的网络，因此会立即报告 STA 已连接。
-
-| 阶段 | 说明 |
-|------|------|
-| `APSTA provisioning` | 启动 AP 配网入口并由 STA 建立上行网络连接 |
-| `STA connected` | 首次联网屏障已通过，允许启动其余应用服务 |
-| `pairing` | 向服务端申请配对码 |
-| `awaiting_claim` | 等待用户在 Web 端认领设备 |
-| `runtime` | 获得 `device_token`，定期 poll 检测解绑，可启动对话 |
-| `in_conversation` | 通过 RTC 与 ConvoAI Agent 语音交互 |
-
-### 数据流（对话中）
-
-```
-麦克风 → cap_mpq 线程(ptime) → capture ringbuf → send_timer(ptime, mybot_mpq) → RTC 发送
-                                                                                  ↓
-扬声器 ← pb_mpq 线程(ptime) ← playback ringbuf ← RTC on_audio_data 回调（SDK 线程）
-```
-
-设备生命周期状态机运行在独立的 `state_mpq` 线程（100ms 轮询，含阻塞 HTTP 请求），不影响实时音频。上行开启云 AEC 时，`send_timer` 将麦克风 PCM 与扬声器下行 PCM 交错发送。所有线程均通过 `aosl_mpq_create()` 创建（跨平台，不依赖 `aosl_hal_thread_join`）。
-
-## 环境要求
-
-- Linux x86_64
-- CMake >= 3.16
-- GCC >= 13
-- ALSA 开发库
+运行示例：
 
 ```bash
-sudo apt install -y libasound2-dev
+./build/examples/linux/mybot \
+  --server http://127.0.0.1:3001 \
+  --device-id AG-DEMO-001 \
+  --fw-ver 0.1.0-rc.1 \
+  --hw-model linux-reference
 ```
 
-## 构建
+Linux 后端直接使用宿主机现有网络，并立即报告 STA 已连接；它只是开发用替身，不实现真实 APSTA 配网。音频使用 ALSA `default` 设备。KV 数据默认写入当前目录的 `.mybot-kv-store/`，可通过 `MYBOT_KV_STORE_DIR` 修改。就绪后可输入 `s` 开始会话、`q` 停止会话、`p` 重新配对、`e` 退出。
 
-```bash
-git clone <repo-url> mybot
-cd mybot
-mkdir -p build && cd build
-cmake .. -DCONFIG_PLATFORM=linux
-make -j$(nproc)
+## 集成到宿主工程
+
+推荐将仓库作为源码子模块引入。宿主需要为目标架构准备匹配的 Agora RTSA 头文件/静态库，并确保 AOSL 已支持目标平台。
+
+```cmake
+set(CONFIG_PLATFORM my_mcu CACHE STRING "" FORCE)
+set(AGORA_SDK_DIR /opt/agora-rtsa CACHE PATH "" FORCE)
+set(AGORA_RTC_LIBRARY /opt/agora-rtsa/lib/libagora-rtc-sdk.a CACHE FILEPATH "" FORCE)
+
+set(MYBOT_BUILD_LINUX_PLATFORM OFF CACHE BOOL "" FORCE)
+set(MYBOT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(MYBOT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(MYBOT_AUDIO_PTIME_MS 60 CACHE STRING "" FORCE)
+set(MYBOT_WAKE_WORDS OFF CACHE BOOL "" FORCE)
+
+add_subdirectory(third_party/mybot)
+target_link_libraries(device_firmware PRIVATE mybot::sdk)
 ```
 
-音频包时长由 `main/mybot_build_config.h` 中的 `MYBOT_AUDIO_PTIME_MS` 配置，支持 20、40、60 ms，默认 60 ms。Agora 上行 PCM 编码时长与下行 jitter buffer 输出帧长均使用该值。可通过编译参数覆盖：
+平台必须在 `mybot_app_start()` 之前注册 Wi-Fi、KV、按键、音频采集和音频播放后端。LCD 可选；只有 `MYBOT_WAKE_WORDS=ON` 时才必须注册本地 ASR 后端。完整实现顺序、最小代码、线程约束和验收清单见 [docs/PORTING.md](docs/PORTING.md)。
 
-```bash
-cmake .. -DCONFIG_PLATFORM=linux -DCMAKE_C_FLAGS="-DMYBOT_AUDIO_PTIME_MS=20"
-```
-
-## 使用
-
-```bash
-./mybot --server http://localhost:3001 --device-id AG-DEMO-001
-```
-
-Linux 文件型键值存储默认将设备凭证保存在当前目录的 `.mybot-kv-store/`。
-可通过 `MYBOT_KV_STORE_DIR` 指定其他持久化目录；部署时应选择仅设备进程可访问的位置。
-
-### 命令行参数
-
-| 参数 | 必填 | 说明 |
-|------|------|------|
-| `--server` | 是 | 服务端地址 |
-| `--device-id` | 是 | 设备唯一标识符（如 `AG-A1B2C3`） |
-| `--fw-ver` | 否 | 固件版本 |
-| `--hw-model` | 否 | 硬件型号 |
-
-### 交互按键
-
-| 按键 | 功能 |
-|------|------|
-| `s` | 启动对话 |
-| `q` | 停止对话 |
-| `p` | 重新配对 |
-| `e` | 退出程序（等同 Ctrl+C） |
-
-## 跨平台扩展
-
-Wi-Fi 配网、音频设备、持久化存储、按键服务和 LCD 通过 ops 函数指针表实现平台无关化。平台适配层位于 `main/platform/`，添加新平台时在该目录下新建对应平台目录并注册 ops。LCD 后端接收语义化内容（配网、配对码、就绪、对话中、故障等），由 MCU 平台自行决定字体、图标和布局。Linux 注册高亮红色控制台模拟后端；非交互输出或设置 `NO_COLOR` 时不输出 ANSI 颜色码，可设置 `MYBOT_LCD_COLOR=1` 强制开启。
-
-音频后端示例：
+最小应用生命周期：
 
 ```c
-typedef struct {
-    const char *name;
-    int  (*init)(void **ctx, int rate, int channels, int bits);
-    int  (*start)(void *ctx);
-    int  (*read)(void *ctx, void *buf, int frames);
-    int  (*write)(void *ctx, const void *buf, int frames);
-    int  (*stop)(void *ctx);
-    void (*destroy)(void *ctx);
-} mybot_audio_capture_ops_t;
+platform_register_all();
+mybot_app_start(&config);
+while (mybot_app_is_running()) {
+    platform_sleep_ms(100);
+}
+mybot_app_stop();
 ```
 
-> 公开接口统一使用 `mybot_` 前缀（类型、函数、宏），防止集成到其它工程时符号冲突；`components/aosl` 与 `components/agora_rtsa_sdk` 保持上游命名。
->
-> `components/json` 直接基于 cJSON 实现，但所有外部类型、宏和函数均使用 `mybot_json_*` / `MYBOT_JSON_*` 命名；工程不声明原始 `cJSON_*` API，避免作为子模块集成时发生符号冲突。
+`mybot_app_start()` 非阻塞。它首先启动配网，收到 STA connected 事件后才异步初始化存储、按键、音频、设备服务和 RTC。`mybot_app_stop()` 会等待工作线程退出，不应从平台事件回调内部调用。
 
-## 项目结构
+## 构建配置
 
-| 目录 | 内容 |
-|------|------|
-| `main/` | 跨平台应用层与各子系统接口 |
-| `main/device/` | 设备服务客户端与生命周期状态机 |
-| `main/storage/` | 平台无关的键值存储接口 |
-| `main/lcd/` | LCD 关键工作流显示抽象 |
-| `main/rtc/` | RTC 会话接口及服务商实现 |
-| `main/wifi/` | APSTA Wi-Fi 配网抽象 |
-| `main/platform/` | 平台后端（当前为 Linux 宿主网络、ALSA、文件存储、stdin 和控制台 LCD） |
-| `components/aosl/` | 跨平台系统抽象层（线程/内存/网络/日志） |
-| `components/agora_rtsa_sdk/` | Agora RTSA SDK v1.10.1 |
-| `components/ringbuf/` | 通用锁无关 SPSC 环缓冲 |
-| `components/http_client/` | 基于 AOSL HAL 的 HTTP 客户端 |
-| `components/json/` | 直接基于 cJSON 的命名空间化 JSON 实现 |
+以下选项可在宿主 `add_subdirectory()` 前设置，也可通过 CMake 命令行传入：
 
-## 项目状态
+| 选项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `MYBOT_AUDIO_PTIME_MS` | `60` | 音频包长，只接受 20、40、60 ms |
+| `MYBOT_CLOUD_AEC` | `ON` | 服务端 AEC；上行包含麦克风和参考声道 |
+| `MYBOT_WAKE_WORDS` | `OFF` | 启用本地 ASR 唤醒词平台后端 |
+| `MYBOT_AI_QOS` | `ON` | Agora AI QoS |
+| `MYBOT_FAST_SEND_MULTIPLIER` | `3` | 快发倍数，只接受 1 到 5 |
+| `MYBOT_SHOW_TRANSCRIPT` | `OFF` | 请求实时转写数据流 |
+| `MYBOT_ENABLE_ASAN` | `OFF` | GCC/Clang 地址消毒器，建议在宿主测试中开启 |
 
-早期开发阶段。
+例如：
+
+```bash
+cmake -S . -B build-wake \
+  -DCONFIG_PLATFORM=linux \
+  -DMYBOT_AUDIO_PTIME_MS=20 \
+  -DMYBOT_WAKE_WORDS=ON
+```
+
+Linux 参考平台没有本地 ASR 后端，因此开启 `MYBOT_WAKE_WORDS` 后需要由宿主额外注册后端，否则应用会明确启动失败。
+
+## 工作流
+
+```text
+APSTA provisioning -> STA connected -> pairing -> awaiting claim
+                                             |
+                                             v
+                              runtime <-> in conversation
+```
+
+```text
+microphone -> capture worker -> local wake words (idle only)
+                         \-> capture ring buffer -> Agora RTC uplink
+
+speaker <- playback worker <- playback ring buffer <- Agora RTC downlink
+```
+
+## 开发与验证
+
+```bash
+cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=ON
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+find include src platforms examples tests -type f \
+  \( -name '*.c' -o -name '*.h' \) -print0 | xargs -0 clang-format --dry-run --Werror
+```
+
+自研 C 代码遵循根目录 `.clang-format`；`third_party/` 保持上游内容。提交补丁前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。版本变化记录见 [CHANGELOG.md](CHANGELOG.md)，安全问题报告方式见 [SECURITY.md](SECURITY.md)。
+
+## 许可证与第三方依赖
+
+仓库自研代码按根目录 [LICENSE](LICENSE) 中的 Apache License 2.0 发布，但这不改变第三方组件的许可：
+
+- AOSL 带有其 `third_party/aosl/LICENSE` 中列出的附加条件。
+- Agora RTSA SDK 二进制受其软件许可、试用期和商业授权要求约束。
+- `mybot_json` 派生自 cJSON，保留 MIT 许可声明。
+
+发布产品或重新分发前必须单独核实这些条款。详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
