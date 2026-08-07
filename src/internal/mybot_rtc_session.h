@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef MYBOT_RTC_SESSION_H_
 #define MYBOT_RTC_SESSION_H_
 

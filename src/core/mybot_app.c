@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include <mybot/mybot.h>
 #include <mybot/mybot_build_config.h>
 #include <mybot/platform/mybot_audio.h>

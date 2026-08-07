@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef MYBOT_KV_STORE_H_
 #define MYBOT_KV_STORE_H_
 

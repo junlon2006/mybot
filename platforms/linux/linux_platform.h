@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef MYBOT_LINUX_PLATFORM_H_
 #define MYBOT_LINUX_PLATFORM_H_
 

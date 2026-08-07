@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef MYBOT_DEVICE_LIFECYCLE_H_
 #define MYBOT_DEVICE_LIFECYCLE_H_
 

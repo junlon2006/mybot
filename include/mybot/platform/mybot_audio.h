@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef MYBOT_AUDIO_DEVICE_H_
 #define MYBOT_AUDIO_DEVICE_H_
 

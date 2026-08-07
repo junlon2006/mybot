@@ -9,7 +9,8 @@
 1. 涉及 API、平台、依赖或协议的大型改动，请先在 issue 中讨论。
 2. 平台代码保持在 `src/` 之外，并通过公共平台 ops 集成。
 3. 绝不提交凭据、设备 token、客户数据或专有 SDK 包。
-4. 自维护的 C 源码遵循仓库根目录 `.clang-format`。
+4. 自维护的 C 源码遵循仓库根目录 `.clang-format`，并为每个文件标注 SPDX 许可证头
+   （`/* SPDX-License-Identifier: Apache-2.0 */`；cJSON 派生的 `mybot_json` 源码使用 `MIT`）。
 5. 提交 pull request 前先构建并测试：
 
        cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=ON

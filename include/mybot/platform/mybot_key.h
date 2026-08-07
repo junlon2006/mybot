@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef MYBOT_KEY_SERVICE_H_
 #define MYBOT_KEY_SERVICE_H_
 
