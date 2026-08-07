@@ -26,7 +26,7 @@ static void print_usage(const char *prog) {
                  "\n"
                  "Required:\n"
                  "  --server <url>     Service base URL\n"
-                 "                     e.g. http://localhost:3001\n"
+                 "                     e.g. https://api.example.com\n"
                  "  --device-id <id>   Unique device identifier\n"
                  "                     e.g. AG-A1B2C3\n"
                  "\n"
@@ -36,7 +36,7 @@ static void print_usage(const char *prog) {
                  "  -h, --help         Show this help\n"
                  "\n"
                  "Example:\n"
-                 "  %s --server http://localhost:3001 --device-id AG-DEMO-001",
+                 "  %s --server https://api.example.com --device-id AG-DEMO-001",
                  prog, prog);
 }
 

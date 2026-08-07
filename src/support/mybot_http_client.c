@@ -1,4 +1,7 @@
 #include "mybot_http_client.h"
+#include "mybot_https_transport.h"
+
+#include <mybot/mybot_build_config.h>
 
 #include <hal/aosl_hal_socket.h>
 #include <hal/aosl_hal_iomp.h>
@@ -19,6 +22,7 @@
  * Constants
  * ---------------------------------------------------------- */
 #define HTTP_DEFAULT_PORT 80
+#define HTTPS_DEFAULT_PORT 443
 #define HTTP_TIMEOUT_MS 5000 /* deadline for the socket request stages */
 #define RECV_BUF_SIZE 4096
 #define RECV_BUF_MAX (32 * 1024) /* hard cap on response buffer */
@@ -38,13 +42,14 @@ static int deadline_remaining_ms(uint64_t deadline) {
  * Internal: URL parts
  * ---------------------------------------------------------- */
 typedef struct {
+    bool use_tls;
     char host[128];
     int port;
     char path[256];
 } url_parts_t;
 
 /*
- * Parse "http://host[:port][/path]" into parts.
+ * Parse "https://host[:port][/path]" or an explicitly enabled HTTP URL.
  * Returns 0 on success, -1 on error.
  */
 static int parse_url(const char *url, url_parts_t *parts) {
@@ -53,16 +58,27 @@ static int parse_url(const char *url, url_parts_t *parts) {
     }
 
     memset(parts, 0, sizeof(*parts));
-    parts->port = HTTP_DEFAULT_PORT;
     parts->path[0] = '/';
 
     const char *p = url;
 
-    /* skip http:// */
-    if (strncmp(p, "http://", 7) != 0) {
+#if MYBOT_ENABLE_HTTPS
+    if (strncmp(p, "https://", 8) == 0) {
+        parts->use_tls = true;
+        parts->port = HTTPS_DEFAULT_PORT;
+        p += 8;
+    } else
+#endif
+#if MYBOT_ALLOW_INSECURE_HTTP
+        if (strncmp(p, "http://", 7) == 0) {
+        parts->use_tls = false;
+        parts->port = HTTP_DEFAULT_PORT;
+        p += 7;
+    } else
+#endif
+    {
         return -1;
     }
-    p += 7;
 
     /* extract host (up to ':' or '/' or end) */
     const char *host_start = p;
@@ -101,9 +117,66 @@ static int parse_url(const char *url, url_parts_t *parts) {
             return -1;
         }
         memcpy(parts->path, p, path_len + 1);
+    } else if (*p != '\0') {
+        return -1;
     }
 
     return 0;
+}
+
+static aosl_fd_t tcp_connect(const char *host, int port, uint64_t deadline);
+
+typedef struct {
+    bool use_tls;
+    aosl_fd_t fd;
+    void *tls_connection;
+} http_stream_t;
+
+static int stream_connect(http_stream_t *stream, const url_parts_t *parts, uint64_t deadline) {
+    memset(stream, 0, sizeof(*stream));
+    stream->fd = AOSL_INVALID_FD;
+    stream->use_tls = parts->use_tls;
+    if (parts->use_tls) {
+#if MYBOT_ENABLE_HTTPS
+        return mybot_https_transport_connect(&stream->tls_connection, parts->host,
+                                             (uint16_t)parts->port,
+                                             deadline_remaining_ms(deadline));
+#else
+        return -1;
+#endif
+    }
+#if MYBOT_ALLOW_INSECURE_HTTP
+    stream->fd = tcp_connect(parts->host, parts->port, deadline);
+    return aosl_fd_invalid(stream->fd) ? -1 : 0;
+#else
+    return -1;
+#endif
+}
+
+static int stream_send(http_stream_t *stream, const void *data, size_t len, uint64_t deadline) {
+    if (stream->use_tls) {
+        return mybot_https_transport_send(stream->tls_connection, data, len,
+                                          deadline_remaining_ms(deadline));
+    }
+    return aosl_hal_sk_send(stream->fd, data, len, 0);
+}
+
+static int stream_recv(http_stream_t *stream, void *data, size_t capacity, uint64_t deadline) {
+    if (stream->use_tls) {
+        return mybot_https_transport_recv(stream->tls_connection, data, capacity,
+                                          deadline_remaining_ms(deadline));
+    }
+    return aosl_hal_sk_recv(stream->fd, data, capacity, 0);
+}
+
+static void stream_close(http_stream_t *stream) {
+    if (stream->use_tls) {
+        mybot_https_transport_close(stream->tls_connection);
+        stream->tls_connection = NULL;
+    } else if (!aosl_fd_invalid(stream->fd)) {
+        aosl_hal_sk_close(stream->fd);
+        stream->fd = AOSL_INVALID_FD;
+    }
 }
 
 /* ----------------------------------------------------------
@@ -217,21 +290,21 @@ static aosl_fd_t tcp_connect(const char *host, int port, uint64_t deadline) {
  * Send all bytes (retry on short send).
  * Returns 0 on success, -1 on error.
  */
-static int send_all(aosl_fd_t fd, const char *data, size_t len, uint64_t deadline) {
+static int send_all(http_stream_t *stream, const char *data, size_t len, uint64_t deadline) {
     while (len > 0) {
         if (deadline_remaining_ms(deadline) <= 0) {
             return -1;
         }
 
-        int n = aosl_hal_sk_send(fd, data, len, 0);
+        int n = stream_send(stream, data, len, deadline);
 
-        if (n == AOSL_HAL_RET_EINTR) {
+        if (!stream->use_tls && n == AOSL_HAL_RET_EINTR) {
             /* Interrupted by a signal — the socket state is unchanged, retry
              * the same data. Uses the AOSL errno abstraction so this stays
              * valid across platforms/RTOSes. */
             continue;
         }
-        if (n == AOSL_HAL_RET_EAGAIN) {
+        if (!stream->use_tls && n == AOSL_HAL_RET_EAGAIN) {
             /* Would block. The shared request deadline bounds retries. */
             aosl_hal_msleep(1);
             continue;
@@ -254,7 +327,7 @@ static int send_all(aosl_fd_t fd, const char *data, size_t len, uint64_t deadlin
  * Read everything from the socket into a dynamic buffer.
  * Uses a simple loop with recv until connection closes or timeout.
  */
-static char *read_all(aosl_fd_t fd, size_t *out_len, int *out_closed, uint64_t deadline) {
+static char *read_all(http_stream_t *stream, size_t *out_len, int *out_closed, uint64_t deadline) {
     size_t cap = RECV_BUF_SIZE;
     size_t len = 0;
     char *buf = (char *)aosl_hal_malloc(cap);
@@ -264,7 +337,7 @@ static char *read_all(aosl_fd_t fd, size_t *out_len, int *out_closed, uint64_t d
     }
 
     while (deadline_remaining_ms(deadline) > 0) {
-        int ret = aosl_hal_sk_recv(fd, buf + len, (int)(cap - len - 1), 0);
+        int ret = stream_recv(stream, buf + len, cap - len - 1, deadline);
         if (ret > 0) {
             len += (size_t)ret;
             buf[len] = '\0';
@@ -288,7 +361,7 @@ static char *read_all(aosl_fd_t fd, size_t *out_len, int *out_closed, uint64_t d
         } else if (ret == 0) {
             *out_closed = 1;
             break;
-        } else if (ret == AOSL_HAL_RET_EAGAIN) {
+        } else if (!stream->use_tls && ret == AOSL_HAL_RET_EAGAIN) {
             /* No data right now (non-blocking socket). Wait briefly and retry;
              * the deadline bounds the total wait even if the peer is silent. */
             aosl_hal_msleep(10);
@@ -586,8 +659,8 @@ static int http_request(const char *method, const char *url, const char *content
         return -1;
     }
 
-    aosl_fd_t fd = tcp_connect(parts.host, parts.port, deadline);
-    if (aosl_fd_invalid(fd)) {
+    http_stream_t stream;
+    if (stream_connect(&stream, &parts, deadline) < 0) {
         return -1;
     }
 
@@ -619,22 +692,22 @@ static int http_request(const char *method, const char *url, const char *content
     }
 
     if (req_len < 0 || (size_t)req_len >= sizeof(req)) {
-        aosl_hal_sk_close(fd);
+        stream_close(&stream);
         return -1;
     }
 
     /* Send request */
-    int ret = send_all(fd, req, (size_t)req_len, deadline);
+    int ret = send_all(&stream, req, (size_t)req_len, deadline);
     if (ret < 0) {
-        aosl_hal_sk_close(fd);
+        stream_close(&stream);
         return -1;
     }
 
     /* Read response */
     size_t raw_len = 0;
     int stream_closed = 0;
-    char *raw = read_all(fd, &raw_len, &stream_closed, deadline);
-    aosl_hal_sk_close(fd);
+    char *raw = read_all(&stream, &raw_len, &stream_closed, deadline);
+    stream_close(&stream);
 
     if (!raw) {
         return -1;

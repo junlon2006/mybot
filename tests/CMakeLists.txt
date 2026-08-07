@@ -28,7 +28,10 @@ mybot_add_test(mybot_device_client_test
 )
 target_link_libraries(mybot_device_client_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
-mybot_add_test(mybot_http_client_test unit/http_client_test.c)
+mybot_add_test(mybot_http_client_test
+    unit/http_client_test.c
+    ../src/platform/mybot_https_transport.c
+)
 target_link_libraries(mybot_http_client_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
 mybot_add_test(mybot_json_test unit/json_test.c ../src/support/mybot_json.c)

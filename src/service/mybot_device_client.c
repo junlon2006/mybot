@@ -158,7 +158,7 @@ int mybot_device_client_create_pair_code(const char *base_url, const char *devic
     char url[MYBOT_DEVICE_CLIENT_MAX_URL];
     snprintf(url, sizeof(url), "%s/devices/pair-codes", base_url);
 
-    AOSL_LOG_INF("POST %s body: %s", url, body);
+    AOSL_LOG_INF("POST %s", url);
 
     mybot_http_client_response_t raw;
     memset(&raw, 0, sizeof(raw));
@@ -170,8 +170,7 @@ int mybot_device_client_create_pair_code(const char *base_url, const char *devic
     }
     mybot_json_free_string(body);
 
-    AOSL_LOG_INF("POST %s -> status=%d, body: %s", url, raw.status_code,
-                 raw.body ? raw.body : "(empty)");
+    AOSL_LOG_INF("POST %s -> status=%d", url, raw.status_code);
 
     if (!http_response_ok(&raw)) {
         int status = raw.status_code;
@@ -221,7 +220,7 @@ int mybot_device_client_get_binding_status(const char *base_url, const char *dev
     char extra_hdrs[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32];
     snprintf(extra_hdrs, sizeof(extra_hdrs), "Authorization: %s\r\n", auth_header);
 
-    AOSL_LOG_INF("GET %s (auth=%s...)", url, auth_header);
+    AOSL_LOG_INF("GET %s", url);
 
     mybot_http_client_response_t raw;
     memset(&raw, 0, sizeof(raw));
@@ -231,8 +230,7 @@ int mybot_device_client_get_binding_status(const char *base_url, const char *dev
         return -1;
     }
 
-    AOSL_LOG_INF("GET %s -> status=%d, body: %s", url, raw.status_code,
-                 raw.body ? raw.body : "(empty)");
+    AOSL_LOG_INF("GET %s -> status=%d", url, raw.status_code);
 
     if (!http_response_ok(&raw)) {
         int status = raw.status_code;
@@ -296,7 +294,7 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
     char extra_hdrs[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32];
     snprintf(extra_hdrs, sizeof(extra_hdrs), "Authorization: Device %s\r\n", device_token);
 
-    AOSL_LOG_INF("POST %s body: %s", url, body);
+    AOSL_LOG_INF("POST %s", url);
 
     mybot_http_client_response_t raw;
     memset(&raw, 0, sizeof(raw));
@@ -308,8 +306,7 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
     }
     mybot_json_free_string(generated_body);
 
-    AOSL_LOG_INF("POST %s -> status=%d, body: %s", url, raw.status_code,
-                 raw.body ? raw.body : "(empty)");
+    AOSL_LOG_INF("POST %s -> status=%d", url, raw.status_code);
 
     if (!http_response_ok(&raw)) {
         int status = raw.status_code;
@@ -368,7 +365,7 @@ int mybot_device_client_stop_conversation(const char *base_url, const char *devi
     char extra_hdrs[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32];
     snprintf(extra_hdrs, sizeof(extra_hdrs), "Authorization: Device %s\r\n", device_token);
 
-    AOSL_LOG_INF("POST %s body: %s", url, body);
+    AOSL_LOG_INF("POST %s", url);
 
     mybot_http_client_response_t raw;
     memset(&raw, 0, sizeof(raw));
@@ -377,8 +374,7 @@ int mybot_device_client_stop_conversation(const char *base_url, const char *devi
     mybot_json_free_string(body);
 
     if (ret == 0) {
-        AOSL_LOG_INF("POST %s -> status=%d, body: %s", url, raw.status_code,
-                     raw.body ? raw.body : "(empty)");
+        AOSL_LOG_INF("POST %s -> status=%d", url, raw.status_code);
         if (!http_response_ok(&raw)) {
             AOSL_LOG_ERR("POST %s -> HTTP error %d", url, raw.status_code);
             ret = raw.status_code > 0 ? raw.status_code : -1;

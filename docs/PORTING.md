@@ -6,7 +6,7 @@ This document defines the platform contract for mybot 0.1.0-rc.1. Public APIs ma
 ## Step 1: Verify prerequisites
 
 Provide a C99 compiler, CMake 3.16+, an AOSL `CONFIG_PLATFORM` port, and an Agora RTSA header and
-library built for the exact target ABI. The device also needs TCP connectivity to the compatible
+library built for the exact target ABI. The device also needs TLS-capable connectivity to the compatible
 device service, persistent credential storage, and 16 kHz mono signed 16-bit PCM I/O. The bundled
 Agora library is x86_64 Linux only and cannot be reused for another architecture.
 
@@ -21,6 +21,7 @@ platforms/my_mcu/
   my_mcu_platform.h
   my_mcu_audio.c
   my_mcu_wifi.c
+  my_mcu_https.c
   my_mcu_kv_store.c
   my_mcu_key.c
   my_mcu_lcd.c          # optional
@@ -70,6 +71,25 @@ Implement all callbacks in `mybot_kv_store_ops_t`.
 
 Register with `mybot_kv_store_register()`.
 
+### HTTPS transport
+
+Production builds keep `MYBOT_ENABLE_HTTPS=ON` and register one
+`mybot_https_transport_ops_t` before `mybot_app_start()`. Wrap mbedTLS, BearSSL, or the chipset TLS
+socket API; the SDK core does not link OpenSSL. The backend must:
+
+- establish TCP and TLS within the supplied timeout;
+- send DNS hosts as SNI, validate the certificate chain against a maintained trust store, and
+  verify the certificate hostname;
+- return a positive byte count from `send` and `recv` on progress, 0 from `recv` only for a clean
+  peer close, and -1 on error or timeout;
+- release the entire TLS connection from `close`.
+
+Register with `mybot_https_transport_register()`. Do not disable certificate or hostname
+verification for development certificates; install the required CA in the device trust store.
+The Linux reference backend uses OpenSSL and the system CA store. Plain HTTP exists only for an
+isolated development build configured with
+`MYBOT_ENABLE_HTTPS=OFF -DMYBOT_ALLOW_INSECURE_HTTP=ON`.
+
 ### Keys
 
 Implement `mybot_key_service_ops_t` and translate hardware input into conversation start, stop,
@@ -92,7 +112,8 @@ must copy retained data, and destroy must wait for all detection handlers. Regis
 
 ```c
 int my_mcu_platform_register(void) {
-    if (my_mcu_wifi_register() < 0 || my_mcu_kv_register() < 0 ||
+    if (my_mcu_wifi_register() < 0 || my_mcu_https_register() < 0 ||
+        my_mcu_kv_register() < 0 ||
         my_mcu_key_register() < 0 || my_mcu_audio_capture_register() < 0 ||
         my_mcu_audio_playback_register() < 0) {
         return -1;
@@ -112,6 +133,7 @@ set(AGORA_RTC_LIBRARY /opt/agora-rtsa-target/lib/libagora-rtc-sdk.a CACHE FILEPA
 set(MYBOT_BUILD_LINUX_PLATFORM OFF CACHE BOOL "" FORCE)
 set(MYBOT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(MYBOT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(MYBOT_ENABLE_HTTPS ON CACHE BOOL "" FORCE)
 
 add_subdirectory(third_party/mybot)
 add_library(my_mcu_platform STATIC ${MY_MCU_PLATFORM_SOURCES})
@@ -136,7 +158,8 @@ while (mybot_app_is_running()) platform_sleep_ms(100);
 mybot_app_stop();
 ```
 
-`server_base` and `device_id` must be non-empty NUL-terminated strings. Start is non-blocking;
+`server_base` must be an HTTPS URL and both fields must be non-empty NUL-terminated strings. Start
+fails before global initialization when no TLS transport is registered. Start is non-blocking;
 services continue after Wi-Fi reports connected. Do not call stop from a platform callback because
 it waits for workers and callbacks. mybot currently owns process-wide AOSL and Agora lifecycles.
 
@@ -156,6 +179,7 @@ Verify endianness, pointer width, libc, compiler and floating-point ABI against 
 ## Step 8: Acceptance checklist
 
 - Public headers compile with warnings as errors and the host links only documented targets.
+- HTTPS rejects an untrusted CA, expired certificate, wrong hostname, missing SNI and handshake timeout.
 - Wi-Fi connected, disconnected and failure paths complete without deadlock.
 - KV survives reset, handles not-found and overflow, and protects credentials.
 - Capture/playback pass 16 kHz mono S16 tests at 20, 40 and 60 ms.
@@ -168,8 +192,8 @@ Verify endianness, pointer width, libc, compiler and floating-point ABI against 
 ## Current RC limitations
 
 - Public API and ABI may change before 1.0.
-- The built-in device client accepts only `http://` and has no TLS. Use a trusted network or add a
-  protected transport before production deployment.
+- HTTPS requires a platform TLS backend and maintained CA trust store. Linux supplies an OpenSSL
+  reference; MCU ports must integrate their TLS stack.
 - RTC is Agora-specific, registries are singleton, and one application instance is supported.
 - Linux backends are development references, not production provisioning or secure storage.
 - Third-party redistribution rights must be verified separately; see `THIRD_PARTY_NOTICES.md`.

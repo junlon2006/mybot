@@ -16,7 +16,7 @@ typedef struct {
 
 /**
  * @brief Simple blocking HTTP GET request.
- * @param url   URL in format "http://hostname[:port]/path"
+ * @param url   HTTPS URL. HTTP is accepted only when MYBOT_ALLOW_INSECURE_HTTP is enabled.
  * @param resp  [out] response data (must call mybot_http_client_response_free when done)
  * @return 0 on success, -1 on error.
  */
@@ -24,7 +24,7 @@ int mybot_http_client_get(const char *url, mybot_http_client_response_t *resp);
 
 /**
  * @brief Simple blocking HTTP POST request.
- * @param url           URL in format "http://hostname[:port]/path"
+ * @param url           HTTPS URL. HTTP is accepted only when MYBOT_ALLOW_INSECURE_HTTP is enabled.
  * @param content_type  Content-Type header value (e.g. "application/json")
  * @param body          POST body data
  * @param resp          [out] response data
