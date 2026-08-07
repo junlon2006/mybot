@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "mybot_ringbuf.h"
 
 #include <string.h>

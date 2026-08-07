@@ -27,6 +27,8 @@ between release candidates.
   layered architecture diagrams.
 - Bilingual (English / Simplified Chinese) community docs: contributing, support, security, and
   code of conduct.
+- SPDX license identifiers on all self-maintained C sources (Apache-2.0; MIT for the cJSON-derived
+  `mybot_json` sources).
 
 ## [0.1.0-rc.1] - Unreleased
 

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #ifndef MYBOT_HTTPS_TRANSPORT_INTERNAL_H_
 #define MYBOT_HTTPS_TRANSPORT_INTERNAL_H_
 

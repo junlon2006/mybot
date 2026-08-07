@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: MIT */
 /*
    Copyright (c) 2009 Dave Gamble
 
@@ -311,12 +312,15 @@ static const char *parse_string(mybot_json_t *item, const char *str) {
                 case 4:
                     *--ptr2 = ((uc | 0x80) & 0xBF);
                     uc >>= 6;
+                    /* falls through */
                 case 3:
                     *--ptr2 = ((uc | 0x80) & 0xBF);
                     uc >>= 6;
+                    /* falls through */
                 case 2:
                     *--ptr2 = ((uc | 0x80) & 0xBF);
                     uc >>= 6;
+                    /* falls through */
                 case 1:
                     *--ptr2 = (uc | firstByteMark[len]);
                 }

@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "mybot_device_client.h"
 #include <mybot/mybot_build_config.h>
 #include "mybot_http_client.h"

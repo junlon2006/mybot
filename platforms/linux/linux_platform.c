@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "linux_platform.h"
 
 #include "linux_backends.h"

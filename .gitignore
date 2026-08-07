@@ -1,6 +1,26 @@
-/.mybot-flash/
-/DEVICE_API.md
+# Build artifacts
 /build/
 /build-*/
-/.mybot-kv-store/
+cmake-build-*/
 compile_commands.json
+
+# Runtime data
+/.mybot-kv-store/
+/.mybot-flash/
+*.log
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swx
+
+# Patch leftovers
+*.orig
+*.rej
+
+# macOS
+.DS_Store
+
+# Internal, not for public distribution
+/DEVICE_API.md

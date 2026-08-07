@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include "mybot_device_lifecycle.h"
 #include <mybot/platform/mybot_kv_store.h>
 

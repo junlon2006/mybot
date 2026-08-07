@@ -1,3 +1,4 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 #include <mybot/platform/mybot_kv_store.h>
 
 static const mybot_kv_store_ops_t *s_ops;
