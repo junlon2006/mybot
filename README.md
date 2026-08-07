@@ -1,43 +1,72 @@
 # mybot
 
-`mybot` 是面向设备端的跨平台语音机器人 SDK。它负责 APSTA 配网、设备配对和认证、会话状态机、双向音频、Agora RTC 连接、按键/LCD 工作流，以及可选的本地唤醒词识别。平台相关能力通过小型 `ops` 接口注册，SDK 核心不依赖 Linux ALSA、stdin 或文件系统实现。
+[![CI](https://github.com/junlon2006/mybot/actions/workflows/ci.yml/badge.svg)](https://github.com/junlon2006/mybot/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/junlon2006/mybot)](LICENSE)
 
-当前版本为 **0.1.0-rc.1**，公开 API 尚未承诺稳定。仓库内置的 Agora RTSA 二进制和 AOSL 有独立的许可及使用条件；用于产品前请先阅读[许可证与第三方依赖](#许可证与第三方依赖)。
+**[English](README.md) | [简体中文](README.zh-CN.md)**
 
-## 能力与边界
+`mybot` is a cross-platform voice-robot SDK for edge devices. It handles APSTA provisioning,
+device pairing and authentication, a conversation state machine, two-way real-time audio
+(Agora RTSA), button/LCD workflows, and optional local wake-word recognition. Platform-specific
+capabilities are injected through a small set of `ops` interfaces, so the SDK core has no
+dependency on Linux ALSA, stdin, or a particular filesystem and ports cleanly to Linux and MCU
+platforms.
 
-- 音频固定为 16 kHz、单声道、16-bit PCM；`ptime` 可配置为 20/40/60 ms，默认 60 ms。
-- Wi-Fi 接口面向 APSTA 配网，非阻塞启动，通过事件推进应用状态机。
-- 本地 ASR 唤醒词为可选平台后端，默认关闭；唤醒行为与物理按键启动会话一致。
-- LCD 接收配网、配对码、就绪和会话中等语义状态，由平台决定具体显示方式。
-- RTC 实现专用于 Agora RTSA，不提供其他 RTC 协议适配层。
-- 设备服务默认只接受 HTTPS。Linux 使用 OpenSSL 和系统 CA；MCU 由平台接入 mbedTLS
-  或芯片厂商 TLS，并必须验证证书链和服务端主机名。
-- 设备服务端不属于本仓库；运行示例需要兼容的服务地址。
+> Current version: **0.1.0-rc.1** — the public API is not yet stable. The bundled Agora RTSA
+> binary and AOSL have separate licensing and usage terms; read
+> [License and third-party dependencies](#license-and-third-party-dependencies) before using the
+> SDK in a product.
 
-## 仓库结构
+## Table of Contents
 
-```text
-mybot/
-├── include/mybot/          # SDK 公共头文件和平台契约
-├── src/                    # 跨平台实现；internal/ 不属于公共 API
-├── platforms/linux/        # Linux 参考后端（ALSA/stdin/file/console）
-├── examples/linux/         # Linux 示例应用入口
-├── tests/                  # 单元、平台和宿主集成测试
-├── docs/PORTING.md         # 新平台逐步移植指南和验收契约
-├── cmake/                  # 工具链辅助文件
-└── third_party/            # AOSL 与 Agora RTSA SDK
-```
+- [Features](#features)
+- [Boundaries and limitations](#boundaries-and-limitations)
+- [Quick start](#quick-start)
+- [Integrating into a host project](#integrating-into-a-host-project)
+- [Build configuration](#build-configuration)
+- [Architecture](#architecture)
+- [Repository layout](#repository-layout)
+- [Documentation](#documentation)
+- [Development and verification](#development-and-verification)
+- [Contributing and support](#contributing-and-support)
+- [License and third-party dependencies](#license-and-third-party-dependencies)
 
-主要 CMake 目标：
+## Features
 
-- `mybot::sdk`：跨平台 SDK 核心。
-- `mybot::platform_linux`：Linux 参考后端，不属于跨平台核心。
-- `mybot::linux_example`：Linux CLI 示例。
+- **Cross-platform core**: The core depends only on AOSL and the platform `ops` contract; it never
+  touches any OS or peripheral API directly. The same code runs on the Linux reference platform and
+  on MCU firmware.
+- **APSTA provisioning**: Non-blocking startup; Wi-Fi events drive the application state machine.
+- **Pairing and authentication**: Pair code → device claim → persisted long-lived credential, with
+  automatic re-pairing when authentication is rejected.
+- **Conversation state machine**: Five states — `unprovisioned / pairing / awaiting_claim / runtime
+  / in_conversation` — drive the device-server interaction.
+- **Two-way real-time audio**: Built on Agora RTSA, with cloud AEC and optional real-time
+  transcription.
+- **Optional local wake words**: Off by default; wake behavior is identical to starting a
+  conversation with a physical button.
+- **Button and LCD workflows**: Semantic screen states (provisioning / pair code / ready / in
+  conversation); how each is displayed is up to the platform.
+- **HTTPS transport**: The device service accepts HTTPS only by default. Linux uses OpenSSL; MCU
+  platforms may integrate mbedTLS or a vendor TLS and must validate the certificate chain and host
+  name.
 
-## Linux 快速开始
+## Boundaries and limitations
 
-环境要求：Linux x86_64、CMake 3.16+、C99 编译器、ALSA 和 OpenSSL 开发包。仓库当前附带的 Agora RTSA 静态库也是 x86_64 Linux 版本。
+- Audio is fixed at 16 kHz, mono, 16-bit PCM; `ptime` is configurable to 20/40/60 ms (default
+  60 ms).
+- The RTC implementation is specific to Agora RTSA; no other RTC protocol adapter is provided.
+- Local ASR wake words are an optional platform backend, off by default; enabling them requires the
+  platform to register a backend.
+- The Wi-Fi interface targets APSTA provisioning scenarios.
+- The device server is not part of this repository; running the examples requires a compatible
+  server endpoint.
+
+## Quick start
+
+The Linux reference platform lets you run the full workflow on a development machine. Requirements:
+Linux x86_64, CMake 3.16+, a C99 compiler, and ALSA and OpenSSL development packages. The bundled
+Agora RTSA static library is also the x86_64 Linux build.
 
 ```bash
 sudo apt-get update
@@ -47,7 +76,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ```
 
-运行示例：
+Run the example:
 
 ```bash
 ./build/examples/linux/mybot \
@@ -57,11 +86,18 @@ ctest --test-dir build --output-on-failure
   --hw-model linux-reference
 ```
 
-Linux 后端直接使用宿主机现有网络，并立即报告 STA 已连接；它只是开发用替身，不实现真实 APSTA 配网。音频使用 ALSA `default` 设备。KV 数据默认写入当前目录的 `.mybot-kv-store/`，可通过 `MYBOT_KV_STORE_DIR` 修改。就绪后可输入 `s` 开始会话、`q` 停止会话、`p` 重新配对、`e` 退出。
+Once ready, press `s` to start a conversation, `q` to stop it, `p` to re-pair, `e` to exit.
 
-## 集成到宿主工程
+The Linux backend is a **development stand-in**: it reuses the host network and reports STA as
+connected immediately; it does not implement real APSTA provisioning. Audio uses the ALSA `default`
+device. KV data is written to `.mybot-kv-store/` in the current directory by default; override the
+location with the `MYBOT_KV_STORE_DIR` environment variable.
 
-推荐将仓库作为源码子模块引入。宿主需要为目标架构准备匹配的 Agora RTSA 头文件/静态库，并确保 AOSL 已支持目标平台。
+## Integrating into a host project
+
+We recommend vendoring the repository as a source submodule. The host must provide an Agora RTSA
+header and static library matching the target architecture and ensure AOSL supports the target
+platform.
 
 ```cmake
 set(CONFIG_PLATFORM my_mcu CACHE STRING "" FORCE)
@@ -79,13 +115,14 @@ add_subdirectory(third_party/mybot)
 target_link_libraries(device_firmware PRIVATE mybot::sdk)
 ```
 
-平台必须在 `mybot_app_start()` 之前注册 Wi-Fi、KV、按键、音频采集、音频播放和
-HTTPS 传输后端。LCD 可选；只有 `MYBOT_WAKE_WORDS=ON` 时才必须注册本地 ASR 后端。
-Linux 平台自动注册 OpenSSL 后端；其他平台实现
-`mybot_https_transport_ops_t`。完整实现顺序、最小代码、线程约束和验收清单见
-[docs/PORTING.md](docs/PORTING.md)。
+The platform must register the Wi-Fi, KV, button, audio capture, audio playback, and HTTPS transport
+backends before `mybot_app_start()`. LCD is optional; a local ASR backend is required only when
+`MYBOT_WAKE_WORDS=ON`. The Linux platform registers the OpenSSL backend automatically; other
+platforms must implement `mybot_https_transport_ops_t`. For the full implementation order, minimal
+code, threading constraints, and acceptance checklist, see
+[docs/PORTING.md](docs/PORTING.md).
 
-最小应用生命周期：
+Minimal application lifecycle:
 
 ```c
 platform_register_all();
@@ -96,25 +133,29 @@ while (mybot_app_is_running()) {
 mybot_app_stop();
 ```
 
-`mybot_app_start()` 非阻塞。它首先启动配网，收到 STA connected 事件后才异步初始化存储、按键、音频、设备服务和 RTC。`mybot_app_stop()` 会等待工作线程退出，不应从平台事件回调内部调用。
+`mybot_app_start()` is non-blocking: it starts provisioning first, then initializes storage,
+buttons, audio, the device service, and RTC asynchronously once the STA-connected event arrives.
+`mybot_app_stop()` waits for all worker threads to exit and must not be called from inside a
+platform event callback.
 
-## 构建配置
+## Build configuration
 
-以下选项可在宿主 `add_subdirectory()` 前设置，也可通过 CMake 命令行传入：
+The following options can be set via the CMake command line or cache variables before the host's
+`add_subdirectory()` call:
 
-| 选项 | 默认值 | 说明 |
+| Option | Default | Description |
 | --- | --- | --- |
-| `MYBOT_AUDIO_PTIME_MS` | `60` | 音频包长，只接受 20、40、60 ms |
-| `MYBOT_CLOUD_AEC` | `ON` | 服务端 AEC；上行包含麦克风和参考声道 |
-| `MYBOT_WAKE_WORDS` | `OFF` | 启用本地 ASR 唤醒词平台后端 |
+| `MYBOT_AUDIO_PTIME_MS` | `60` | Audio packet duration; accepts only 20, 40, 60 ms |
+| `MYBOT_CLOUD_AEC` | `ON` | Server-side AEC; the uplink carries mic and reference channels |
+| `MYBOT_WAKE_WORDS` | `OFF` | Enable the platform local-ASR wake-word backend |
 | `MYBOT_AI_QOS` | `ON` | Agora AI QoS |
-| `MYBOT_FAST_SEND_MULTIPLIER` | `3` | 快发倍数，只接受 1 到 5 |
-| `MYBOT_SHOW_TRANSCRIPT` | `OFF` | 请求实时转写数据流 |
-| `MYBOT_ENABLE_HTTPS` | `ON` | 启用平台 HTTPS 传输，生产构建应保持开启 |
-| `MYBOT_ALLOW_INSECURE_HTTP` | `OFF` | 仅本地开发：显式允许明文 HTTP |
-| `MYBOT_ENABLE_ASAN` | `OFF` | GCC/Clang 地址消毒器，建议在宿主测试中开启 |
+| `MYBOT_FAST_SEND_MULTIPLIER` | `3` | Fast-send multiplier; accepts only 1–5 |
+| `MYBOT_SHOW_TRANSCRIPT` | `OFF` | Request the real-time transcription data stream |
+| `MYBOT_ENABLE_HTTPS` | `ON` | Enable the platform HTTPS transport; keep ON for production builds |
+| `MYBOT_ALLOW_INSECURE_HTTP` | `OFF` | Local development only: explicitly allow plaintext HTTP |
+| `MYBOT_ENABLE_ASAN` | `OFF` | GCC/Clang AddressSanitizer; recommended for host tests |
 
-例如：
+For example:
 
 ```bash
 cmake -S . -B build-wake \
@@ -123,29 +164,171 @@ cmake -S . -B build-wake \
   -DMYBOT_WAKE_WORDS=ON
 ```
 
-Linux 参考平台没有本地 ASR 后端，因此开启 `MYBOT_WAKE_WORDS` 后需要由宿主额外注册后端，否则应用会明确启动失败。
+The Linux reference platform has no local ASR backend, so enabling `MYBOT_WAKE_WORDS` requires the
+host to register an additional backend; otherwise the app fails to start with a clear error.
 
-明文 HTTP 不会自动回退。仅在隔离的本地开发环境中，可显式配置
-`-DMYBOT_ENABLE_HTTPS=OFF -DMYBOT_ALLOW_INSECURE_HTTP=ON`。该组合会传输设备凭据和
-RTC 参数的明文，不得用于设备、共享网络或发布构建。
+Plaintext HTTP never falls back automatically. Only in an isolated local development environment may
+you configure `-DMYBOT_ENABLE_HTTPS=OFF -DMYBOT_ALLOW_INSECURE_HTTP=ON`. This combination transmits
+device credentials and RTC parameters in cleartext and must not be used on devices, shared
+networks, or release builds.
 
-## 工作流
+## Architecture
 
-```text
-APSTA provisioning -> STA connected -> pairing -> awaiting claim
-                                             |
-                                             v
-                              runtime <-> in conversation
+The SDK uses a layered architecture: the host application drives the core through the public API,
+the core modules sit on top of the AOSL portability layer and the platform `ops` contract, and all
+platform differences are absorbed by the platform backends. The device server and the Agora RTC
+cloud are runtime external dependencies and are not part of this repository.
+
+```mermaid
+flowchart TB
+    subgraph host["Host application"]
+        host_app["Device firmware / Linux example"]
+    end
+
+    subgraph api["Public API · include/mybot"]
+        api_h["mybot_app_start / stop<br/>conversation · pair · state"]
+    end
+
+    subgraph core["SDK core · src/"]
+        app_c["mybot_app<br/>startup orchestration · event dispatch · threads"]
+        state_m["Device state machine<br/>pairing · claim · conversation lifecycle"]
+        svc_c["Device-service client<br/>pair / claim / conversation polling"]
+        rtc_c["RTC session<br/>Agora RTSA wrapper"]
+        media_c["Audio pipeline<br/>ring buffers · AEC reference · wake words"]
+    end
+
+    subgraph infra["Foundation layer"]
+        aosl["AOSL<br/>MPQ threads · timers · atomics · logging"]
+        ops["Platform ops contract<br/>wifi · kv_store · key · lcd<br/>audio · https · asr"]
+    end
+
+    subgraph plat["Platform backends"]
+        linux_b["Linux reference<br/>ALSA · stdin · file · console · OpenSSL"]
+        mcu_b["MCU backend · host-provided"]
+    end
+
+    subgraph ext["External services"]
+        svc_e["Device server (HTTPS)"]
+        agora_e["Agora RTC cloud"]
+    end
+
+    host_app --> api_h
+    api_h --> app_c
+    app_c --> state_m
+    app_c --> media_c
+    state_m --> svc_c
+    svc_c --> rtc_c
+    rtc_c <--> media_c
+    app_c --> aosl
+    app_c --> ops
+    svc_c --> aosl
+    rtc_c --> aosl
+    media_c --> aosl
+    ops --> linux_b
+    ops --> mcu_b
+    svc_c -->|HTTPS polling| svc_e
+    rtc_c -->|real-time audio| agora_e
 ```
 
-```text
-microphone -> capture worker -> local wake words (idle only)
-                         \-> capture ring buffer -> Agora RTC uplink
+Layer notes:
 
-speaker <- playback worker <- playback ring buffer <- Agora RTC downlink
+- **Public API** ([include/mybot/mybot.h](include/mybot/mybot.h)): application lifecycle,
+  conversation control, and state queries; non-blocking startup.
+- **SDK core** ([src/](src/)): startup orchestration, the device state machine, the device-service
+  HTTP client, the Agora RTSA session wrapper, audio ring buffers, and the optional local
+  wake-word engine. Core code never touches any OS or peripheral API directly.
+- **Foundation layer**: AOSL provides portable threads / MPQ queues / timers / logging; the
+  platform `ops` contract defines the device capabilities the SDK requires. Both are implementable
+  per platform.
+- **Platform backends**: the Linux reference implementation and each MCU platform register against
+  the same contract.
+- **External services**: the device server (pairing / claim / conversation scheduling, HTTPS only)
+  and Agora RTC (real-time audio).
+
+### Threading model
+
+`mybot_app_start()` creates five worker threads (AOSL MPQ queues) with strictly separated
+responsibilities:
+
+| Thread (MPQ) | Driven by | Responsibility |
+| --- | --- | --- |
+| `startup_mpq` | Wi-Fi state events | Serializes startup transitions; initializes services asynchronously after STA connects |
+| `state_mpq` | 100 ms timer | Device state-machine tick; blocking HTTP polling stays on this thread |
+| `mybot_mpq` | ptime timer | Sends uplink audio at the packetization cadence (Agora RTSA) |
+| `cap_mpq` | ptime timer | Mic capture → capture ring buffer → (optional) wake words |
+| `pb_mpq` | ptime timer | Playback ring buffer → speaker; also feeds the AEC reference channel |
+
+The real-time audio timers (cap / pb / send) are independent, so a single blocking backend cannot
+stall the whole audio path; the state machine and startup flow run on dedicated threads and never
+contend with the audio cadence.
+
+### Workflows
+
+#### Device state machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> unprovisioned
+    unprovisioned --> pairing: start pairing
+    pairing --> awaiting_claim: pair code received
+    awaiting_claim --> runtime: device claimed
+    runtime --> in_conversation: conversation starts
+    in_conversation --> runtime: conversation ends
+    runtime --> unprovisioned: auth rejected
+    in_conversation --> unprovisioned: auth rejected
 ```
 
-## 开发与验证
+When device authentication is rejected, the device returns to `unprovisioned` and automatically
+restarts pairing on the next state-machine tick. For the full server interaction and the
+device-side state definitions, see [DEVICE_API.md](DEVICE_API.md).
+
+#### Audio data flow
+
+```mermaid
+flowchart LR
+    mic["Microphone"] -->|capture ops| cap["Capture worker (cap_mpq)"]
+    cap --> capbuf["Capture ring buffer"]
+    cap --> wake["Local wake words · when idle"]
+    capbuf --> send["Send worker (mybot_mpq)"]
+    send -->|ptime frames| rtc_u["Agora RTC uplink"]
+
+    rtc_d["Agora RTC downlink"] --> pbbuf["Playback ring buffer"]
+    pbbuf --> pb["Playback worker (pb_mpq)"]
+    pb -->|playback ops| spk["Speaker"]
+    pb -.->|AEC reference| send
+```
+
+With `MYBOT_CLOUD_AEC=ON`, the downlink audio is interleaved with the microphone signal as a
+reference channel and sent uplink together, letting the server cancel echo.
+
+## Repository layout
+
+```text
+mybot/
+├── include/mybot/          # public headers and platform contracts
+├── src/                    # cross-platform implementation; internal/ is not public API
+├── platforms/linux/        # Linux reference backends (ALSA/stdin/file/console)
+├── examples/linux/         # Linux example application entry
+├── tests/                  # unit, platform, and host integration tests
+├── docs/                   # porting and release guides
+├── cmake/                  # toolchain helpers
+└── third_party/            # AOSL and the Agora RTSA SDK
+```
+
+Key CMake targets:
+
+- `mybot::sdk` — the cross-platform SDK core (AOSL + Agora RTSA).
+- `mybot::platform_linux` — the Linux reference backend; not part of the cross-platform core.
+- `mybot::linux_example` — the Linux CLI example application.
+
+## Documentation
+
+- [docs/PORTING.md](docs/PORTING.md) — porting guide and acceptance contract
+- [DEVICE_API.md](DEVICE_API.md) — device-side server API specification
+- [docs/RELEASING.md](docs/RELEASING.md) — release process
+- [CHANGELOG.md](CHANGELOG.md) — version history
+
+## Development and verification
 
 ```bash
 cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=ON
@@ -155,14 +338,29 @@ find include src platforms examples tests -type f \
   \( -name '*.c' -o -name '*.h' \) -print0 | xargs -0 clang-format --dry-run --Werror
 ```
 
-自研 C 代码遵循根目录 `.clang-format`；`third_party/` 保持上游内容。提交补丁前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。版本变化记录见 [CHANGELOG.md](CHANGELOG.md)，安全问题报告方式见 [SECURITY.md](SECURITY.md)。
+- Owned C code follows the root `.clang-format`; `third_party/` keeps upstream content and is
+  excluded from the format check.
+- CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the build, tests, and format check
+  on every push / PR; make sure your local commands match CI before merging.
 
-## 许可证与第三方依赖
+## Contributing and support
 
-仓库自研代码按根目录 [LICENSE](LICENSE) 中的 Apache License 2.0 发布，但这不改变第三方组件的许可：
+We welcome issues, discussions, and pull requests. Before you start, please read:
 
-- AOSL 带有其 `third_party/aosl/LICENSE` 中列出的附加条件。
-- Agora RTSA SDK 二进制受其软件许可、试用期和商业授权要求约束。
-- `mybot_json` 派生自 cJSON，保留 MIT 许可声明。
+- [CONTRIBUTING.md](CONTRIBUTING.md) — development workflow and contribution guidelines
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community code of conduct
+- [SUPPORT.md](SUPPORT.md) — how to get help
+- [SECURITY.md](SECURITY.md) — how to report security vulnerabilities
 
-发布产品或重新分发前必须单独核实这些条款。详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+## License and third-party dependencies
+
+Our own code is released under the Apache License 2.0 in the root [LICENSE](LICENSE). This does not
+change the licensing of third-party components:
+
+- AOSL carries additional conditions listed in `third_party/aosl/LICENSE`.
+- The Agora RTSA SDK binary is subject to its software license, trial period, and commercial
+  licensing requirements.
+- `mybot_json` is derived from cJSON and retains the MIT license notice.
+
+Verify these terms independently before shipping or redistributing a product. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details.
