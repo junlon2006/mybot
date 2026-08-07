@@ -307,6 +307,31 @@ int main(void) {
     assert(s_stop_call_count == 1);
     assert(s_conversation_stop_count == 3);
 
+    /* Binding status continues to be polled during a conversation. A bound
+     * response keeps RTC active; an unbound response closes RTC locally and
+     * clears the persisted credential before re-pairing. */
+    assert(mybot_device_lifecycle_init("http://server", "device-1", NULL, NULL, &callbacks) == 0);
+    strcpy(s_binding_status, "bound");
+    s_binding_result = 0;
+    mybot_device_lifecycle_request_start();
+    mybot_device_lifecycle_tick();
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION);
+
+    int conversation_binding_calls = s_binding_call_count;
+    int conversation_stop_callbacks = s_conversation_stop_count;
+    tick_many(300);
+    assert(s_binding_call_count == conversation_binding_calls + 1);
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION);
+    assert(s_conversation_stop_count == conversation_stop_callbacks);
+
+    strcpy(s_binding_status, "unbound");
+    tick_many(10);
+    assert(s_binding_call_count == conversation_binding_calls + 2);
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_UNPROVISIONED);
+    assert(s_conversation_stop_count == conversation_stop_callbacks + 1);
+    assert(s_stop_call_count == 1);
+    assert(!s_kv_store_present);
+
     mybot_kv_store_deinit();
     aosl_dtor();
     puts("device_lifecycle_test: ok");

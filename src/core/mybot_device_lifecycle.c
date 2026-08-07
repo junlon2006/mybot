@@ -291,6 +291,15 @@ static void action_poll_binding_pair(void) {
 /* ----------------------------------------------------------
  * Action: check binding status during runtime
  * ---------------------------------------------------------- */
+static void complete_conversation_locally(void);
+
+static void invalidate_runtime_binding(void) {
+    if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
+        complete_conversation_locally();
+    }
+    restart_pairing_after_auth_rejection();
+}
+
 static void action_poll_binding_runtime(void) {
     char auth[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 16];
     snprintf(auth, sizeof(auth), "Device %s", s_state.device_token);
@@ -311,7 +320,7 @@ static void action_poll_binding_runtime(void) {
     }
     if (api_rejected_device_auth(ret)) {
         AOSL_LOG_WRN("device credential rejected (HTTP %d), re-pairing", ret);
-        restart_pairing_after_auth_rejection();
+        invalidate_runtime_binding();
         return;
     }
     if (ret != 0) {
@@ -323,9 +332,18 @@ static void action_poll_binding_runtime(void) {
         s_state.runtime_poll_interval = resp.poll_after_seconds > 0 ? resp.poll_after_seconds : 30;
     } else if (strcmp(resp.status, "unbound") == 0) {
         AOSL_LOG_INF("device unbound by user");
-        restart_pairing_after_auth_rejection();
+        invalidate_runtime_binding();
     } else {
         AOSL_LOG_ERR("unexpected runtime status: %s", resp.status);
+    }
+}
+
+static void tick_runtime_binding_poll(void) {
+    s_state.runtime_tick_counter++;
+    int interval_ticks = s_state.runtime_poll_interval * 10;
+    if (s_state.runtime_tick_counter >= interval_ticks) {
+        s_state.runtime_tick_counter = 0;
+        action_poll_binding_runtime();
     }
 }
 
@@ -539,13 +557,7 @@ void mybot_device_lifecycle_tick(void) {
             return;
         }
 
-        /* Periodic binding status poll */
-        s_state.runtime_tick_counter++;
-        int interval_ticks = s_state.runtime_poll_interval * 10;
-        if (s_state.runtime_tick_counter >= interval_ticks) {
-            s_state.runtime_tick_counter = 0;
-            action_poll_binding_runtime();
-        }
+        tick_runtime_binding_poll();
         return;
     }
 
@@ -556,7 +568,9 @@ void mybot_device_lifecycle_tick(void) {
             const char *reason =
                 request == MYBOT_STOP_REQUEST_DEVICE_HANGUP ? "device_hangup" : "error";
             action_stop_conversation(reason);
+            return;
         }
+        tick_runtime_binding_poll();
         return;
     }
 }

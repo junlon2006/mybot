@@ -7,6 +7,8 @@ between release candidates.
 
 ### Fixed
 
+- Continue binding-status polling during active conversations and end RTC locally when the device
+  becomes unbound or its credential is rejected.
 - Harden the Linux file KV backend against symlink traversal and persist atomic replacements and
   deletions with file and directory `fsync`.
 - Preserve runtime Wi-Fi disconnect/reconnect events, pause device-service traffic while offline,
