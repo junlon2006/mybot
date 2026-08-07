@@ -331,8 +331,9 @@ mybot/
 
 ## 文档
 
-- [docs/PORTING.md](docs/PORTING.md) — 新平台移植指南与验收契约
-- [docs/RELEASING.md](docs/RELEASING.md) — 版本发布流程
+- [docs/PORTING.md](docs/PORTING.md)（[简体中文](docs/PORTING.zh-CN.md)）— 新平台移植指南
+  与验收契约
+- [docs/RELEASING.md](docs/RELEASING.md)（[简体中文](docs/RELEASING.zh-CN.md)）— 版本发布流程
 - [CHANGELOG.md](CHANGELOG.md) — 版本变更记录
 
 ## 开发与验证

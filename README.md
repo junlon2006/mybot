@@ -364,8 +364,9 @@ Key CMake targets:
 
 ## Documentation
 
-- [docs/PORTING.md](docs/PORTING.md) — porting guide and acceptance contract
-- [docs/RELEASING.md](docs/RELEASING.md) — release process
+- [docs/PORTING.md](docs/PORTING.md) ([简体中文](docs/PORTING.zh-CN.md)) — porting guide and
+  acceptance contract
+- [docs/RELEASING.md](docs/RELEASING.md) ([简体中文](docs/RELEASING.zh-CN.md)) — release process
 - [CHANGELOG.md](CHANGELOG.md) — version history
 
 ## Development and verification
