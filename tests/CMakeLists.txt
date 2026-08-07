@@ -47,6 +47,21 @@ target_link_libraries(mybot_wifi_provisioning_test PRIVATE aosl ${MYBOT_TEST_SYS
 
 mybot_add_test(mybot_wake_words_test unit/wake_words_test.c ../src/media/mybot_wake_words.c)
 
+mybot_add_test(mybot_audio_test unit/audio_test.c ../src/media/mybot_audio.c)
+
+mybot_add_test(mybot_public_headers_test integration/public_headers_test.c)
+target_link_libraries(mybot_public_headers_test PRIVATE mybot::sdk)
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(mybot_public_headers_test PRIVATE -Wall -Wextra -Werror)
+endif()
+
+add_test(NAME mybot_cmake_host_integration
+    COMMAND ${CMAKE_COMMAND}
+        -DMYBOT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/..
+        -DMYBOT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/cmake_host
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/run_cmake_host.cmake
+)
+
 if(MYBOT_BUILD_LINUX_PLATFORM)
     mybot_add_test(mybot_key_stdin_test
         platform/linux/key_stdin_test.c

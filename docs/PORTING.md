@@ -1,0 +1,175 @@
+# Porting mybot to a new platform
+
+This document defines the platform contract for mybot 0.1.0-rc.1. Public APIs may change before
+1.0. Platform code must include only headers under `include/mybot` and link `mybot::sdk`.
+
+## Step 1: Verify prerequisites
+
+Provide a C99 compiler, CMake 3.16+, an AOSL `CONFIG_PLATFORM` port, and an Agora RTSA header and
+library built for the exact target ABI. The device also needs TCP connectivity to the compatible
+device service, persistent credential storage, and 16 kHz mono signed 16-bit PCM I/O. The bundled
+Agora library is x86_64 Linux only and cannot be reused for another architecture.
+
+## Step 2: Create the platform layout
+
+Keep platform code outside `src/`:
+
+```text
+platforms/my_mcu/
+  CMakeLists.txt
+  my_mcu_platform.c
+  my_mcu_platform.h
+  my_mcu_audio.c
+  my_mcu_wifi.c
+  my_mcu_kv_store.c
+  my_mcu_key.c
+  my_mcu_lcd.c          # optional
+  my_mcu_wake_words.c   # optional
+```
+
+An out-of-tree firmware project may use the same layout without changing this repository.
+
+## Step 3: Implement required backends
+
+Register every required backend exactly once before `mybot_app_start()`.
+
+### Audio
+
+Implement complete capture and playback tables from `mybot_audio.h`. The lifecycle is
+`init -> start -> repeated read/write -> stop -> destroy`.
+
+- The format is 16000 Hz, one channel, 16 bits per sample.
+- Counts passed to and returned from `read` and `write` are frames, not bytes.
+- Return a short positive count for progress, 0 for no progress, or a negative value on error.
+  Never return more frames than requested.
+- PCM pointers are borrowed only for the callback duration.
+- I/O runs on dedicated AOSL MPQ workers. Blocking must be bounded so shutdown can finish.
+- `stop` should unblock in-flight I/O; `destroy` releases the context after workers stop.
+
+Register with `mybot_audio_device_register_capture()` and
+`mybot_audio_device_register_playback()`.
+
+### Wi-Fi provisioning
+
+Implement `mybot_wifi_provisioning_ops_t`. `init` starts APSTA without waiting for the user.
+Emit connected, disconnected and failed events as state changes. Events may come from a platform
+thread, but none may run after `destroy` returns. Destroy must stop the transport and wait for
+in-flight callbacks. Register with `mybot_wifi_provisioning_register()`.
+
+The Linux backend reports connected immediately and is not a real APSTA reference.
+
+### Persistent key-value storage
+
+Implement all callbacks in `mybot_kv_store_ops_t`.
+
+- `get` returns 0 on success, `MYBOT_KV_STORE_NOT_FOUND` when absent, and negative on failure.
+  It must respect `capacity` and set `out_len` only on success.
+- `set` should survive power loss without exposing a partial replacement.
+- `erase` is idempotent.
+- Protect the device token with appropriate access controls or encryption.
+
+Register with `mybot_kv_store_register()`.
+
+### Keys
+
+Implement `mybot_key_service_ops_t` and translate hardware input into conversation start, stop,
+pair and exit events. Events may be asynchronous. Destroy must stop the source and wait for all
+handlers. Register with `mybot_key_service_register()`.
+
+### LCD (optional)
+
+Implement `mybot_lcd_ops_t` when a display exists. Render receives semantic content and can be
+called from different SDK threads; the SDK serializes calls. Content is borrowed. Register with
+`mybot_lcd_register()`.
+
+### Wake words (optional)
+
+Required only with `MYBOT_WAKE_WORDS=ON`. Process receives borrowed PCM. An asynchronous backend
+must copy retained data, and destroy must wait for all detection handlers. Register with
+`mybot_wake_words_register()`.
+
+## Step 4: Add one registration entry point
+
+```c
+int my_mcu_platform_register(void) {
+    if (my_mcu_wifi_register() < 0 || my_mcu_kv_register() < 0 ||
+        my_mcu_key_register() < 0 || my_mcu_audio_capture_register() < 0 ||
+        my_mcu_audio_playback_register() < 0) {
+        return -1;
+    }
+    return 0;
+}
+```
+
+Propagate every failure. Add LCD and wake-word registration when enabled.
+
+## Step 5: Integrate with CMake
+
+```cmake
+set(CONFIG_PLATFORM my_mcu CACHE STRING "" FORCE)
+set(AGORA_SDK_DIR /opt/agora-rtsa-target CACHE PATH "" FORCE)
+set(AGORA_RTC_LIBRARY /opt/agora-rtsa-target/lib/libagora-rtc-sdk.a CACHE FILEPATH "" FORCE)
+set(MYBOT_BUILD_LINUX_PLATFORM OFF CACHE BOOL "" FORCE)
+set(MYBOT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(MYBOT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+
+add_subdirectory(third_party/mybot)
+add_library(my_mcu_platform STATIC ${MY_MCU_PLATFORM_SOURCES})
+target_link_libraries(my_mcu_platform PUBLIC mybot::sdk)
+target_link_libraries(device_firmware PRIVATE mybot::sdk my_mcu_platform)
+```
+
+A host may predefine an imported target named `agora-rtc-sdk`. This RC supports source integration
+with `add_subdirectory()`; the installed archive is not yet a complete `find_package(mybot)` package.
+
+## Step 6: Start and stop
+
+```c
+if (my_mcu_platform_register() < 0) fail_startup();
+
+mybot_app_config_t config = {0};
+copy_checked(config.server_base, sizeof(config.server_base), server_url);
+copy_checked(config.device_id, sizeof(config.device_id), device_id);
+if (mybot_app_start(&config) < 0) fail_startup();
+
+while (mybot_app_is_running()) platform_sleep_ms(100);
+mybot_app_stop();
+```
+
+`server_base` and `device_id` must be non-empty NUL-terminated strings. Start is non-blocking;
+services continue after Wi-Fi reports connected. Do not call stop from a platform callback because
+it waits for workers and callbacks. mybot currently owns process-wide AOSL and Agora lifecycles.
+
+## Step 7: Cross-compile
+
+```bash
+cmake -S firmware -B build-target \
+  -DCMAKE_TOOLCHAIN_FILE=/path/to/toolchain.cmake \
+  -DCONFIG_PLATFORM=my_mcu \
+  -DAGORA_SDK_DIR=/opt/agora-rtsa-target \
+  -DAGORA_RTC_LIBRARY=/opt/agora-rtsa-target/lib/libagora-rtc-sdk.a
+cmake --build build-target -j
+```
+
+Verify endianness, pointer width, libc, compiler and floating-point ABI against the Agora library.
+
+## Step 8: Acceptance checklist
+
+- Public headers compile with warnings as errors and the host links only documented targets.
+- Wi-Fi connected, disconnected and failure paths complete without deadlock.
+- KV survives reset, handles not-found and overflow, and protects credentials.
+- Capture/playback pass 16 kHz mono S16 tests at 20, 40 and 60 ms.
+- Short I/O makes progress and stop unblocks device loss.
+- No key or wake-word callback runs after destroy returns; LCD does not retain borrowed content.
+- Partial startup failure and repeated start/stop release all resources.
+- A real device completes provisioning, pairing, RTC join, bidirectional audio, hangup and reboot.
+- Logs and storage do not expose tokens.
+
+## Current RC limitations
+
+- Public API and ABI may change before 1.0.
+- The built-in device client accepts only `http://` and has no TLS. Use a trusted network or add a
+  protected transport before production deployment.
+- RTC is Agora-specific, registries are singleton, and one application instance is supported.
+- Linux backends are development references, not production provisioning or secure storage.
+- Third-party redistribution rights must be verified separately; see `THIRD_PARTY_NOTICES.md`.

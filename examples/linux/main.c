@@ -1,4 +1,5 @@
 #include <mybot/mybot.h>
+#include <mybot/mybot_version.h>
 
 #include "linux_platform.h"
 
@@ -71,7 +72,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    AOSL_LOG_INF("mybot v0.1.0 starting...");
+    AOSL_LOG_INF("mybot v%s starting...", mybot_version_string());
     AOSL_LOG_INF("  server   : %s", cfg.server_base);
     AOSL_LOG_INF("  device-id: %s", cfg.device_id);
     if (cfg.firmware_ver[0]) {

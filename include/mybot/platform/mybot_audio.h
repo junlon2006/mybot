@@ -70,10 +70,10 @@ typedef struct {
  * Registration API — called by platform implementations
  * ---------------------------------------------------------- */
 
-/** Register capture device ops (call once at startup). */
+/** Register complete capture device ops once, before mybot_app_start(). */
 int mybot_audio_device_register_capture(const mybot_audio_capture_ops_t *ops);
 
-/** Register playback device ops (call once at startup). */
+/** Register complete playback device ops once, before mybot_app_start(). */
 int mybot_audio_device_register_playback(const mybot_audio_playback_ops_t *ops);
 
 /* ----------------------------------------------------------

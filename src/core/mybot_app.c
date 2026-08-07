@@ -770,7 +770,11 @@ static void on_wifi_state_changed(mybot_wifi_provisioning_state_t state, void *u
  * ---------------------------------------------------------- */
 
 int mybot_app_start(const mybot_app_config_t *cfg) {
-    if (!cfg) {
+    if (s_app.aosl_active || !cfg || !memchr(cfg->server_base, '\0', sizeof(cfg->server_base)) ||
+        !memchr(cfg->device_id, '\0', sizeof(cfg->device_id)) ||
+        !memchr(cfg->firmware_ver, '\0', sizeof(cfg->firmware_ver)) ||
+        !memchr(cfg->hw_model, '\0', sizeof(cfg->hw_model)) || !cfg->server_base[0] ||
+        !cfg->device_id[0] || strncmp(cfg->server_base, "http://", 7) != 0) {
         return -1;
     }
 

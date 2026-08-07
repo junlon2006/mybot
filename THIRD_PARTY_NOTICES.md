@@ -1,0 +1,37 @@
+# Third-party notices
+
+The root Apache-2.0 license applies to mybot-maintained code unless a file states otherwise. It does
+not replace third-party terms. This file is informational, not legal advice.
+
+## AOSL
+
+Location: `third_party/aosl`.
+
+AOSL includes `third_party/aosl/LICENSE`, which is based on Apache-2.0 and adds restrictive
+conditions. Read that file before using, modifying, deploying, or redistributing AOSL. Do not label
+the combined repository or binary as uniformly Apache-2.0.
+
+## Agora RTSA SDK
+
+Location: `third_party/agora_rtsa_sdk`. The bundled package identifies itself as Agora RTSA Lite
+v1.10.1 for x86_64 Linux.
+
+No standalone license or NOTICE for the bundled RTSA binary was found in the package during the
+0.1.0-rc.1 audit. Possession of the files is not evidence of redistribution rights. Before a public
+source archive, binary release, container image, firmware image, or mirror is published, the
+distributor must obtain and retain the applicable Agora terms and confirm redistribution rights.
+
+Files inside the Agora example tree may carry their own copyright or license headers; those terms
+also remain in force.
+
+## cJSON-derived implementation
+
+`src/support/mybot_json.c` and `src/internal/mybot_json.h` are namespaced derivatives of cJSON.
+They retain the MIT license and Dave Gamble copyright notice in the source.
+
+## Release blocker
+
+Do not publish a release artifact containing the bundled Agora binary until its license and
+redistribution authorization have been verified. If authorization is unavailable, exclude the
+binary and require users to supply `AGORA_SDK_DIR` and `AGORA_RTC_LIBRARY` locally.
+

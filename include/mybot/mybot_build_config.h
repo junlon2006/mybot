@@ -19,6 +19,10 @@
 #define MYBOT_CLOUD_AEC 1 /* server-side echo cancellation */
 #endif
 
+#if MYBOT_CLOUD_AEC != 0 && MYBOT_CLOUD_AEC != 1
+#error "MYBOT_CLOUD_AEC must be 0 or 1"
+#endif
+
 #ifndef MYBOT_WAKE_WORDS
 #define MYBOT_WAKE_WORDS 0 /* local ASR wake-word detection */
 #endif
@@ -31,12 +35,24 @@
 #define MYBOT_AI_QOS 1 /* AI-driven QoS optimization */
 #endif
 
+#if MYBOT_AI_QOS != 0 && MYBOT_AI_QOS != 1
+#error "MYBOT_AI_QOS must be 0 or 1"
+#endif
+
 #ifndef MYBOT_FAST_SEND_MULTIPLIER
 #define MYBOT_FAST_SEND_MULTIPLIER 3 /* fast-send frames multiplier (1-5) */
 #endif
 
+#if MYBOT_FAST_SEND_MULTIPLIER < 1 || MYBOT_FAST_SEND_MULTIPLIER > 5
+#error "MYBOT_FAST_SEND_MULTIPLIER must be from 1 through 5"
+#endif
+
 #ifndef MYBOT_SHOW_TRANSCRIPT
 #define MYBOT_SHOW_TRANSCRIPT 0 /* real-time transcript in datastream */
+#endif
+
+#if MYBOT_SHOW_TRANSCRIPT != 0 && MYBOT_SHOW_TRANSCRIPT != 1
+#error "MYBOT_SHOW_TRANSCRIPT must be 0 or 1"
 #endif
 
 #endif /* MYBOT_BUILD_CONFIG_H_ */
