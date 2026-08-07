@@ -93,6 +93,10 @@ int mybot_ringbuf_write(mybot_ringbuf_t handle, const char *src, int writelen) {
     ringbuf_internal_t *rb = (ringbuf_internal_t *)handle;
     int head = (int)aosl_atomic_read(&rb->head);
     int tail = (int)aosl_atomic_read(&rb->tail);
+    /* Acquire: the consumer publishes its completed reads through tail with a
+     * release barrier; make sure we observe that before overwriting slots it
+     * may still be reading (weak-memory platforms). */
+    aosl_rmb();
     int used = (head + rb->size - tail) % rb->size;
     if (rb->size - used - RINGBUF_GUARD_BYTE < writelen) {
         return -1;
@@ -106,6 +110,9 @@ int mybot_ringbuf_write(mybot_ringbuf_t handle, const char *src, int writelen) {
         memcpy(rb->buf + head, src, remain);
         memcpy(rb->buf, src + remain, writelen - remain);
     }
+    /* Release: the payload writes must be visible before the head advances,
+     * so the consumer never reads stale data from an already-published slot. */
+    aosl_wmb();
     aosl_atomic_set(&rb->head, pos);
     return writelen;
 }
@@ -117,6 +124,10 @@ int mybot_ringbuf_read(char *dst, int readlen, mybot_ringbuf_t handle) {
 
     ringbuf_internal_t *rb = (ringbuf_internal_t *)handle;
     int head = (int)aosl_atomic_read(&rb->head);
+    /* Acquire: the producer publishes its payload writes before advancing
+     * head; make sure we observe that before reading the slots (weak-memory
+     * platforms). */
+    aosl_rmb();
     int tail = (int)aosl_atomic_read(&rb->tail);
     int used = (head + rb->size - tail) % rb->size;
     if (used < readlen) {
@@ -131,6 +142,9 @@ int mybot_ringbuf_read(char *dst, int readlen, mybot_ringbuf_t handle) {
         memcpy(dst, rb->buf + tail, remain);
         memcpy(dst + remain, rb->buf, readlen - remain);
     }
+    /* Release: the payload reads must complete before the tail advances, so
+     * the producer never overwrites a slot we are still reading. */
+    aosl_wmb();
     aosl_atomic_set(&rb->tail, pos);
     return readlen;
 }
