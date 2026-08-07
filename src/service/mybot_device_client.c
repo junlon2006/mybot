@@ -8,12 +8,87 @@
 #include <stdio.h>
 #include <string.h>
 
+static bool header_value_is_safe(const char *value) {
+    if (!value || !value[0]) {
+        return false;
+    }
+    for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
+        if (*p < 0x20 || *p == 0x7f) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool url_unreserved(unsigned char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' ||
+           c == '.' || c == '_' || c == '~';
+}
+
+static int encode_path_segment(const char *value, char *encoded, size_t encoded_size) {
+    static const char hex[] = "0123456789ABCDEF";
+    size_t offset = 0;
+    if (!value || !value[0] || !encoded || encoded_size == 0) {
+        return -1;
+    }
+    for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
+        size_t needed = url_unreserved(*p) ? 1U : 3U;
+        if (needed >= encoded_size - offset) {
+            return -1;
+        }
+        if (needed == 1) {
+            encoded[offset++] = (char)*p;
+        } else {
+            encoded[offset++] = '%';
+            encoded[offset++] = hex[*p >> 4];
+            encoded[offset++] = hex[*p & 0x0f];
+        }
+    }
+    encoded[offset] = '\0';
+    return 0;
+}
+
+static int build_device_url(const char *base_url, const char *device_id, const char *suffix,
+                            char *url, size_t url_size) {
+    char encoded_id[MYBOT_DEVICE_CLIENT_MAX_ID * 3];
+    if (!base_url || !suffix ||
+        encode_path_segment(device_id, encoded_id, sizeof(encoded_id)) < 0) {
+        return -1;
+    }
+    int written = snprintf(url, url_size, "%s/devices/%s%s", base_url, encoded_id, suffix);
+    return written >= 0 && (size_t)written < url_size ? 0 : -1;
+}
+
+static int build_authorization_header(const char *scheme, const char *credential, char *header,
+                                      size_t header_size) {
+    if (!scheme || !header_value_is_safe(credential)) {
+        return -1;
+    }
+    int written = snprintf(header, header_size, "Authorization: %s%s\r\n", scheme, credential);
+    return written >= 0 && (size_t)written < header_size ? 0 : -1;
+}
+
 static void copy_json_string(const mybot_json_t *object, const char *name, char *destination,
                              size_t destination_size) {
     const char *value = mybot_json_get_string(mybot_json_get_object_item(object, name));
     if (value && destination_size > 0) {
         snprintf(destination, destination_size, "%s", value);
     }
+}
+
+static int copy_required_json_string(const mybot_json_t *object, const char *name,
+                                     char *destination, size_t destination_size) {
+    const char *value = mybot_json_get_string(mybot_json_get_object_item(object, name));
+    if (!value || !value[0] || destination_size == 0) {
+        return -1;
+    }
+
+    size_t len = strlen(value);
+    if (len >= destination_size) {
+        return -1;
+    }
+    memcpy(destination, value, len + 1);
+    return 0;
 }
 
 static void copy_json_integer(const mybot_json_t *object, const char *name, int *destination) {
@@ -215,10 +290,14 @@ int mybot_device_client_get_binding_status(const char *base_url, const char *dev
     memset(resp, 0, sizeof(*resp));
 
     char url[MYBOT_DEVICE_CLIENT_MAX_URL];
-    snprintf(url, sizeof(url), "%s/devices/%s/binding-status", base_url, device_id);
+    if (build_device_url(base_url, device_id, "/binding-status", url, sizeof(url)) < 0) {
+        return -1;
+    }
 
     char extra_hdrs[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32];
-    snprintf(extra_hdrs, sizeof(extra_hdrs), "Authorization: %s\r\n", auth_header);
+    if (build_authorization_header("", auth_header, extra_hdrs, sizeof(extra_hdrs)) < 0) {
+        return -1;
+    }
 
     AOSL_LOG_INF("GET %s", url);
 
@@ -276,7 +355,9 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
     memset(resp, 0, sizeof(*resp));
 
     char url[MYBOT_DEVICE_CLIENT_MAX_URL];
-    snprintf(url, sizeof(url), "%s/devices/%s/conversations/start", base_url, device_id);
+    if (build_device_url(base_url, device_id, "/conversations/start", url, sizeof(url)) < 0) {
+        return -1;
+    }
 
     /* Build body: use caller-provided or construct from config macros */
     char *generated_body = NULL;
@@ -292,7 +373,10 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
     }
 
     char extra_hdrs[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32];
-    snprintf(extra_hdrs, sizeof(extra_hdrs), "Authorization: Device %s\r\n", device_token);
+    if (build_authorization_header("Device ", device_token, extra_hdrs, sizeof(extra_hdrs)) < 0) {
+        mybot_json_free_string(generated_body);
+        return -1;
+    }
 
     AOSL_LOG_INF("POST %s", url);
 
@@ -329,7 +413,13 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
         return -1;
     }
 
-    copy_json_string(data, "conversation_id", resp->conversation_id, sizeof(resp->conversation_id));
+    if (copy_required_json_string(data, "conversation_id", resp->conversation_id,
+                                  sizeof(resp->conversation_id)) < 0) {
+        AOSL_LOG_ERR("conversation response missing or invalid conversation_id");
+        mybot_json_delete(root);
+        mybot_http_client_response_free(&raw);
+        return -1;
+    }
 
     /* Parse nested "rtc":{...} block — required to join RTC. */
     if (parse_rtc_block(data, resp) < 0) {
@@ -355,7 +445,9 @@ int mybot_device_client_stop_conversation(const char *base_url, const char *devi
     }
 
     char url[MYBOT_DEVICE_CLIENT_MAX_URL];
-    snprintf(url, sizeof(url), "%s/devices/%s/conversations/stop", base_url, device_id);
+    if (build_device_url(base_url, device_id, "/conversations/stop", url, sizeof(url)) < 0) {
+        return -1;
+    }
 
     char *body = build_stop_conversation_body(conversation_id, reason);
     if (!body) {
@@ -363,7 +455,10 @@ int mybot_device_client_stop_conversation(const char *base_url, const char *devi
     }
 
     char extra_hdrs[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32];
-    snprintf(extra_hdrs, sizeof(extra_hdrs), "Authorization: Device %s\r\n", device_token);
+    if (build_authorization_header("Device ", device_token, extra_hdrs, sizeof(extra_hdrs)) < 0) {
+        mybot_json_free_string(body);
+        return -1;
+    }
 
     AOSL_LOG_INF("POST %s", url);
 

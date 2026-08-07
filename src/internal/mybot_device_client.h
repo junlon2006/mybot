@@ -13,7 +13,7 @@ extern "C" {
  * Device service HTTP client
  * ---------------------------------------------------------- */
 
-#define MYBOT_DEVICE_CLIENT_MAX_URL 256
+#define MYBOT_DEVICE_CLIENT_MAX_URL 640
 #define MYBOT_DEVICE_CLIENT_MAX_TOKEN 512
 #define MYBOT_DEVICE_CLIENT_MAX_ID 128
 

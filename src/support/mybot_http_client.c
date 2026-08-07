@@ -45,8 +45,83 @@ typedef struct {
     bool use_tls;
     char host[128];
     int port;
-    char path[256];
+    char path[512];
 } url_parts_t;
+
+static bool host_is_safe(const char *host) {
+    if (!host || !host[0]) {
+        return false;
+    }
+    for (const unsigned char *p = (const unsigned char *)host; *p; p++) {
+        if (*p <= 0x20 || *p > 0x7e || *p == '/' || *p == '\\' || *p == '?' || *p == '#' ||
+            *p == '@') {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool request_target_is_safe(const char *target) {
+    if (!target || target[0] != '/') {
+        return false;
+    }
+    for (const unsigned char *p = (const unsigned char *)target; *p; p++) {
+        if (*p <= 0x20 || *p > 0x7e || *p == '#' || *p == '\\') {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool header_value_is_safe(const char *value) {
+    if (!value || !value[0]) {
+        return false;
+    }
+    for (const unsigned char *p = (const unsigned char *)value; *p; p++) {
+        if ((*p < 0x20 && *p != '\t') || *p > 0x7e) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool header_name_char(unsigned char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '!' ||
+           c == '#' || c == '$' || c == '%' || c == '&' || c == '*' || c == '+' || c == '-' ||
+           c == '.' || c == '^' || c == '_' || c == '|' || c == '~';
+}
+
+static bool extra_headers_are_safe(const char *headers) {
+    if (!headers || !headers[0]) {
+        return true;
+    }
+
+    const char *line = headers;
+    while (*line) {
+        const char *line_end = strstr(line, "\r\n");
+        if (!line_end || line_end == line) {
+            return false;
+        }
+        const char *colon = memchr(line, ':', (size_t)(line_end - line));
+        if (!colon || colon == line) {
+            return false;
+        }
+        for (const unsigned char *p = (const unsigned char *)line; p < (const unsigned char *)colon;
+             p++) {
+            if (!header_name_char(*p)) {
+                return false;
+            }
+        }
+        for (const unsigned char *p = (const unsigned char *)colon + 1;
+             p < (const unsigned char *)line_end; p++) {
+            if ((*p < 0x20 && *p != '\t') || *p > 0x7e) {
+                return false;
+            }
+        }
+        line = line_end + 2;
+    }
+    return true;
+}
 
 /*
  * Parse "https://host[:port][/path]" or an explicitly enabled HTTP URL.
@@ -91,6 +166,9 @@ static int parse_url(const char *url, url_parts_t *parts) {
     }
     memcpy(parts->host, host_start, host_len);
     parts->host[host_len] = '\0';
+    if (!host_is_safe(parts->host)) {
+        return -1;
+    }
 
     /* optional port */
     if (*p == ':') {
@@ -118,6 +196,10 @@ static int parse_url(const char *url, url_parts_t *parts) {
         }
         memcpy(parts->path, p, path_len + 1);
     } else if (*p != '\0') {
+        return -1;
+    }
+
+    if (!request_target_is_safe(parts->path)) {
         return -1;
     }
 
@@ -656,6 +738,10 @@ static int http_request(const char *method, const char *url, const char *content
 
     url_parts_t parts;
     if (parse_url(url, &parts) < 0) {
+        return -1;
+    }
+    if ((content_type && !header_value_is_safe(content_type)) ||
+        !extra_headers_are_safe(extra_headers)) {
         return -1;
     }
 

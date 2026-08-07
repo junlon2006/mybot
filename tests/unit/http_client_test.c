@@ -12,12 +12,14 @@ static uint16_t s_tls_port;
 static char s_tls_request[2048];
 static size_t s_tls_response_offset;
 static int s_tls_closed;
+static int s_tls_connect_count;
 
 static const char s_tls_response[] =
     "HTTP/1.1 200 OK\r\nContent-Length: 6\r\nConnection: close\r\n\r\nsecure";
 
 static int fake_tls_connect(void **connection, const char *host, uint16_t port, int timeout_ms) {
     assert(timeout_ms > 0);
+    s_tls_connect_count++;
     assert(snprintf(s_tls_host, sizeof(s_tls_host), "%s", host) < (int)sizeof(s_tls_host));
     s_tls_port = port;
     s_tls_response_offset = 0;
@@ -138,6 +140,20 @@ int main(void) {
     assert(mybot_https_transport_register(&incomplete_ops) < 0);
     assert(mybot_https_transport_register(&s_fake_tls_ops) == 0);
     assert(mybot_https_transport_register(&s_fake_tls_ops) < 0);
+
+    int connect_count = s_tls_connect_count;
+    assert(mybot_http_client_get("https://good.example/path\r\nX-Injected: yes", &response) < 0);
+    assert(mybot_http_client_get("https://good.example@evil.example/path", &response) < 0);
+    assert(mybot_http_client_get("https://good.example/path#fragment", &response) < 0);
+    assert(mybot_http_client_get_ex("https://good.example/path",
+                                    "Authorization: ok\nX-Injected: yes\r\n", &response) < 0);
+    assert(mybot_http_client_get_ex("https://good.example/path", "Authorization: ok\r\nmalformed",
+                                    &response) < 0);
+    assert(mybot_http_client_post_ex("https://good.example/path",
+                                     "application/json\r\nX-Injected: yes", "{}", NULL,
+                                     &response) < 0);
+    assert(s_tls_connect_count == connect_count);
+
     memset(&response, 0, sizeof(response));
     assert(mybot_http_client_get("https://api.example.test:8443/status", &response) == 0);
     assert(strcmp(s_tls_host, "api.example.test") == 0);
@@ -147,6 +163,7 @@ int main(void) {
     assert(response.status_code == 200);
     assert(strcmp(response.body, "secure") == 0);
     assert(s_tls_closed == 1);
+    assert(s_tls_connect_count == connect_count + 1);
     mybot_http_client_response_free(&response);
 
     aosl_dtor();

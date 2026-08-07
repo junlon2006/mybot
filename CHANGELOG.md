@@ -5,6 +5,19 @@ between release candidates.
 
 ## [Unreleased]
 
+### Fixed
+
+- Continue binding-status polling during active conversations and end RTC locally when the device
+  becomes unbound or its credential is rejected.
+- Harden the Linux file KV backend against symlink traversal and persist atomic replacements and
+  deletions with file and directory `fsync`.
+- Preserve runtime Wi-Fi disconnect/reconnect events, pause device-service traffic while offline,
+  and end active RTC conversations locally without reinitializing services after reconnect.
+- Percent-encode device IDs in URL path segments and reject control characters in dynamic HTTP
+  header values and request targets.
+- Reject conversation-start responses without a valid conversation ID before entering the active
+  conversation state.
+
 ### Added
 
 - HTTPS-by-default device-service transport with a platform TLS contract and Linux OpenSSL backend.
