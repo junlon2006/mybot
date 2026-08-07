@@ -66,6 +66,17 @@ add_test(NAME mybot_cmake_host_integration
 )
 
 if(MYBOT_BUILD_LINUX_PLATFORM)
+    mybot_add_test(mybot_kv_store_file_test
+        platform/linux/kv_store_file_test.c
+        ../src/platform/mybot_kv_store.c
+        ../platforms/linux/linux_kv_store_file.c
+    )
+    target_include_directories(mybot_kv_store_file_test PRIVATE ../platforms/linux)
+    target_link_libraries(mybot_kv_store_file_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_link_options(mybot_kv_store_file_test PRIVATE -Wl,--wrap=fsync)
+    endif()
+
     mybot_add_test(mybot_key_stdin_test
         platform/linux/key_stdin_test.c
         ../src/platform/mybot_key.c

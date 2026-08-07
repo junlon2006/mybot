@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <mybot/platform/mybot_kv_store.h>
 
 #include "linux_backends.h"
@@ -8,24 +10,32 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/random.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
 #endif
+#ifndef NAME_MAX
+#define NAME_MAX 255
+#endif
 
 #define MYBOT_KV_STORE_DEFAULT_DIR ".mybot-kv-store"
+#define MYBOT_KV_TEMP_ATTEMPTS 16
 
 typedef struct {
+    int dir_fd;
     char root[PATH_MAX];
 } linux_kv_store_file_ctx_t;
 
 static bool valid_key(const char *key) {
-    if (!key || !key[0]) {
+    if (!key || !key[0] || strcmp(key, ".") == 0 || strcmp(key, "..") == 0 ||
+        strlen(key) > NAME_MAX - 32) {
         return false;
     }
     for (const unsigned char *p = (const unsigned char *)key; *p; p++) {
@@ -37,13 +47,64 @@ static bool valid_key(const char *key) {
     return true;
 }
 
-static int make_path(const linux_kv_store_file_ctx_t *ctx, const char *key, const char *suffix,
-                     char *path, size_t path_size) {
-    if (!valid_key(key)) {
+static int open_store_directory(const char *root) {
+    char path[PATH_MAX];
+    char *parts[PATH_MAX / 2];
+    size_t part_count = 0;
+    char *save = NULL;
+
+    if (!root || !root[0] || snprintf(path, sizeof(path), "%s", root) >= (int)sizeof(path)) {
         return -1;
     }
-    int n = snprintf(path, path_size, "%s/%s%s", ctx->root, key, suffix ? suffix : "");
-    return n >= 0 && (size_t)n < path_size ? 0 : -1;
+
+    for (char *part = strtok_r(path, "/", &save); part; part = strtok_r(NULL, "/", &save)) {
+        if (strcmp(part, ".") == 0) {
+            continue;
+        }
+        if (strcmp(part, "..") == 0 || part_count >= sizeof(parts) / sizeof(parts[0])) {
+            return -1;
+        }
+        parts[part_count++] = part;
+    }
+    if (part_count == 0) {
+        return -1;
+    }
+
+    int dir_fd = open(root[0] == '/' ? "/" : ".", O_RDONLY | O_CLOEXEC | O_DIRECTORY);
+    if (dir_fd < 0) {
+        return -1;
+    }
+
+    for (size_t i = 0; i < part_count; i++) {
+        bool created = false;
+        if (i + 1 == part_count && mkdirat(dir_fd, parts[i], 0700) == 0) {
+            created = true;
+        } else if (i + 1 == part_count && errno != EEXIST) {
+            close(dir_fd);
+            return -1;
+        }
+
+        int next_fd = openat(dir_fd, parts[i], O_RDONLY | O_CLOEXEC | O_DIRECTORY | O_NOFOLLOW);
+        if (next_fd < 0) {
+            close(dir_fd);
+            return -1;
+        }
+        if (created && fsync(dir_fd) < 0) {
+            close(next_fd);
+            close(dir_fd);
+            return -1;
+        }
+        close(dir_fd);
+        dir_fd = next_fd;
+    }
+
+    struct stat st;
+    if (fstat(dir_fd, &st) < 0 || !S_ISDIR(st.st_mode) || st.st_uid != geteuid() ||
+        fchmod(dir_fd, 0700) < 0 || fsync(dir_fd) < 0) {
+        close(dir_fd);
+        return -1;
+    }
+    return dir_fd;
 }
 
 static int kv_store_file_init(void **out_ctx) {
@@ -55,6 +116,7 @@ static int kv_store_file_init(void **out_ctx) {
     if (!ctx) {
         return -1;
     }
+    ctx->dir_fd = -1;
 
     const char *configured = getenv("MYBOT_KV_STORE_DIR");
     const char *root = configured && configured[0] ? configured : MYBOT_KV_STORE_DEFAULT_DIR;
@@ -63,19 +125,12 @@ static int kv_store_file_init(void **out_ctx) {
         return -1;
     }
 
-    if (mkdir(ctx->root, 0700) < 0 && errno != EEXIST) {
-        AOSL_LOG_ERR("kv store: cannot create %s: %s", ctx->root, strerror(errno));
+    ctx->dir_fd = open_store_directory(ctx->root);
+    if (ctx->dir_fd < 0) {
+        AOSL_LOG_ERR("kv store: cannot securely open %s: %s", ctx->root, strerror(errno));
         free(ctx);
         return -1;
     }
-
-    struct stat st;
-    if (stat(ctx->root, &st) < 0 || !S_ISDIR(st.st_mode)) {
-        AOSL_LOG_ERR("kv store: %s is not a directory", ctx->root);
-        free(ctx);
-        return -1;
-    }
-    (void)chmod(ctx->root, 0700);
 
     *out_ctx = ctx;
     AOSL_LOG_INF("kv store backend: %s", ctx->root);
@@ -85,14 +140,19 @@ static int kv_store_file_init(void **out_ctx) {
 static int kv_store_file_get(void *opaque, const char *key, void *value, size_t capacity,
                              size_t *out_len) {
     linux_kv_store_file_ctx_t *ctx = opaque;
-    char path[PATH_MAX];
-    if (make_path(ctx, key, NULL, path, sizeof(path)) < 0) {
+    if (!ctx || !valid_key(key)) {
         return -1;
     }
 
-    int fd = open(path, O_RDONLY | O_CLOEXEC);
+    int fd = openat(ctx->dir_fd, key, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
     if (fd < 0) {
         return errno == ENOENT ? MYBOT_KV_STORE_NOT_FOUND : -1;
+    }
+
+    struct stat st;
+    if (fstat(fd, &st) < 0 || !S_ISREG(st.st_mode) || st.st_uid != geteuid()) {
+        close(fd);
+        return -1;
     }
 
     size_t total = 0;
@@ -113,8 +173,8 @@ static int kv_store_file_get(void *opaque, const char *key, void *value, size_t 
     do {
         extra_len = read(fd, &extra, 1);
     } while (extra_len < 0 && errno == EINTR);
-    close(fd);
-    if (extra_len != 0) {
+    int close_ret = close(fd);
+    if (extra_len != 0 || close_ret < 0) {
         return -1;
     }
 
@@ -138,16 +198,52 @@ static int write_all(int fd, const void *data, size_t len) {
     return 0;
 }
 
+static int create_temp_file(linux_kv_store_file_ctx_t *ctx, const char *key, char *temp_name,
+                            size_t temp_name_size) {
+    for (int attempt = 0; attempt < MYBOT_KV_TEMP_ATTEMPTS; attempt++) {
+        uint64_t nonce;
+        ssize_t random_len;
+        do {
+            random_len = getrandom(&nonce, sizeof(nonce), 0);
+        } while (random_len < 0 && errno == EINTR);
+        if (random_len != (ssize_t)sizeof(nonce)) {
+            return -1;
+        }
+
+        int written =
+            snprintf(temp_name, temp_name_size, ".%s.tmp.%016llx", key, (unsigned long long)nonce);
+        if (written < 0 || (size_t)written >= temp_name_size) {
+            return -1;
+        }
+
+        int fd = openat(ctx->dir_fd, temp_name,
+                        O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
+        if (fd >= 0) {
+            return fd;
+        }
+        if (errno != EEXIST) {
+            return -1;
+        }
+    }
+    return -1;
+}
+
+static int existing_value_is_safe(linux_kv_store_file_ctx_t *ctx, const char *key) {
+    struct stat st;
+    if (fstatat(ctx->dir_fd, key, &st, AT_SYMLINK_NOFOLLOW) == 0) {
+        return S_ISREG(st.st_mode) && st.st_uid == geteuid() ? 0 : -1;
+    }
+    return errno == ENOENT ? 0 : -1;
+}
+
 static int kv_store_file_set(void *opaque, const char *key, const void *value, size_t len) {
     linux_kv_store_file_ctx_t *ctx = opaque;
-    char path[PATH_MAX];
-    char temp_path[PATH_MAX];
-    if (make_path(ctx, key, NULL, path, sizeof(path)) < 0 ||
-        make_path(ctx, key, ".tmp", temp_path, sizeof(temp_path)) < 0) {
+    char temp_name[NAME_MAX + 1];
+    if (!ctx || !valid_key(key) || existing_value_is_safe(ctx, key) < 0) {
         return -1;
     }
 
-    int fd = open(temp_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    int fd = create_temp_file(ctx, key, temp_name, sizeof(temp_name));
     if (fd < 0) {
         return -1;
     }
@@ -159,25 +255,46 @@ static int kv_store_file_set(void *opaque, const char *key, const void *value, s
     if (close(fd) < 0) {
         ret = -1;
     }
-    if (ret == 0 && rename(temp_path, path) < 0) {
+    if (ret == 0 && renameat(ctx->dir_fd, temp_name, ctx->dir_fd, key) < 0) {
+        ret = -1;
+    }
+    if (ret == 0 && fsync(ctx->dir_fd) < 0) {
         ret = -1;
     }
     if (ret < 0) {
-        (void)unlink(temp_path);
+        if (unlinkat(ctx->dir_fd, temp_name, 0) == 0) {
+            (void)fsync(ctx->dir_fd);
+        }
     }
     return ret;
 }
 
 static int kv_store_file_erase(void *opaque, const char *key) {
     linux_kv_store_file_ctx_t *ctx = opaque;
-    char path[PATH_MAX];
-    if (make_path(ctx, key, NULL, path, sizeof(path)) < 0) {
+    struct stat st;
+    if (!ctx || !valid_key(key)) {
         return -1;
     }
-    return unlink(path) == 0 || errno == ENOENT ? 0 : -1;
+    if (fstatat(ctx->dir_fd, key, &st, AT_SYMLINK_NOFOLLOW) < 0) {
+        return errno == ENOENT ? 0 : -1;
+    }
+    if (!S_ISREG(st.st_mode) || st.st_uid != geteuid()) {
+        return -1;
+    }
+    if (unlinkat(ctx->dir_fd, key, 0) < 0) {
+        return -1;
+    }
+    return fsync(ctx->dir_fd) == 0 ? 0 : -1;
 }
 
-static void kv_store_file_destroy(void *ctx) {
+static void kv_store_file_destroy(void *opaque) {
+    linux_kv_store_file_ctx_t *ctx = opaque;
+    if (!ctx) {
+        return;
+    }
+    if (ctx->dir_fd >= 0) {
+        close(ctx->dir_fd);
+    }
     free(ctx);
 }
 

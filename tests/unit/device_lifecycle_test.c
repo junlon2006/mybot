@@ -21,6 +21,7 @@ static int s_pair_result;
 static int s_pair_call_count;
 static int s_start_result;
 static bool s_start_missing_conversation_id;
+static bool s_disconnect_during_start;
 static int s_start_call_count;
 static int s_stop_call_count;
 static int s_conversation_start_count;
@@ -118,6 +119,10 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
     (void)device_token;
     (void)body_params;
     s_start_call_count++;
+    if (s_disconnect_during_start) {
+        mybot_device_lifecycle_set_network_available(false);
+        mybot_device_lifecycle_set_network_available(true);
+    }
     if (s_start_result != 0) {
         return s_start_result;
     }
@@ -280,6 +285,17 @@ int main(void) {
     mybot_device_lifecycle_tick();
     assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_RUNTIME);
     assert(s_start_call_count == 3);
+
+    /* A successful HTTP response from a connection that crossed a disconnect
+     * edge is stale and must not start RTC after the network comes back. */
+    s_disconnect_during_start = true;
+    mybot_device_lifecycle_request_start();
+    mybot_device_lifecycle_tick();
+    s_disconnect_during_start = false;
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_RUNTIME);
+    assert(s_conversation_start_count == 2);
+    assert(s_start_call_count == 4);
+    mybot_device_lifecycle_tick();
 
     /* Shutdown after a disconnect must also clean up locally. */
     mybot_device_lifecycle_request_start();

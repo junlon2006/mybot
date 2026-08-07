@@ -54,6 +54,7 @@ static struct {
     aosl_atomic_t shutting_down;
     aosl_atomic_t network_available;
     aosl_atomic_t network_loss_pending;
+    aosl_atomic_t network_generation;
 } s_state;
 
 typedef enum {
@@ -78,6 +79,11 @@ const char *mybot_device_lifecycle_state_name(mybot_device_state_t s) {
 
 static mybot_device_state_t current_state(void) {
     return (mybot_device_state_t)aosl_atomic_read(&s_state.state);
+}
+
+static bool network_request_is_current(intptr_t generation) {
+    return aosl_atomic_read(&s_state.network_available) &&
+           aosl_atomic_read(&s_state.network_generation) == generation;
 }
 
 static void set_state(mybot_device_state_t new_state) {
@@ -162,8 +168,21 @@ static void action_create_pair_code(void) {
     mybot_device_pair_code_t resp;
     memset(&resp, 0, sizeof(resp));
 
+    intptr_t network_generation = aosl_atomic_read(&s_state.network_generation);
+    if (!aosl_atomic_read(&s_state.network_available)) {
+        set_state(MYBOT_DEVICE_STATE_UNPROVISIONED);
+        aosl_atomic_set(&s_state.start_pairing_flag, true);
+        return;
+    }
+
     int ret = mybot_device_client_create_pair_code(s_state.server_base, s_state.device_id,
                                                    s_state.firmware_ver, s_state.hw_model, &resp);
+    if (!network_request_is_current(network_generation)) {
+        AOSL_LOG_WRN("discarding pair-code response after network change");
+        set_state(MYBOT_DEVICE_STATE_UNPROVISIONED);
+        aosl_atomic_set(&s_state.start_pairing_flag, true);
+        return;
+    }
     if (ret != 0) {
         if (s_state.pair_retry_delay_ticks == 0) {
             s_state.pair_retry_delay_ticks = MYBOT_PAIR_RETRY_INITIAL_TICKS;
@@ -212,8 +231,17 @@ static void action_poll_binding_pair(void) {
     mybot_device_binding_t resp;
     memset(&resp, 0, sizeof(resp));
 
+    intptr_t network_generation = aosl_atomic_read(&s_state.network_generation);
+    if (!aosl_atomic_read(&s_state.network_available)) {
+        return;
+    }
+
     int ret =
         mybot_device_client_get_binding_status(s_state.server_base, s_state.device_id, auth, &resp);
+    if (!network_request_is_current(network_generation)) {
+        AOSL_LOG_WRN("discarding pair-status response after network change");
+        return;
+    }
     if (api_rejected_device_auth(ret)) {
         AOSL_LOG_WRN("pair credential rejected (HTTP %d), requesting a new pair code", ret);
         aosl_atomic_set(&s_state.start_pairing_flag, true);
@@ -270,8 +298,17 @@ static void action_poll_binding_runtime(void) {
     mybot_device_binding_t resp;
     memset(&resp, 0, sizeof(resp));
 
+    intptr_t network_generation = aosl_atomic_read(&s_state.network_generation);
+    if (!aosl_atomic_read(&s_state.network_available)) {
+        return;
+    }
+
     int ret =
         mybot_device_client_get_binding_status(s_state.server_base, s_state.device_id, auth, &resp);
+    if (!network_request_is_current(network_generation)) {
+        AOSL_LOG_WRN("discarding runtime-status response after network change");
+        return;
+    }
     if (api_rejected_device_auth(ret)) {
         AOSL_LOG_WRN("device credential rejected (HTTP %d), re-pairing", ret);
         restart_pairing_after_auth_rejection();
@@ -299,8 +336,17 @@ static void action_start_conversation(void) {
     mybot_device_conversation_t resp;
     memset(&resp, 0, sizeof(resp));
 
+    intptr_t network_generation = aosl_atomic_read(&s_state.network_generation);
+    if (!aosl_atomic_read(&s_state.network_available)) {
+        return;
+    }
+
     int ret = mybot_device_client_start_conversation(s_state.server_base, s_state.device_id,
                                                      s_state.device_token, NULL, &resp);
+    if (!network_request_is_current(network_generation)) {
+        AOSL_LOG_WRN("discarding conversation response after network change");
+        return;
+    }
     if (api_rejected_device_auth(ret)) {
         AOSL_LOG_WRN("device credential rejected while starting conversation (HTTP %d)", ret);
         restart_pairing_after_auth_rejection();
@@ -355,9 +401,21 @@ static void action_stop_conversation(const char *reason) {
         return;
     }
 
+    intptr_t network_generation = aosl_atomic_read(&s_state.network_generation);
+    if (!aosl_atomic_read(&s_state.network_available)) {
+        complete_conversation_locally();
+        return;
+    }
+
     int ret = mybot_device_client_stop_conversation(s_state.server_base, s_state.device_id,
                                                     s_state.device_token, s_state.conversation_id,
                                                     reason);
+
+    if (!network_request_is_current(network_generation)) {
+        AOSL_LOG_WRN("discarding stop-conversation response after network change");
+        complete_conversation_locally();
+        return;
+    }
 
     AOSL_LOG_INF("conversation stopped");
     s_state.conversation_id[0] = '\0';
@@ -506,6 +564,7 @@ void mybot_device_lifecycle_tick(void) {
 void mybot_device_lifecycle_set_network_available(bool available) {
     aosl_atomic_set(&s_state.network_available, available);
     if (!available) {
+        aosl_atomic_inc(&s_state.network_generation);
         aosl_atomic_set(&s_state.network_loss_pending, true);
         /* Do not start a conversation automatically after a later reconnect. */
         aosl_atomic_set(&s_state.conversation_requested, false);

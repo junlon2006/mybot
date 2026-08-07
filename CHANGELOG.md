@@ -7,6 +7,8 @@ between release candidates.
 
 ### Fixed
 
+- Harden the Linux file KV backend against symlink traversal and persist atomic replacements and
+  deletions with file and directory `fsync`.
 - Preserve runtime Wi-Fi disconnect/reconnect events, pause device-service traffic while offline,
   and end active RTC conversations locally without reinitializing services after reconnect.
 - Percent-encode device IDs in URL path segments and reject control characters in dynamic HTTP
