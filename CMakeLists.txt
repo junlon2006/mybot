@@ -45,6 +45,7 @@ set(MYBOT_SRC
     main/platform/linux/mybot_kv_store_file.c
     main/key_service/mybot_key_service.c
     main/lcd/mybot_lcd.c
+    main/wake_words/mybot_wake_words.c
     main/platform/linux/mybot_lcd_console.c
     main/platform/linux/mybot_key_stdin.c
     components/ringbuf/mybot_ringbuf.c
@@ -67,6 +68,7 @@ target_include_directories(mybot PRIVATE
     ${CMAKE_SOURCE_DIR}/main/key_service
     ${CMAKE_SOURCE_DIR}/main/lcd
     ${CMAKE_SOURCE_DIR}/main/rtc
+    ${CMAKE_SOURCE_DIR}/main/wake_words
     ${CMAKE_SOURCE_DIR}/main/wifi
     ${CMAKE_SOURCE_DIR}/components/ringbuf
     ${CMAKE_SOURCE_DIR}/components/http_client
@@ -230,6 +232,13 @@ if(BUILD_TESTING)
     )
     add_test(NAME mybot_wifi_provisioning_test COMMAND mybot_wifi_provisioning_test)
 
+    add_executable(mybot_wake_words_test
+        tests/wake_words_test.c
+        main/wake_words/mybot_wake_words.c
+    )
+    target_include_directories(mybot_wake_words_test PRIVATE ${CMAKE_SOURCE_DIR}/main)
+    add_test(NAME mybot_wake_words_test COMMAND mybot_wake_words_test)
+
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         foreach(test_target IN ITEMS
             mybot_device_lifecycle_test
@@ -241,6 +250,7 @@ if(BUILD_TESTING)
             mybot_lcd_test
             mybot_lcd_console_test
             mybot_wifi_provisioning_test
+            mybot_wake_words_test
         )
             target_compile_options(${test_target} PRIVATE -UNDEBUG)
         endforeach()

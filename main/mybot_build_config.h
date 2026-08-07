@@ -12,11 +12,19 @@
 
 /*
  * Feature flags for voice chat capabilities.
- * Default to enabled. Override via compiler flags (-DMYBOT_CLOUD_AEC=0).
+ * Override defaults via compiler flags (for example, -DMYBOT_CLOUD_AEC=0).
  */
 
 #ifndef MYBOT_CLOUD_AEC
 #define MYBOT_CLOUD_AEC 1 /* server-side echo cancellation */
+#endif
+
+#ifndef MYBOT_WAKE_WORDS
+#define MYBOT_WAKE_WORDS 0 /* local ASR wake-word detection */
+#endif
+
+#if MYBOT_WAKE_WORDS != 0 && MYBOT_WAKE_WORDS != 1
+#error "MYBOT_WAKE_WORDS must be 0 or 1"
 #endif
 
 #ifndef MYBOT_AI_QOS

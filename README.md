@@ -19,6 +19,8 @@ mybot/
 │   │   └── mybot_key_service.h / .c      # 按键事件与平台后端抽象
 │   ├── lcd/
 │   │   └── mybot_lcd.h / .c              # LCD 关键工作流显示抽象
+│   ├── wake_words/
+│   │   └── mybot_wake_words.h / .c       # 本地 ASR 唤醒词后端抽象
 │   ├── wifi/
 │   │   └── mybot_wifi_provisioning.h / .c # APSTA Wi-Fi 配网抽象
 │   ├── device/
@@ -78,6 +80,8 @@ Wi-Fi 配网是应用启动后的第一个业务阶段。`mybot_wifi_provisionin
 
 ```
 麦克风 → cap_mpq 线程(ptime) → capture ringbuf → send_timer(ptime, mybot_mpq) → RTC 发送
+              │
+              └→ 本地 ASR（仅设备空闲时；识别到唤醒词后请求启动对话）
                                                                                   ↓
 扬声器 ← pb_mpq 线程(ptime) ← playback ringbuf ← RTC on_audio_data 回调（SDK 线程）
 ```
@@ -111,6 +115,14 @@ make -j$(nproc)
 cmake .. -DCONFIG_PLATFORM=linux -DCMAKE_C_FLAGS="-DMYBOT_AUDIO_PTIME_MS=20"
 ```
 
+本地 ASR 唤醒词功能由 `MYBOT_WAKE_WORDS` 控制，默认关闭。启用后，平台必须在
+`mybot_app_start()` 前通过 `mybot_wake_words_register()` 注册 ASR 后端，否则应用会明确
+报错并终止启动：
+
+```bash
+cmake .. -DCONFIG_PLATFORM=linux -DCMAKE_C_FLAGS="-DMYBOT_WAKE_WORDS=1"
+```
+
 ## 使用
 
 ```bash
@@ -140,7 +152,7 @@ Linux 文件型键值存储默认将设备凭证保存在当前目录的 `.mybot
 
 ## 跨平台扩展
 
-Wi-Fi 配网、音频设备、持久化存储、按键服务和 LCD 通过 ops 函数指针表实现平台无关化。平台适配层位于 `main/platform/`，添加新平台时在该目录下新建对应平台目录并注册 ops。LCD 后端接收语义化内容（配网、配对码、就绪、对话中、故障等），由 MCU 平台自行决定字体、图标和布局。Linux 注册高亮红色控制台模拟后端；非交互输出或设置 `NO_COLOR` 时不输出 ANSI 颜色码，可设置 `MYBOT_LCD_COLOR=1` 强制开启。
+Wi-Fi 配网、音频设备、持久化存储、按键服务、LCD 和本地 ASR 唤醒词通过 ops 函数指针表实现平台无关化。平台适配层位于 `main/platform/`，添加新平台时在该目录下新建对应平台目录并注册 ops。唤醒词后端接收采集到的 PCM，在识别成功时通过回调触发与物理按键相同的会话启动路径；应用只在就绪且设备处于 runtime 时送入 PCM。LCD 后端接收语义化内容（配网、配对码、就绪、对话中、故障等），由 MCU 平台自行决定字体、图标和布局。Linux 注册高亮红色控制台模拟后端；非交互输出或设置 `NO_COLOR` 时不输出 ANSI 颜色码，可设置 `MYBOT_LCD_COLOR=1` 强制开启。
 
 音频后端示例：
 
@@ -168,6 +180,7 @@ typedef struct {
 | `main/device/` | 设备服务客户端与生命周期状态机 |
 | `main/storage/` | 平台无关的键值存储接口 |
 | `main/lcd/` | LCD 关键工作流显示抽象 |
+| `main/wake_words/` | 本地 ASR 唤醒词后端抽象 |
 | `main/rtc/` | RTC 会话接口及服务商实现 |
 | `main/wifi/` | APSTA Wi-Fi 配网抽象 |
 | `main/platform/` | 平台后端（当前为 Linux 宿主网络、ALSA、文件存储、stdin 和控制台 LCD） |

@@ -7,6 +7,7 @@
 #include "storage/mybot_kv_store.h"
 #include "key_service/mybot_key_service.h"
 #include "lcd/mybot_lcd.h"
+#include "wake_words/mybot_wake_words.h"
 #include "wifi/mybot_wifi_provisioning.h"
 
 #include "api/aosl.h"
@@ -49,6 +50,9 @@ static struct {
     bool kv_store_active;
     bool key_service_active;
     bool lcd_active;
+#if MYBOT_WAKE_WORDS
+    bool wake_words_active;
+#endif
     mybot_app_config_t config;
     aosl_mpq_t startup_mpq;
 
@@ -108,6 +112,14 @@ static void lcd_show_pair_code(const char *code) {
     }
 }
 
+#if MYBOT_WAKE_WORDS
+static void on_wake_word(const char *wake_word, void *user_data) {
+    (void)user_data;
+    AOSL_LOG_INF("[WAKE WORDS] detected: %s", wake_word ? wake_word : "<unspecified>");
+    mybot_app_start_conversation();
+}
+#endif
+
 /* ----------------------------------------------------------
  * Capture — runs on the capture MPQ thread (cap_mpq).
  * A periodic timer reads one ptime-sized mic frame and feeds cap_ringbuf.
@@ -132,6 +144,21 @@ static void capture_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc,
                      AUDIO_FRAME_SAMPLES);
         return;
     }
+
+#if MYBOT_WAKE_WORDS
+    if (s_app.wake_words_active && mybot_app_get_state() == MYBOT_APP_STATE_READY &&
+        mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_RUNTIME) {
+        static unsigned int process_error_count;
+        if (mybot_wake_words_process(s_app.cap_frame, frames) < 0) {
+            process_error_count++;
+            if (process_error_count == 1 || process_error_count % 100 == 0) {
+                AOSL_LOG_WRN("wake words processing failed (%u errors)", process_error_count);
+            }
+        } else {
+            process_error_count = 0;
+        }
+    }
+#endif
 
     /* Discard until RTC join succeeds (avoid filling ringbuf with stale data) */
     if (!aosl_atomic_read(&s_app.rtc_connected)) {
@@ -564,6 +591,18 @@ static int start_services(void) {
         goto fail;
     }
 
+#if MYBOT_WAKE_WORDS
+    if (!mybot_wake_words_is_registered()) {
+        AOSL_LOG_ERR("wake words enabled but no local ASR backend is registered");
+        goto fail;
+    }
+    if (mybot_wake_words_init(SAMPLE_RATE, CHANNELS, BITS_PER_SAMPLE, on_wake_word, NULL) < 0) {
+        AOSL_LOG_ERR("wake words backend init failed");
+        goto fail;
+    }
+    s_app.wake_words_active = true;
+#endif
+
     /* ---- 3. Create ring buffers ---- */
     s_app.cap_ringbuf = mybot_ringbuf_create(AUDIO_RINGBUF_SIZE);
     s_app.pb_ringbuf = mybot_ringbuf_create(AUDIO_RINGBUF_SIZE);
@@ -882,6 +921,14 @@ void mybot_app_stop(void) {
         aosl_mpq_destroy_wait(s_app.pb_mpq);
         s_app.pb_mpq = AOSL_MPQ_INVALID;
     }
+
+#if MYBOT_WAKE_WORDS
+    /* The capture MPQ has exited, so process() cannot race with destroy(). */
+    if (s_app.wake_words_active) {
+        mybot_wake_words_deinit();
+        s_app.wake_words_active = false;
+    }
+#endif
 
     if (s_app.kv_store_active) {
         mybot_kv_store_deinit();
