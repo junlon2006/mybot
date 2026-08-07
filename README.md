@@ -5,12 +5,13 @@
 
 **[English](README.md) | [简体中文](README.zh-CN.md)**
 
-`mybot` is a cross-platform voice-robot SDK for edge devices. It handles APSTA provisioning,
-device pairing and authentication, a conversation state machine, two-way real-time audio
-(Agora RTSA), button/LCD workflows, and optional local wake-word recognition. Platform-specific
-capabilities are injected through a small set of `ops` interfaces, so the SDK core has no
-dependency on Linux ALSA, stdin, or a particular filesystem and ports cleanly to Linux and MCU
-platforms.
+`mybot` is a cross-platform **AI voice-chat SDK** for edge devices: it lets smart devices hold
+real-time voice conversations with cloud AI agents over Agora RTC. The SDK handles APSTA
+provisioning, device pairing and authentication, a conversation state machine, two-way real-time
+audio (Agora RTSA with Agora AI capabilities), button/LCD workflows, and optional local wake-word
+recognition. Platform-specific capabilities are injected through a small set of `ops` interfaces;
+the core depends only on C99 and AOSL and can be ported to virtually any platform — Linux, an
+RTOS, or a bare-metal MCU.
 
 > Current version: **0.1.0-rc.1** — the public API is not yet stable. The bundled Agora RTSA
 > binary and AOSL have separate licensing and usage terms; read
@@ -20,6 +21,7 @@ platforms.
 ## Table of Contents
 
 - [Features](#features)
+- [Conversation flow](#conversation-flow)
 - [Boundaries and limitations](#boundaries-and-limitations)
 - [Quick start](#quick-start)
 - [Integrating into a host project](#integrating-into-a-host-project)
@@ -33,16 +35,21 @@ platforms.
 
 ## Features
 
-- **Cross-platform core**: The core depends only on AOSL and the platform `ops` contract; it never
-  touches any OS or peripheral API directly. The same code runs on the Linux reference platform and
-  on MCU firmware.
+- **Real-time AI conversation**: Hold live voice chats with a cloud AI agent; speech recognition,
+  language-model reasoning, and speech synthesis (ASR / LLM / TTS) are orchestrated in the cloud.
+- **Portable to virtually any platform**: The core depends only on C99 and AOSL, and device
+  capabilities are injected through the `ops` contract, so it never touches any OS or peripheral
+  API directly — Linux, an RTOS, or a bare-metal MCU.
 - **APSTA provisioning**: Non-blocking startup; Wi-Fi events drive the application state machine.
 - **Pairing and authentication**: Pair code → device claim → persisted long-lived credential, with
   automatic re-pairing when authentication is rejected.
 - **Conversation state machine**: Five states — `unprovisioned / pairing / awaiting_claim / runtime
   / in_conversation` — drive the device-server interaction.
-- **Two-way real-time audio**: Built on Agora RTSA, with cloud AEC and optional real-time
-  transcription.
+- **Full-duplex voice · barge-in**: Uplink and downlink run simultaneously; the user can interrupt
+  the AI mid-reply at any time, and the microphone keeps streaming so the cloud agent hears and
+  responds to new input.
+- **Two-way real-time audio · Agora AI capabilities**: Built on Agora RTSA, with cloud AEC, AI QoS,
+  and optional real-time transcription.
 - **Optional local wake words**: Off by default; wake behavior is identical to starting a
   conversation with a physical button.
 - **Button and LCD workflows**: Semantic screen states (provisioning / pair code / ready / in
@@ -61,6 +68,35 @@ platforms.
 - The Wi-Fi interface targets APSTA provisioning scenarios.
 - The device server is not part of this repository; running the examples requires a compatible
   server endpoint.
+
+## Conversation flow
+
+The SDK establishes a real-time audio channel with a cloud AI agent over Agora RTC, forming a
+complete voice conversation loop:
+
+```mermaid
+flowchart LR
+    user["User speaks"] --> mic["Microphone · capture"]
+    mic --> up["Agora RTC uplink"]
+    up --> agent["Cloud AI agent<br/>ASR · LLM · TTS"]
+    agent --> down["Agora RTC downlink"]
+    down --> spk["Speaker · playback"]
+    spk --> reply["User hears the AI reply"]
+```
+
+- **Uplink**: the device captures 16 kHz PCM from the microphone and sends it to the cloud AI agent
+  over Agora RTC.
+- **Cloud orchestration**: the AI agent performs speech recognition (ASR), language-model reasoning
+  and reply generation (LLM), and speech synthesis (TTS).
+- **Downlink**: the AI reply audio returns over Agora RTC and plays out on the device speaker.
+- **Session scheduling**: the device server handles pairing / claim and allocates the RTC channel for
+  each conversation.
+
+The loop is **full-duplex**: uplink and downlink run at the same time, with no turn-taking. The user
+can **interrupt** the AI at any point mid-reply — the device keeps the microphone streaming, and the
+cloud agent detects the new input, stops its reply, and listens for the new command.
+
+For the device-side audio pipeline and state machine, see [Architecture](#architecture).
 
 ## Quick start
 
@@ -176,8 +212,8 @@ networks, or release builds.
 
 The SDK uses a layered architecture: the host application drives the core through the public API,
 the core modules sit on top of the AOSL portability layer and the platform `ops` contract, and all
-platform differences are absorbed by the platform backends. The device server and the Agora RTC
-cloud are runtime external dependencies and are not part of this repository.
+platform differences are absorbed by the platform backends. The device server, the Agora RTC cloud,
+and the cloud AI agent are runtime external dependencies and are not part of this repository.
 
 ```mermaid
 flowchart TB
@@ -207,9 +243,10 @@ flowchart TB
         mcu_b["MCU backend · host-provided"]
     end
 
-    subgraph ext["External services"]
-        svc_e["Device server (HTTPS)"]
+    subgraph ext["External services · cloud"]
+        svc_e["Device server<br/>pairing · claim · session scheduling (HTTPS)"]
         agora_e["Agora RTC cloud"]
+        agent_e["AI agent<br/>ASR · LLM · TTS"]
     end
 
     host_app --> api_h
@@ -228,6 +265,8 @@ flowchart TB
     ops --> mcu_b
     svc_c -->|HTTPS polling| svc_e
     rtc_c -->|real-time audio| agora_e
+    agora_e <--> agent_e
+    svc_e -->|schedules session| agent_e
 ```
 
 Layer notes:
@@ -242,8 +281,9 @@ Layer notes:
   per platform.
 - **Platform backends**: the Linux reference implementation and each MCU platform register against
   the same contract.
-- **External services**: the device server (pairing / claim / conversation scheduling, HTTPS only)
-  and Agora RTC (real-time audio).
+- **External services**: the device server (pairing / claim / session scheduling, HTTPS only), the
+  Agora RTC cloud (real-time audio transport), and the cloud AI agent (speech recognition /
+  understanding / synthesis).
 
 ### Threading model
 
@@ -279,8 +319,7 @@ stateDiagram-v2
 ```
 
 When device authentication is rejected, the device returns to `unprovisioned` and automatically
-restarts pairing on the next state-machine tick. For the full server interaction and the
-device-side state definitions, see [DEVICE_API.md](DEVICE_API.md).
+restarts pairing on the next state-machine tick.
 
 #### Audio data flow
 
@@ -299,7 +338,9 @@ flowchart LR
 ```
 
 With `MYBOT_CLOUD_AEC=ON`, the downlink audio is interleaved with the microphone signal as a
-reference channel and sent uplink together, letting the server cancel echo.
+reference channel and sent uplink together, letting the server cancel echo. The uplink and downlink
+run concurrently (**full-duplex**): the microphone keeps streaming during AI replies, which is what
+lets the cloud agent support user interruption.
 
 ## Repository layout
 
@@ -324,7 +365,6 @@ Key CMake targets:
 ## Documentation
 
 - [docs/PORTING.md](docs/PORTING.md) — porting guide and acceptance contract
-- [DEVICE_API.md](DEVICE_API.md) — device-side server API specification
 - [docs/RELEASING.md](docs/RELEASING.md) — release process
 - [CHANGELOG.md](CHANGELOG.md) — version history
 
@@ -345,12 +385,13 @@ find include src platforms examples tests -type f \
 
 ## Contributing and support
 
-We welcome issues, discussions, and pull requests. Before you start, please read:
+We welcome issues, discussions, and pull requests. Before you start, please read (each document is
+available in English and Simplified Chinese):
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) — development workflow and contribution guidelines
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community code of conduct
-- [SUPPORT.md](SUPPORT.md) — how to get help
-- [SECURITY.md](SECURITY.md) — how to report security vulnerabilities
+- [CONTRIBUTING](CONTRIBUTING.md) ([简体中文](CONTRIBUTING.zh-CN.md)) — development workflow and contribution guidelines
+- [CODE_OF_CONDUCT](CODE_OF_CONDUCT.md) ([简体中文](CODE_OF_CONDUCT.zh-CN.md)) — community code of conduct
+- [SUPPORT](SUPPORT.md) ([简体中文](SUPPORT.zh-CN.md)) — how to get help
+- [SECURITY](SECURITY.md) ([简体中文](SECURITY.zh-CN.md)) — how to report security vulnerabilities
 
 ## License and third-party dependencies
 

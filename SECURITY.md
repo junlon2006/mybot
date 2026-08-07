@@ -1,5 +1,7 @@
 # Security policy
 
+> [English](SECURITY.md) | [简体中文](SECURITY.zh-CN.md)
+
 ## Supported versions
 
 Only the latest release-candidate tag is evaluated for security fixes. No version currently has a

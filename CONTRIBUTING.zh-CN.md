@@ -1,0 +1,23 @@
+# 参与贡献
+
+欢迎对 0.1 release-candidate 系列贡献代码。公开 API 仍可能发生变化。
+
+> [English](CONTRIBUTING.md) | 简体中文
+
+## 工作流程
+
+1. 涉及 API、平台、依赖或协议的大型改动，请先在 issue 中讨论。
+2. 平台代码保持在 `src/` 之外，并通过公共平台 ops 集成。
+3. 绝不提交凭据、设备 token、客户数据或专有 SDK 包。
+4. 自维护的 C 源码遵循仓库根目录 `.clang-format`。
+5. 提交 pull request 前先构建并测试：
+
+       cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=ON
+       cmake --build build -j
+       ctest --test-dir build --output-on-failure
+
+平台贡献必须通过 `docs/PORTING.md` 中的验收清单，并描述真实设备验证情况。涉及
+用户可见行为时，请同步更新公共文档与 `CHANGELOG.md`。
+
+Pull request 应说明问题、设计、兼容性影响、测试与使用的硬件。通过提交，你同意你的
+贡献按仓库 `LICENSE` 许可发布，除非该文件明确带有自身兼容的许可证。
