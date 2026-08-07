@@ -14,6 +14,7 @@ static bool s_kv_store_present;
 static bool s_kv_store_set_fails;
 
 static int s_binding_result;
+static int s_binding_call_count;
 static char s_binding_status[16];
 static char s_binding_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
 static int s_pair_result;
@@ -101,6 +102,7 @@ int mybot_device_client_get_binding_status(const char *base_url, const char *dev
     (void)base_url;
     (void)device_id;
     (void)auth_header;
+    s_binding_call_count++;
     memset(resp, 0, sizeof(*resp));
     strcpy(resp->status, s_binding_status);
     strcpy(resp->device_token, s_binding_token);
@@ -249,6 +251,45 @@ int main(void) {
     mybot_device_lifecycle_request_start();
     mybot_device_lifecycle_tick();
     assert(s_conversation_start_count == 1);
+
+    /* A disconnect edge must survive an immediate reconnect and close RTC
+     * locally without attempting an HTTP stop on the stale connection. */
+    assert(mybot_device_lifecycle_init("http://server", "device-1", NULL, NULL, &callbacks) == 0);
+    mybot_device_lifecycle_request_start();
+    mybot_device_lifecycle_tick();
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION);
+    assert(s_conversation_start_count == 2);
+    assert(s_start_call_count == 3);
+
+    mybot_device_lifecycle_set_network_available(false);
+    mybot_device_lifecycle_set_network_available(true);
+    mybot_device_lifecycle_tick();
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_RUNTIME);
+    assert(s_stop_call_count == 1);
+    assert(s_conversation_stop_count == 2);
+
+    /* No device-service request may run while offline, and an offline start
+     * request must not be replayed after reconnect. */
+    mybot_device_lifecycle_set_network_available(false);
+    mybot_device_lifecycle_tick();
+    int binding_calls_before = s_binding_call_count;
+    tick_many(600);
+    assert(s_binding_call_count == binding_calls_before);
+    mybot_device_lifecycle_request_start();
+    mybot_device_lifecycle_set_network_available(true);
+    mybot_device_lifecycle_tick();
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_RUNTIME);
+    assert(s_start_call_count == 3);
+
+    /* Shutdown after a disconnect must also clean up locally. */
+    mybot_device_lifecycle_request_start();
+    mybot_device_lifecycle_tick();
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION);
+    mybot_device_lifecycle_set_network_available(false);
+    mybot_device_lifecycle_shutdown();
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_RUNTIME);
+    assert(s_stop_call_count == 1);
+    assert(s_conversation_stop_count == 3);
 
     mybot_kv_store_deinit();
     aosl_dtor();

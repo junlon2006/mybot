@@ -55,7 +55,10 @@ Register with `mybot_audio_device_register_capture()` and
 Implement `mybot_wifi_provisioning_ops_t`. `init` starts APSTA without waiting for the user.
 Emit connected, disconnected and failed events as state changes. Events may come from a platform
 thread, but none may run after `destroy` returns. Destroy must stop the transport and wait for
-in-flight callbacks. Register with `mybot_wifi_provisioning_register()`.
+in-flight callbacks. The backend must keep monitoring the STA link after the first successful
+connection and report runtime disconnect and reconnect events; the SDK pauses device-service
+traffic while offline and resumes it after reconnect. Register with
+`mybot_wifi_provisioning_register()`.
 
 The Linux backend reports connected immediately and is not a real APSTA reference.
 

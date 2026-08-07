@@ -52,6 +52,8 @@ static struct {
     /* One-shot action flag consumed by tick() */
     aosl_atomic_t start_pairing_flag;
     aosl_atomic_t shutting_down;
+    aosl_atomic_t network_available;
+    aosl_atomic_t network_loss_pending;
 } s_state;
 
 typedef enum {
@@ -338,13 +340,18 @@ static void action_start_conversation(void) {
 /* ----------------------------------------------------------
  * Action: stop conversation
  * ---------------------------------------------------------- */
+static void complete_conversation_locally(void) {
+    s_state.conversation_id[0] = '\0';
+    if (s_state.cbs.on_conversation_stop) {
+        s_state.cbs.on_conversation_stop();
+    }
+    set_state(MYBOT_DEVICE_STATE_RUNTIME);
+}
+
 static void action_stop_conversation(const char *reason) {
     if (!s_state.conversation_id[0]) {
         AOSL_LOG_ERR("active conversation has no conversation_id; completing local cleanup");
-        if (s_state.cbs.on_conversation_stop) {
-            s_state.cbs.on_conversation_stop();
-        }
-        set_state(MYBOT_DEVICE_STATE_RUNTIME);
+        complete_conversation_locally();
         return;
     }
 
@@ -379,6 +386,7 @@ int mybot_device_lifecycle_init(const char *server_base, const char *device_id,
     }
 
     memset(&s_state, 0, sizeof(s_state));
+    aosl_atomic_set(&s_state.network_available, true);
 
     strncpy(s_state.server_base, server_base, sizeof(s_state.server_base) - 1);
     strncpy(s_state.device_id, device_id, sizeof(s_state.device_id) - 1);
@@ -406,6 +414,23 @@ int mybot_device_lifecycle_init(const char *server_base, const char *device_id,
 
 void mybot_device_lifecycle_tick(void) {
     if (aosl_atomic_read(&s_state.shutting_down)) {
+        return;
+    }
+
+    /* Consume every observed network loss even when Wi-Fi reconnects before
+     * this worker gets its next tick. */
+    if (aosl_atomic_xchg(&s_state.network_loss_pending, false)) {
+        aosl_atomic_set(&s_state.conversation_requested, false);
+        aosl_atomic_set(&s_state.stop_request, MYBOT_STOP_REQUEST_NONE);
+        if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
+            complete_conversation_locally();
+        }
+        return;
+    }
+
+    if (!aosl_atomic_read(&s_state.network_available)) {
+        aosl_atomic_set(&s_state.conversation_requested, false);
+        aosl_atomic_set(&s_state.stop_request, MYBOT_STOP_REQUEST_NONE);
         return;
     }
 
@@ -478,14 +503,27 @@ void mybot_device_lifecycle_tick(void) {
     }
 }
 
+void mybot_device_lifecycle_set_network_available(bool available) {
+    aosl_atomic_set(&s_state.network_available, available);
+    if (!available) {
+        aosl_atomic_set(&s_state.network_loss_pending, true);
+        /* Do not start a conversation automatically after a later reconnect. */
+        aosl_atomic_set(&s_state.conversation_requested, false);
+    }
+}
+
 void mybot_device_lifecycle_shutdown(void) {
     aosl_atomic_set(&s_state.shutting_down, true);
     aosl_atomic_set(&s_state.start_pairing_flag, false);
     aosl_atomic_set(&s_state.conversation_requested, false);
     aosl_atomic_set(&s_state.stop_request, MYBOT_STOP_REQUEST_NONE);
 
-    if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
+    if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION &&
+        aosl_atomic_read(&s_state.network_available) &&
+        !aosl_atomic_read(&s_state.network_loss_pending)) {
         action_stop_conversation("device_hangup");
+    } else if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
+        complete_conversation_locally();
     }
 }
 
@@ -497,7 +535,7 @@ void mybot_device_lifecycle_request_pair(void) {
 }
 
 void mybot_device_lifecycle_request_start(void) {
-    if (aosl_atomic_read(&s_state.shutting_down)) {
+    if (aosl_atomic_read(&s_state.shutting_down) || !aosl_atomic_read(&s_state.network_available)) {
         return;
     }
     if (current_state() != MYBOT_DEVICE_STATE_RUNTIME) {

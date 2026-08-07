@@ -7,6 +7,8 @@ between release candidates.
 
 ### Fixed
 
+- Preserve runtime Wi-Fi disconnect/reconnect events, pause device-service traffic while offline,
+  and end active RTC conversations locally without reinitializing services after reconnect.
 - Percent-encode device IDs in URL path segments and reject control characters in dynamic HTTP
   header values and request targets.
 - Reject conversation-start responses without a valid conversation ID before entering the active

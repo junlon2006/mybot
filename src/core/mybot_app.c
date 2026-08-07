@@ -371,7 +371,8 @@ static void dev_on_pair_code(const char *code) {
     AOSL_LOG_INF("*** PAIR CODE: %s ***", code);
     AOSL_LOG_INF("*** Enter this code in the web UI to claim the device ***");
     mybot_app_state_t app_state = mybot_app_get_state();
-    if (app_state == MYBOT_APP_STATE_STOPPING || app_state == MYBOT_APP_STATE_FAILED) {
+    if (app_state == MYBOT_APP_STATE_STOPPING || app_state == MYBOT_APP_STATE_FAILED ||
+        app_state == MYBOT_APP_STATE_WIFI_DISCONNECTED) {
         return;
     }
     lcd_show_pair_code(code);
@@ -445,7 +446,8 @@ static void dev_on_conversation_stop(void) {
 
 static void dev_on_state_changed(mybot_device_state_t state) {
     mybot_app_state_t app_state = mybot_app_get_state();
-    if (app_state == MYBOT_APP_STATE_STOPPING || app_state == MYBOT_APP_STATE_FAILED) {
+    if (app_state == MYBOT_APP_STATE_STOPPING || app_state == MYBOT_APP_STATE_FAILED ||
+        app_state == MYBOT_APP_STATE_WIFI_DISCONNECTED) {
         return;
     }
 
@@ -711,7 +713,8 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
     }
 
     mybot_wifi_provisioning_state_t wifi_state = (mybot_wifi_provisioning_state_t)argv[0];
-    if (wifi_state == MYBOT_WIFI_PROVISIONING_STATE_FAILED) {
+    if (wifi_state == MYBOT_WIFI_PROVISIONING_STATE_FAILED &&
+        app_state == MYBOT_APP_STATE_WIFI_PROVISIONING) {
         if (aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING,
                                 MYBOT_APP_STATE_FAILED) == MYBOT_APP_STATE_WIFI_PROVISIONING) {
             lcd_show_screen(MYBOT_LCD_SCREEN_FAILED);
@@ -722,7 +725,32 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
     }
 
     if (wifi_state == MYBOT_WIFI_PROVISIONING_STATE_DISCONNECTED) {
+        if (app_state == MYBOT_APP_STATE_READY) {
+            mybot_device_lifecycle_set_network_available(false);
+            aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_WIFI_DISCONNECTED);
+            AOSL_LOG_WRN("Wi-Fi disconnected; pausing device-service activity");
+        } else if (app_state == MYBOT_APP_STATE_WIFI_DISCONNECTED) {
+            return;
+        }
         lcd_show_screen(MYBOT_LCD_SCREEN_WIFI_DISCONNECTED);
+        return;
+    }
+
+    if (wifi_state == MYBOT_WIFI_PROVISIONING_STATE_FAILED &&
+        app_state != MYBOT_APP_STATE_WIFI_PROVISIONING) {
+        mybot_device_lifecycle_set_network_available(false);
+        aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_WIFI_DISCONNECTED);
+        lcd_show_screen(MYBOT_LCD_SCREEN_WIFI_DISCONNECTED);
+        AOSL_LOG_WRN("Wi-Fi failed at runtime; pausing device-service activity");
+        return;
+    }
+
+    if (wifi_state == MYBOT_WIFI_PROVISIONING_STATE_CONNECTED &&
+        app_state == MYBOT_APP_STATE_WIFI_DISCONNECTED) {
+        mybot_device_lifecycle_set_network_available(true);
+        aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_READY);
+        AOSL_LOG_INF("Wi-Fi reconnected; resuming device-service activity");
+        dev_on_state_changed(mybot_device_lifecycle_get_state());
         return;
     }
 
@@ -751,15 +779,16 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
 
 static void on_wifi_state_changed(mybot_wifi_provisioning_state_t state, void *user_data) {
     (void)user_data;
-    if (mybot_app_get_state() != MYBOT_APP_STATE_WIFI_PROVISIONING) {
+    mybot_app_state_t app_state = mybot_app_get_state();
+    if (app_state == MYBOT_APP_STATE_STOPPING || app_state == MYBOT_APP_STATE_FAILED ||
+        app_state == MYBOT_APP_STATE_STOPPED) {
         return;
     }
 
     if (aosl_mpq_queue(s_app.startup_mpq, AOSL_MPQ_INVALID, AOSL_REF_INVALID, "handle_wifi_state",
                        handle_wifi_state, 1, (uintptr_t)state) < 0) {
         AOSL_LOG_ERR("failed to queue wifi state transition");
-        if (aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING,
-                                MYBOT_APP_STATE_FAILED) == MYBOT_APP_STATE_WIFI_PROVISIONING) {
+        if (aosl_atomic_cmpxchg(&s_app.state, app_state, MYBOT_APP_STATE_FAILED) == app_state) {
             lcd_show_screen(MYBOT_LCD_SCREEN_FAILED);
             aosl_atomic_set(&s_app.running, false);
         }

@@ -65,6 +65,13 @@ int mybot_device_lifecycle_init(const char *server_base, const char *device_id,
  *  Drives polling and state transitions. */
 void mybot_device_lifecycle_tick(void);
 
+/**
+ * Notify the state machine whether device-service networking is available.
+ * May be called from any thread. While offline, tick() performs no HTTP actions;
+ * an active conversation is ended locally on the state-machine thread.
+ */
+void mybot_device_lifecycle_set_network_available(bool available);
+
 /** Stop state-machine activity and close any active conversation.
  *  Must be called from the same thread that calls mybot_device_lifecycle_tick(). */
 void mybot_device_lifecycle_shutdown(void);
