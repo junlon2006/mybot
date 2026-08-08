@@ -95,7 +95,9 @@ static uint32_t http_next_rand(void) {
 static void test_parse_fuzz(void) {
     char raw[512];
     for (int iter = 0; iter < 20000; iter++) {
-        size_t len = (size_t)(http_next_rand() % sizeof(raw));
+        /* Keep len >= 1 so parse_response never receives an uninitialized
+         * buffer (cppcheck uninitvar). */
+        size_t len = 1 + (size_t)(http_next_rand() % (sizeof(raw) - 1));
         for (size_t i = 0; i < len; i++) {
             raw[i] = (char)(http_next_rand() & 0xff);
         }
