@@ -254,6 +254,8 @@ configure_file(cmake/mybot.pc.in ${CMAKE_CURRENT_BINARY_DIR}/mybot.pc @ONLY)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/mybot.pc
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
 
+configure_file(docs/Doxyfile.in ${CMAKE_CURRENT_BINARY_DIR}/docs/Doxyfile @ONLY)
+
 # AOSL is bundled with the installed package (see THIRD_PARTY_NOTICES.md for
 # its license). Headers merge into include/api and include/hal, matching the
 # build-time include layout.

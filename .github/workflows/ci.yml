@@ -107,3 +107,35 @@ jobs:
         with:
           files: coverage.info
           fail_ci_if_error: false
+
+  docs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake doxygen
+      - name: Configure
+        run: cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_BUILD_TESTS=OFF -DMYBOT_BUILD_EXAMPLES=OFF -DMYBOT_BUILD_LINUX_PLATFORM=OFF
+      - name: Build API reference
+        run: doxygen build/docs/Doxyfile
+      - name: Upload API reference
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-reference
+          path: build/docs/api/html
+
+  docs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake doxygen
+      - name: Configure
+        run: cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_BUILD_TESTS=OFF -DMYBOT_BUILD_EXAMPLES=OFF -DMYBOT_BUILD_LINUX_PLATFORM=OFF
+      - name: Build API reference
+        run: doxygen build/docs/Doxyfile
+      - name: Upload API reference
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-reference
+          path: build/docs/api/html

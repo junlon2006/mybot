@@ -1,0 +1,30 @@
+# Doxyfile for the mybot public API reference.
+#
+# Generated from Doxyfile.in by CMake (configure_file); PROJECT_NUMBER stays
+# in sync with the version variables at the top of CMakeLists.txt. Build the
+# reference with: doxygen @CMAKE_CURRENT_BINARY_DIR@/docs/Doxyfile
+
+PROJECT_NAME           = "mybot"
+PROJECT_NUMBER         = "@MYBOT_VERSION_STRING@"
+PROJECT_BRIEF          = "Cross-platform AI voice-chat SDK for edge devices"
+
+OUTPUT_DIRECTORY       = "@CMAKE_CURRENT_BINARY_DIR@/docs/api"
+INPUT                  = "@CMAKE_CURRENT_SOURCE_DIR@/include/mybot" \
+                         "@CMAKE_CURRENT_BINARY_DIR@/include/mybot"
+RECURSIVE              = YES
+EXCLUDE_PATTERNS       = *.h.in
+
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+HTML_OUTPUT            = html
+HAVE_DOT               = NO
+
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = NO
+WARN_AS_ERROR          = YES
+
+# Strip the export macro so declarations parse cleanly on every platform.
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+PREDEFINED             = MYBOT_API= MYBOT_BUILDING_LIBRARY

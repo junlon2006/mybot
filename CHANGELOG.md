@@ -59,6 +59,9 @@ between release candidates.
 - Add a `MYBOT_API` symbol-visibility macro (`mybot_export.h`) to every public header, preparing
   the SDK for shared-library and Windows DLL builds; the SDK target builds with
   `-fvisibility=hidden` and defines `MYBOT_BUILDING_LIBRARY` while compiling.
+- Doxygen API reference generated from the public headers (`docs/Doxyfile.in`, version
+  single-sourced through CMake, warnings treated as errors) and built as a CI artifact on every
+  push / PR.
 - Bilingual porting and release guides under `docs/` (PORTING / RELEASING).
 - SPDX license identifiers on all self-maintained C sources (Apache-2.0; MIT for the cJSON-derived
   `mybot_json` sources).

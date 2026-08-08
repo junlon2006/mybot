@@ -350,6 +350,8 @@ mybot/
   与验收契约
 - [docs/RELEASING.md](docs/RELEASING.md)（[简体中文](docs/RELEASING.zh-CN.md)）— 版本发布流程
 - [CHANGELOG.md](CHANGELOG.md) — 版本变更记录
+- API 参考 — 由 Doxygen 从公共头文件生成，命令为 `doxygen build/docs/Doxyfile`；CI 在每个
+  push / PR 构建并以工件形式发布
 
 ## 开发与验证
 
