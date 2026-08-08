@@ -66,6 +66,13 @@ add_test(NAME mybot_cmake_host_integration
         -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/run_cmake_host.cmake
 )
 
+add_test(NAME mybot_install_consumer_check
+    COMMAND ${CMAKE_COMMAND}
+        -DMYBOT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/..
+        -DMYBOT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/..
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/run_cmake_install.cmake
+)
+
 if(MYBOT_BUILD_LINUX_PLATFORM)
     mybot_add_test(mybot_kv_store_file_test
         platform/linux/kv_store_file_test.c

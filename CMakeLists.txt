@@ -84,6 +84,16 @@ if(NOT TARGET aosl)
     )
     target_compile_options(aosl PRIVATE ${AOSL_ADD_OPTIONS})
     target_compile_definitions(aosl PRIVATE ${AOSL_ADD_DEFINITIONS})
+    # Make the exported target relocatable: installed AOSL headers are merged
+    # under ${CMAKE_INSTALL_INCLUDEDIR}. Builds inside this tree keep the
+    # original source include roots through per-path BUILD_INTERFACE entries.
+    set_property(TARGET aosl PROPERTY INTERFACE_INCLUDE_DIRECTORIES "")
+    foreach(_aosl_dir IN LISTS AOSL_ADD_INCLUDES_PUBLIC)
+        set_property(TARGET aosl APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+            "$<BUILD_INTERFACE:${_aosl_dir}>")
+    endforeach()
+    set_property(TARGET aosl APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+        "$<INSTALL_INTERFACE:include>")
 endif()
 
 if(NOT TARGET agora-rtc-sdk)
@@ -147,7 +157,11 @@ target_compile_definitions(mybot_sdk PUBLIC
     MYBOT_ENABLE_HTTPS=$<BOOL:${MYBOT_ENABLE_HTTPS}>
     MYBOT_ALLOW_INSECURE_HTTP=$<BOOL:${MYBOT_ALLOW_INSECURE_HTTP}>
 )
-target_link_libraries(mybot_sdk PUBLIC aosl agora-rtc-sdk)
+target_link_libraries(mybot_sdk PUBLIC
+    aosl
+    $<BUILD_INTERFACE:agora-rtc-sdk>
+    $<INSTALL_INTERFACE:mybot::agora-rtc-sdk>
+)
 if(UNIX)
     find_package(Threads REQUIRED)
     target_link_libraries(mybot_sdk PUBLIC Threads::Threads ${CMAKE_DL_LIBS} m)
@@ -173,9 +187,52 @@ if(MYBOT_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-install(TARGETS mybot_sdk
+include(CMakePackageConfigHelpers)
+set(MYBOT_INSTALL_CMAKEDIR ${CMAKE_INSTALL_LIBDIR}/cmake/mybot)
+
+install(TARGETS mybot_sdk aosl
+    EXPORT mybotTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+install(EXPORT mybotTargets
+    FILE mybotTargets.cmake
+    NAMESPACE mybot::
+    DESTINATION ${MYBOT_INSTALL_CMAKEDIR}
+)
+
+configure_package_config_file(
+    cmake/mybotConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/mybotConfig.cmake
+    INSTALL_DESTINATION ${MYBOT_INSTALL_CMAKEDIR}
+)
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/mybotConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/mybotConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/mybotConfigVersion.cmake
+    DESTINATION ${MYBOT_INSTALL_CMAKEDIR}
+)
+
+configure_file(cmake/mybot.pc.in ${CMAKE_CURRENT_BINARY_DIR}/mybot.pc @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/mybot.pc
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+
+# AOSL is bundled with the installed package (see THIRD_PARTY_NOTICES.md for
+# its license). Headers merge into include/api and include/hal, matching the
+# build-time include layout.
+install(DIRECTORY ${AOSL_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY ${AOSL_DIR}/platform/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY ${AOSL_DIR}/platform/src/${CONFIG_PLATFORM}/config/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} FILES_MATCHING PATTERN "*.h")
+install(FILES ${AOSL_DIR}/LICENSE DESTINATION ${CMAKE_INSTALL_DOCDIR} RENAME aosl-LICENSE)
+
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/mybot/mybot_version.h
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mybot)
 install(DIRECTORY include/mybot DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}

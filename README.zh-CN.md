@@ -119,6 +119,10 @@ APSTA 配网；音频使用 ALSA `default` 设备；KV 数据默认写入当前�
 推荐将仓库作为源码子模块引入。宿主需要为目标架构准备匹配的 Agora RTSA 头文件/静态库，
 并确保 AOSL 已支持目标平台。
 
+也支持已安装包：`cmake --install` 会导出 `mybot::sdk`（及随附的 `mybot::aosl`），消费工程将
+`MYBOT_AGORA_SDK_DIR` / `MYBOT_AGORA_RTC_LIBRARY` 指向目标架构的 Agora RTSA 包后，即可用
+`find_package(mybot CONFIG REQUIRED)` 引入。
+
 ```cmake
 set(CONFIG_PLATFORM my_mcu CACHE STRING "" FORCE)
 set(AGORA_SDK_DIR /opt/agora-rtsa CACHE PATH "" FORCE)

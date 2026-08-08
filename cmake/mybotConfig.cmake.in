@@ -1,0 +1,33 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+if(UNIX)
+    find_dependency(Threads)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/mybotTargets.cmake")
+
+# The Agora RTSA library is not redistributed with this package (see
+# THIRD_PARTY_NOTICES.md). Consumers must point MYBOT_AGORA_SDK_DIR and
+# MYBOT_AGORA_RTC_LIBRARY at a target-architecture Agora RTSA package before
+# linking mybot::sdk.
+if(NOT TARGET mybot::agora-rtc-sdk)
+    set(MYBOT_AGORA_SDK_DIR "" CACHE PATH
+        "Path to the Agora RTSA SDK package (must contain include/agora_rtc_api.h)")
+    set(MYBOT_AGORA_RTC_LIBRARY "" CACHE FILEPATH
+        "Path to the Agora RTSA static library for the target ABI")
+    if(NOT MYBOT_AGORA_SDK_DIR OR NOT MYBOT_AGORA_RTC_LIBRARY OR
+       NOT EXISTS "${MYBOT_AGORA_SDK_DIR}/include/agora_rtc_api.h" OR
+       NOT EXISTS "${MYBOT_AGORA_RTC_LIBRARY}")
+        message(FATAL_ERROR
+            "mybot requires the Agora RTSA SDK, which is not redistributed with the "
+            "package. Set MYBOT_AGORA_SDK_DIR to the SDK package root and "
+            "MYBOT_AGORA_RTC_LIBRARY to its static library, then re-run CMake.")
+    endif()
+    add_library(mybot::agora-rtc-sdk STATIC IMPORTED)
+    set_target_properties(mybot::agora-rtc-sdk PROPERTIES
+        IMPORTED_LOCATION "${MYBOT_AGORA_RTC_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${MYBOT_AGORA_SDK_DIR}/include")
+endif()
+
+check_required_components(mybot)

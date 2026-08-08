@@ -139,6 +139,10 @@ We recommend vendoring the repository as a source submodule. The host must provi
 header and static library matching the target architecture and ensure AOSL supports the target
 platform.
 
+An installed package is also supported: `cmake --install` exports `mybot::sdk` (and the bundled
+`mybot::aosl`), and a consumer project can use `find_package(mybot CONFIG REQUIRED)` after pointing
+`MYBOT_AGORA_SDK_DIR` / `MYBOT_AGORA_RTC_LIBRARY` at a target-architecture Agora RTSA package.
+
 ```cmake
 set(CONFIG_PLATFORM my_mcu CACHE STRING "" FORCE)
 set(AGORA_SDK_DIR /opt/agora-rtsa CACHE PATH "" FORCE)

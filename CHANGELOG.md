@@ -37,6 +37,10 @@ between release candidates.
   reference backend on Linux (Master / PCM / Digital controls).
 - Volume-up / volume-down key events, mapped to `u` / `d` on the Linux example; each event steps
   the media volume by 10.
+- Installable CMake package: `find_package(mybot)` with exported `mybot::sdk` / `mybot::aosl`
+  targets, a package version file, bundled AOSL headers and library, and a pkg-config file. The
+  Agora RTSA library is supplied by the consumer via `MYBOT_AGORA_SDK_DIR` /
+  `MYBOT_AGORA_RTC_LIBRARY` and is covered by an install-and-consume integration test.
 
 ## [0.1.0-rc.1] - Unreleased
 

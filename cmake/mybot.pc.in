@@ -1,0 +1,14 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
+libdir=${exec_prefix}/@CMAKE_INSTALL_LIBDIR@
+includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+
+Name: mybot
+Description: Cross-platform AI voice-chat SDK for edge devices
+URL: https://github.com/junlon2006/mybot
+Version: @MYBOT_VERSION_STRING@
+Libs: -L${libdir} -lmybot_sdk -laosl
+Libs.private: -lpthread -ldl -lrt -lm
+Cflags: -I${includedir}
+# Note: the Agora RTSA library is not bundled with the package; link it
+# separately (see THIRD_PARTY_NOTICES.md).
