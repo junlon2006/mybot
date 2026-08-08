@@ -42,6 +42,9 @@ between release candidates.
 - Unify result codes: add `mybot_errors.h` (0 success, positive payload, negative failure).
   `mybot_kv_store_get()` now returns `MYBOT_ERR_NOT_FOUND` instead of the positive
   `MYBOT_KV_STORE_NOT_FOUND`.
+- `mybot_json` now defaults to the AOSL HAL allocator (`aosl_hal_malloc` / `aosl_hal_free`)
+  instead of libc `malloc` / `free`, so JSON follows platform allocator redirects like the rest of
+  the SDK; `mybot_json_init_hooks(NULL)` resets to the same defaults.
 - The `.clang-format` language standard is `Auto` (inferred per file) instead of the misleading
   `Cpp03`, and the installed `mybot.pc` is relocatable: its prefix is derived from the pkg-config
   directory at any `CMAKE_INSTALL_LIBDIR` depth rather than baked in at configure time.
