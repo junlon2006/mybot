@@ -23,6 +23,11 @@ between release candidates.
 - Fix a NULL dereference in `mybot_json_create_*_array()` when an allocation fails mid-array,
   replace unbounded `strcpy` in JSON printing with bounded copies, and stop calling side-effecting
   functions inside test `assert()` (found by cppcheck / clang-tidy).
+- Fix a heap buffer overflow in `mybot_json` string parsing: a malformed `\u` escape followed by a
+  quote could swallow the closing quote and overflow the output buffer (found by the new
+  deterministic JSON parser fuzz).
+- Guard `mybot_rtc_session_join()` and `mybot_rtc_session_send_audio()` against calls before
+  initialization, which previously dereferenced a NULL mutex (found by the new RTC session test).
 - Release partially initialized services immediately when `start_services()` fails, instead of
   relying on a later `mybot_app_stop()` call; service teardown is shared, idempotent, and safe to
   run twice after a failed startup.
@@ -65,6 +70,9 @@ between release candidates.
 - Doxygen API reference generated from the public headers (`docs/Doxyfile.in`, version
   single-sourced through CMake, warnings treated as errors) and built as a CI artifact on every
   push / PR.
+- Deterministic fuzz loops for the HTTP response parser and JSON parser, allocator fault injection
+  for the HTTP client (linker-wrapped `aosl_hal_malloc`/`realloc`), and an RTC session state-machine
+  unit test that drives the wrapper through stubbed Agora SDK callbacks.
 - Bilingual porting and release guides under `docs/` (PORTING / RELEASING).
 - SPDX license identifiers on all self-maintained C sources (Apache-2.0; MIT for the cJSON-derived
   `mybot_json` sources).

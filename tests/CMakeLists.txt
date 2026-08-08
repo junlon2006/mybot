@@ -33,6 +33,10 @@ mybot_add_test(mybot_http_client_test
     ../src/platform/mybot_https.c
 )
 target_link_libraries(mybot_http_client_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_link_options(mybot_http_client_test PRIVATE
+        -Wl,--wrap=aosl_hal_malloc,--wrap=aosl_hal_realloc,--wrap=aosl_hal_free)
+endif()
 
 mybot_add_test(mybot_json_test unit/json_test.c ../src/support/mybot_json.c)
 target_link_libraries(mybot_json_test PRIVATE m)
@@ -55,6 +59,11 @@ target_link_libraries(mybot_audio_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
 mybot_add_test(mybot_ringbuf_test unit/ringbuf_test.c ../src/support/mybot_ringbuf.c)
 target_link_libraries(mybot_ringbuf_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
+
+mybot_add_test(mybot_rtc_session_test unit/rtc_session_test.c ../src/rtc/mybot_agora_rtc.c)
+target_include_directories(mybot_rtc_session_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/agora_rtsa_sdk/agora_sdk/include)
+target_link_libraries(mybot_rtc_session_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
 mybot_add_test(mybot_public_headers_test integration/public_headers_test.c)
 target_link_libraries(mybot_public_headers_test PRIVATE mybot::sdk)

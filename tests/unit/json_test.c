@@ -159,11 +159,53 @@ static void test_string_value_allocation_failure(void) {
     assert(result == 0);
 }
 
+/* ---- deterministic parser fuzz ---- */
+static uint32_t s_json_rng = 0x9e3779b9u;
+
+static uint32_t json_next_rand(void) {
+    s_json_rng ^= s_json_rng << 13;
+    s_json_rng ^= s_json_rng >> 17;
+    s_json_rng ^= s_json_rng << 5;
+    return s_json_rng;
+}
+
+static void test_parse_fuzz(void) {
+    static const char charset[] = "{}[],\"\\:0123456789abcdefghijklmnopqrstuvwxyz \t\n";
+    mybot_json_hooks_t hooks = {.malloc_fn = test_malloc, .free_fn = test_free};
+    reset_allocator_state();
+    assert(mybot_json_init_hooks(&hooks) == 0);
+
+    char buf[256];
+    for (int iter = 0; iter < 20000; iter++) {
+        int len = (int)(json_next_rand() % (sizeof(buf) - 1));
+        for (int i = 0; i < len; i++) {
+            buf[i] = charset[json_next_rand() % (sizeof(charset) - 1)];
+        }
+        buf[len] = '\0';
+
+        mybot_json_t *root = mybot_json_parse(buf);
+        if (root) {
+            char *out = mybot_json_print_unformatted(root);
+            if (out) {
+                /* Printed output must re-parse cleanly. */
+                mybot_json_t *again = mybot_json_parse(out);
+                assert(again != NULL);
+                mybot_json_delete(again);
+                mybot_json_free_string(out);
+            }
+            mybot_json_delete(root);
+        }
+    }
+    assert(s_successful_allocations == s_free_calls);
+    assert(mybot_json_init_hooks(NULL) == 0);
+}
+
 int main(void) {
     test_round_trip();
     test_allocator_hooks();
     test_add_item_key_allocation_failure();
     test_string_value_allocation_failure();
+    test_parse_fuzz();
 
     puts("json_test: ok");
     return 0;

@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "../../src/support/mybot_http_client.c" // NOLINT(bugprone-suspicious-include)
@@ -79,6 +80,84 @@ static void expect_failure(const char *raw, int stream_closed) {
     int rc = parse_response(raw, strlen(raw), stream_closed, &resp);
     assert(rc < 0);
     mybot_http_client_response_free(&resp);
+}
+
+/* ---- deterministic parser fuzz ---- */
+static uint32_t s_http_rng = 0xdeadbeefu;
+
+static uint32_t http_next_rand(void) {
+    s_http_rng ^= s_http_rng << 13;
+    s_http_rng ^= s_http_rng >> 17;
+    s_http_rng ^= s_http_rng << 5;
+    return s_http_rng;
+}
+
+static void test_parse_fuzz(void) {
+    char raw[512];
+    for (int iter = 0; iter < 20000; iter++) {
+        size_t len = (size_t)(http_next_rand() % sizeof(raw));
+        for (size_t i = 0; i < len; i++) {
+            raw[i] = (char)(http_next_rand() & 0xff);
+        }
+        int closed = (int)(http_next_rand() & 1);
+        mybot_http_client_response_t resp;
+        int rc = parse_response(raw, len, closed, &resp);
+        if (rc == 0) {
+            assert(resp.body == NULL || resp.body_len <= len);
+            mybot_http_client_response_free(&resp);
+        }
+    }
+}
+
+/* ---- allocator fault injection through linker wrap ---- */
+static size_t s_alloc_count;
+static size_t s_fail_on_alloc;
+static int s_alloc_failures;
+
+void *__wrap_aosl_hal_malloc(size_t size) {
+    s_alloc_count++;
+    if (s_fail_on_alloc != 0 && s_alloc_count == s_fail_on_alloc) {
+        s_alloc_failures++;
+        return NULL;
+    }
+    return malloc(size);
+}
+
+void *__wrap_aosl_hal_realloc(void *ptr, size_t size) {
+    s_alloc_count++;
+    if (s_fail_on_alloc != 0 && s_alloc_count == s_fail_on_alloc) {
+        s_alloc_failures++;
+        return NULL;
+    }
+    return realloc(ptr, size);
+}
+
+void __wrap_aosl_hal_free(void *ptr) {
+    free(ptr);
+}
+
+static void test_oom_injection(void) {
+    /* The GET against the fake TLS transport performs a small, bounded number
+     * of allocations. Fail each one in turn and require a clean -1; past the
+     * real allocation count the request must succeed. */
+    for (size_t fail_at = 1; fail_at <= 32; fail_at++) {
+        s_alloc_count = 0;
+        s_fail_on_alloc = fail_at;
+        s_alloc_failures = 0;
+
+        mybot_http_client_response_t resp;
+        memset(&resp, 0, sizeof(resp));
+        int rc = mybot_http_client_get("https://api.example.test:8443/status", &resp);
+
+        if (s_alloc_failures == 1) {
+            assert(rc == -1);
+            assert(resp.body == NULL);
+        } else {
+            assert(rc == 0);
+            mybot_http_client_response_free(&resp);
+        }
+        s_fail_on_alloc = 0;
+    }
 }
 
 int main(void) {
@@ -168,6 +247,9 @@ int main(void) {
     assert(s_tls_closed == 1);
     assert(s_tls_connect_count == connect_count + 1);
     mybot_http_client_response_free(&response);
+
+    test_parse_fuzz();
+    test_oom_injection();
 
     aosl_dtor();
     puts("http_client_test: ok");
