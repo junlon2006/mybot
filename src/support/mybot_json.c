@@ -282,7 +282,23 @@ static const char *parse_string(mybot_json_t *item, const char *str) {
             case 't':
                 *ptr2++ = '\t';
                 break;
-            case 'u': /* transcode utf16 to utf8. */
+            case 'u': { /* transcode utf16 to utf8. */
+                /* Only consume the four hex digits when they are valid. A
+                 * malformed escape such as "\u\"" would otherwise advance past
+                 * the closing quote and let the writer outrun the buffer that
+                 * the first length pass allocated. */
+                int hex_ok = 1;
+                for (int i = 1; i <= 4; i++) {
+                    const unsigned char h = (const unsigned char)ptr[i];
+                    if (!((h >= '0' && h <= '9') || (h >= 'A' && h <= 'F') ||
+                          (h >= 'a' && h <= 'f'))) {
+                        hex_ok = 0;
+                        break;
+                    }
+                }
+                if (!hex_ok) {
+                    break;
+                }
                 uc = parse_hex4(ptr + 1);
                 ptr += 4; /* get the unicode char. */
 
@@ -330,6 +346,7 @@ static const char *parse_string(mybot_json_t *item, const char *str) {
                 }
                 ptr2 += len;
                 break;
+            }
             default:
                 *ptr2++ = *ptr;
                 break;
