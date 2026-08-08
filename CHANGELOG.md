@@ -20,6 +20,9 @@ between release candidates.
 - Reject `MYBOT_BUILD_LINUX_PLATFORM=ON` with a non-Linux `CONFIG_PLATFORM` at configure time, and
   document the two independent platform-selection variables (`CONFIG_PLATFORM` selects the AOSL
   HAL port; `MYBOT_BUILD_LINUX_PLATFORM` builds the Linux reference backends).
+- Fix a NULL dereference in `mybot_json_create_*_array()` when an allocation fails mid-array,
+  replace unbounded `strcpy` in JSON printing with bounded copies, and stop calling side-effecting
+  functions inside test `assert()` (found by cppcheck / clang-tidy).
 - Release partially initialized services immediately when `start_services()` fails, instead of
   relying on a later `mybot_app_stop()` call; service teardown is shared, idempotent, and safe to
   run twice after a failed startup.
@@ -50,6 +53,9 @@ between release candidates.
 - Enforce Conventional Commits with a repository-local `commit-msg` hook
   (`githooks/commit-msg`), a one-command installer (`scripts/setup-githooks.sh`), a commit
   template (`.gitmessage`), and a CI step that validates pushed / PR commit subjects.
+- CI matrix across GCC and Clang with ASan and UBSan, cppcheck and clang-tidy static analysis,
+  gcov/lcov coverage collection with Codecov upload, and new `MYBOT_ENABLE_UBSAN` /
+  `MYBOT_ENABLE_COVERAGE` CMake options.
 - Bilingual porting and release guides under `docs/` (PORTING / RELEASING).
 - SPDX license identifiers on all self-maintained C sources (Apache-2.0; MIT for the cJSON-derived
   `mybot_json` sources).

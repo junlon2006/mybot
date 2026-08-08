@@ -174,6 +174,8 @@ mybot_app_stop();
 | `MYBOT_ENABLE_HTTPS` | `ON` | 启用平台 HTTPS 传输，生产构建应保持开启 |
 | `MYBOT_ALLOW_INSECURE_HTTP` | `OFF` | 仅本地开发：显式允许明文 HTTP |
 | `MYBOT_ENABLE_ASAN` | `OFF` | GCC/Clang 地址消毒器，建议在宿主测试中开启 |
+| `MYBOT_ENABLE_UBSAN` | `OFF` | GCC/Clang 未定义行为消毒器，建议在宿主测试中开启 |
+| `MYBOT_ENABLE_COVERAGE` | `OFF` | 为 gcov 代码覆盖率插桩；CI 覆盖率任务使用 |
 
 两个相互独立的变量选择平台代码：`CONFIG_PLATFORM` 选择 `third_party/aosl` 消费的 AOSL HAL
 端口（如 `linux`、`esp32`）；`MYBOT_BUILD_LINUX_PLATFORM` 构建随附的 Linux 参考后端
@@ -362,6 +364,8 @@ find include src platforms examples tests -type f \
 - 自研 C 代码遵循根目录 `.clang-format`；`third_party/` 保持上游内容，不参与格式化检查。
 - CI（[.github/workflows/ci.yml](.github/workflows/ci.yml)）在每个 push / PR 上执行
   构建、测试与格式检查，提交前请确保本地命令与 CI 一致。
+- CI 使用 GCC 与 Clang 双编译器分别在 ASan、UBSan 下构建，运行 cppcheck 与 clang-tidy
+  静态分析，并向 Codecov 发布 gcov/lcov 覆盖率。
 - 提交信息遵循 Conventional Commits（见 `CONTRIBUTING.md`）。每个克隆执行一次
   `./scripts/setup-githooks.sh` 安装本地 `commit-msg` hook；CI 会校验每个 push / PR 的
   提交主题行。

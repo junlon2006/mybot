@@ -198,6 +198,8 @@ The following options can be set via the CMake command line or cache variables b
 | `MYBOT_ENABLE_HTTPS` | `ON` | Enable the platform HTTPS transport; keep ON for production builds |
 | `MYBOT_ALLOW_INSECURE_HTTP` | `OFF` | Local development only: explicitly allow plaintext HTTP |
 | `MYBOT_ENABLE_ASAN` | `OFF` | GCC/Clang AddressSanitizer; recommended for host tests |
+| `MYBOT_ENABLE_UBSAN` | `OFF` | GCC/Clang UndefinedBehaviorSanitizer; recommended for host tests |
+| `MYBOT_ENABLE_COVERAGE` | `OFF` | Instrument mybot targets for gcov; used by the CI coverage job |
 
 Two independent variables select platform code: `CONFIG_PLATFORM` chooses the AOSL HAL port
 consumed by `third_party/aosl` (e.g. `linux`, `esp32`), while `MYBOT_BUILD_LINUX_PLATFORM` builds
@@ -397,6 +399,8 @@ find include src platforms examples tests -type f \
   excluded from the format check.
 - CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the build, tests, and format check
   on every push / PR; make sure your local commands match CI before merging.
+- CI builds with both GCC and Clang under ASan and UBSan, runs cppcheck and clang-tidy static
+  analysis, and publishes gcov/lcov coverage to Codecov.
 - Commit messages follow Conventional Commits (see `CONTRIBUTING.md`). Install the local
   `commit-msg` hook once per clone with `./scripts/setup-githooks.sh`; CI validates every pushed /
   PR commit subject.
