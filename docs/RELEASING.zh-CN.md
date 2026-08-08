@@ -4,7 +4,8 @@
 
 ## 准备
 
-- [ ] 选择语义化预发布版本，并同步更新 `CMakeLists.txt`、`include/mybot/mybot_version.h`、
+- [ ] 选择语义化预发布版本，并更新 `CMakeLists.txt` 顶部的版本变量——这是唯一来源。
+      `mybot_version.h` 由 `mybot_version.h.in` 在配置阶段生成，请勿直接编辑；同步更新
       `CHANGELOG.md` 与示例输出。
 - [ ] 确认 README 与 `docs/PORTING.md` 与实际公开 API 和 CMake 选项一致。
 - [ ] 审查所有第三方变更与 `THIRD_PARTY_NOTICES.md`。

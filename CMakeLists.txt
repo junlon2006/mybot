@@ -1,7 +1,27 @@
 cmake_minimum_required(VERSION 3.16)
-project(mybot VERSION 0.1.0 LANGUAGES C)
+
+# Single source of truth for the SDK version. include/mybot/mybot_version.h is
+# generated from mybot_version.h.in at configure time, so the code can never
+# drift from the version declared here.
+set(MYBOT_VERSION_MAJOR 0)
+set(MYBOT_VERSION_MINOR 1)
+set(MYBOT_VERSION_PATCH 0)
+set(MYBOT_VERSION_PRERELEASE "rc.1")
+if(MYBOT_VERSION_PRERELEASE)
+    set(MYBOT_VERSION_STRING
+        "${MYBOT_VERSION_MAJOR}.${MYBOT_VERSION_MINOR}.${MYBOT_VERSION_PATCH}-${MYBOT_VERSION_PRERELEASE}")
+else()
+    set(MYBOT_VERSION_STRING
+        "${MYBOT_VERSION_MAJOR}.${MYBOT_VERSION_MINOR}.${MYBOT_VERSION_PATCH}")
+endif()
+
+project(mybot VERSION ${MYBOT_VERSION_MAJOR}.${MYBOT_VERSION_MINOR}.${MYBOT_VERSION_PATCH}
+        LANGUAGES C)
 
 include(GNUInstallDirs)
+
+configure_file(include/mybot/mybot_version.h.in
+               ${CMAKE_CURRENT_BINARY_DIR}/include/mybot/mybot_version.h @ONLY)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -111,6 +131,7 @@ set_target_properties(mybot_sdk PROPERTIES EXPORT_NAME sdk)
 
 target_include_directories(mybot_sdk
     PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
@@ -155,4 +176,7 @@ endif()
 install(TARGETS mybot_sdk
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
-install(DIRECTORY include/mybot DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/mybot/mybot_version.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mybot)
+install(DIRECTORY include/mybot DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        PATTERN "*.in" EXCLUDE)
