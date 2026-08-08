@@ -75,8 +75,8 @@ void mybot_audio_device_volume_deinit(void) {
 }
 
 int mybot_audio_device_set_volume(int volume) {
-    if (volume < MYBOT_AUDIO_VOLUME_MIN || volume > MYBOT_AUDIO_VOLUME_MAX ||
-        !g_volume_active || !g_volume_ops || !g_volume_ops->set_volume) {
+    if (volume < MYBOT_AUDIO_VOLUME_MIN || volume > MYBOT_AUDIO_VOLUME_MAX || !g_volume_active ||
+        !g_volume_ops || !g_volume_ops->set_volume) {
         return -1;
     }
     return g_volume_ops->set_volume(g_volume_ctx, volume);

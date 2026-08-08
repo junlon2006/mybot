@@ -13,8 +13,7 @@ static aosl_atomic_t s_state;
 static bool s_active;
 
 static void set_state(mybot_wifi_state_t state) {
-    mybot_wifi_state_t old =
-        (mybot_wifi_state_t)aosl_atomic_xchg(&s_state, state);
+    mybot_wifi_state_t old = (mybot_wifi_state_t)aosl_atomic_xchg(&s_state, state);
     if (state != old && s_handler) {
         s_handler(state, s_user_data);
     }
@@ -45,8 +44,7 @@ int mybot_wifi_register(const mybot_wifi_ops_t *ops) {
     return 0;
 }
 
-int mybot_wifi_init(const char *device_id,
-                                 mybot_wifi_state_handler_t handler, void *user_data) {
+int mybot_wifi_init(const char *device_id, mybot_wifi_state_handler_t handler, void *user_data) {
     if (!device_id || !device_id[0] || !s_ops || s_active) {
         return -1;
     }

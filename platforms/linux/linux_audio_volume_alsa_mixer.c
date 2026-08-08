@@ -79,8 +79,8 @@ static int alsa_volume_init(void **ctx) {
     }
 
     *ctx = v;
-    AOSL_LOG_INF("volume init: ok (element=%s, range=%ld..%ld)",
-                 snd_mixer_selem_get_name(v->elem), v->min, v->max);
+    AOSL_LOG_INF("volume init: ok (element=%s, range=%ld..%ld)", snd_mixer_selem_get_name(v->elem),
+                 v->min, v->max);
     return 0;
 
 fail:
@@ -98,8 +98,8 @@ static int alsa_volume_set(void *ctx, int volume) {
     }
 
     const long span = v->max - v->min;
-    long value = v->min + ((long)volume * span + MYBOT_AUDIO_VOLUME_MAX / 2) /
-                            MYBOT_AUDIO_VOLUME_MAX;
+    long value =
+        v->min + ((long)volume * span + MYBOT_AUDIO_VOLUME_MAX / 2) / MYBOT_AUDIO_VOLUME_MAX;
     if (snd_mixer_selem_set_playback_volume_all(v->elem, value) < 0) {
         AOSL_LOG_ERR("volume set: snd_mixer_selem_set_playback_volume_all failed");
         return -1;

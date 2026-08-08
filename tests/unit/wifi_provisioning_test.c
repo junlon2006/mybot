@@ -33,8 +33,8 @@ static void *emit_initial_event(void *arg) {
     return NULL;
 }
 
-static int fake_init(void **ctx, const char *device_id,
-                     mybot_wifi_event_handler_t emit, void *user_data) {
+static int fake_init(void **ctx, const char *device_id, mybot_wifi_event_handler_t emit,
+                     void *user_data) {
     assert(strcmp(device_id, "device-001") == 0);
     s_fake.emit = emit;
     s_fake.user_data = user_data;
@@ -82,8 +82,7 @@ int main(void) {
     assert(mybot_wifi_init(NULL, on_state_changed, &s_state_change_count) < 0);
 
     s_initial_event = MYBOT_WIFI_EVENT_STA_CONNECTED;
-    assert(mybot_wifi_init("device-001", on_state_changed, &s_state_change_count) ==
-           0);
+    assert(mybot_wifi_init("device-001", on_state_changed, &s_state_change_count) == 0);
     assert(s_init_count == 1);
     assert(mybot_wifi_get_state() == MYBOT_WIFI_STATE_CONNECTED);
     assert(aosl_atomic_read(&s_state_change_count) == 1);
@@ -103,8 +102,7 @@ int main(void) {
     s_initial_event = MYBOT_WIFI_EVENT_FAILED;
     s_emit_async = true;
     intptr_t previous_state_changes = aosl_atomic_read(&s_state_change_count);
-    assert(mybot_wifi_init("device-001", on_state_changed, &s_state_change_count) ==
-           0);
+    assert(mybot_wifi_init("device-001", on_state_changed, &s_state_change_count) == 0);
     assert(s_init_count == 2);
     assert(mybot_wifi_get_state() == MYBOT_WIFI_STATE_PROVISIONING);
 
