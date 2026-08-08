@@ -379,7 +379,6 @@ find include src platforms examples tests -type f \
 欢迎提交 issue、讨论与 PR。开始之前请阅读（以下文档均提供中英双语）：
 
 - [CONTRIBUTING](CONTRIBUTING.md)（[简体中文](CONTRIBUTING.zh-CN.md)）— 开发流程与提交规范
-- [CODE_OF_CONDUCT](CODE_OF_CONDUCT.md)（[简体中文](CODE_OF_CONDUCT.zh-CN.md)）— 社区行为准则
 - [SUPPORT](SUPPORT.md)（[简体中文](SUPPORT.zh-CN.md)）— 获取支持的方式
 - [SECURITY](SECURITY.md)（[简体中文](SECURITY.zh-CN.md)）— 安全漏洞报告流程
 

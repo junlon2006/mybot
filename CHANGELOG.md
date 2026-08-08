@@ -56,8 +56,7 @@ between release candidates.
 - CI coverage for Linux builds, tests, public headers, and external CMake host integration.
 - Bilingual (English / Simplified Chinese) README with an AI-conversation product overview and
   layered architecture diagrams.
-- Bilingual (English / Simplified Chinese) community docs: contributing, support, security, and
-  code of conduct.
+- Bilingual (English / Simplified Chinese) community docs: contributing, support, and security.
 - Dedicated `mybot_ringbuf_test` unit test covering lifecycle, full/empty boundaries,
   wrap-around reads and writes, argument validation, and a single-producer/single-consumer
   concurrency run.
