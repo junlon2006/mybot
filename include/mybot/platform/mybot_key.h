@@ -11,6 +11,9 @@ typedef enum {
     MYBOT_KEY_EVENT_CONVERSATION_STOP,
     MYBOT_KEY_EVENT_PAIR,
     MYBOT_KEY_EVENT_EXIT,
+    /* Optional: adjust the SDK-managed media volume. */
+    MYBOT_KEY_EVENT_VOLUME_UP,
+    MYBOT_KEY_EVENT_VOLUME_DOWN,
 } mybot_key_event_t;
 
 typedef void (*mybot_key_event_handler_t)(mybot_key_event_t event, void *user_data);

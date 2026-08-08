@@ -56,6 +56,20 @@ Implement complete capture and playback tables from `mybot_audio.h`. The lifecyc
 Register with `mybot_audio_device_register_capture()` and
 `mybot_audio_device_register_playback()`.
 
+#### Device volume (optional)
+
+Volume control has two independent layers:
+
+- **Media volume** is managed entirely by the SDK. `mybot_audio_set_media_volume()` stores a
+  0..100 software gain that the playback pipeline applies digitally to downlink PCM before it
+  reaches the device (linear amplitude, 100 = unity gain). No platform code is required.
+- **Device volume** is an optional platform hook. Implement `mybot_audio_volume_ops_t` and call
+  `mybot_audio_device_register_volume()` to route `mybot_audio_device_set_volume()` /
+  `mybot_audio_device_get_volume()` to real hardware (codec register, amplifier, or mixer).
+  `init`, `set_volume`, and `destroy` are required; `get_volume` is optional. The SDK
+  initializes the backend during startup and releases it on shutdown; an init failure only
+  disables device volume control — playback and media volume keep working.
+
 ### Wi-Fi provisioning
 
 Implement `mybot_wifi_provisioning_ops_t`. `init` starts APSTA without waiting for the user.
@@ -102,8 +116,9 @@ isolated development build configured with
 ### Keys
 
 Implement `mybot_key_service_ops_t` and translate hardware input into conversation start, stop,
-pair and exit events. Events may be asynchronous. Destroy must stop the source and wait for all
-handlers. Register with `mybot_key_service_register()`.
+pair, exit, volume-up and volume-down events. The SDK adjusts media volume by 10 on volume
+events; emitting them is optional. Events may be asynchronous. Destroy must stop the source and
+wait for all handlers. Register with `mybot_key_service_register()`.
 
 ### LCD (optional)
 

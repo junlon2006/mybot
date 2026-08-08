@@ -45,6 +45,12 @@ static void key_stdin_emit_char(linux_key_stdin_ctx_t *ctx, char ch) {
     case 'p':
         ctx->emit(MYBOT_KEY_EVENT_PAIR, ctx->user_data);
         break;
+    case 'u':
+        ctx->emit(MYBOT_KEY_EVENT_VOLUME_UP, ctx->user_data);
+        break;
+    case 'd':
+        ctx->emit(MYBOT_KEY_EVENT_VOLUME_DOWN, ctx->user_data);
+        break;
     case 'e':
         ctx->emit(MYBOT_KEY_EVENT_EXIT, ctx->user_data);
         break;
@@ -52,7 +58,8 @@ static void key_stdin_emit_char(linux_key_stdin_ctx_t *ctx, char ch) {
     case '\r':
         break;
     default:
-        AOSL_LOG_INF("[KEY] '%c' ignored (s=start, q=stop, p=pair, e=exit)", ch);
+        AOSL_LOG_INF("[KEY] '%c' ignored (s=start, q=stop, p=pair, e=exit, u=vol_up, d=vol_down)",
+                     ch);
         break;
     }
 }

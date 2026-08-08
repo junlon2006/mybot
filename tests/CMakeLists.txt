@@ -51,6 +51,7 @@ target_link_libraries(mybot_wifi_provisioning_test PRIVATE aosl ${MYBOT_TEST_SYS
 mybot_add_test(mybot_wake_words_test unit/wake_words_test.c ../src/media/mybot_wake_words.c)
 
 mybot_add_test(mybot_audio_test unit/audio_test.c ../src/media/mybot_audio.c)
+target_link_libraries(mybot_audio_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
 mybot_add_test(mybot_public_headers_test integration/public_headers_test.c)
 target_link_libraries(mybot_public_headers_test PRIVATE mybot::sdk)

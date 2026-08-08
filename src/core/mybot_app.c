@@ -37,6 +37,8 @@
 #define AUDIO_RINGBUF_DURATION_MS 2000
 #define AUDIO_RINGBUF_SIZE                                                                         \
     (SAMPLE_RATE * AUDIO_RINGBUF_DURATION_MS / 1000 * CHANNELS * BYTES_PER_SAMPLE)
+/* Volume change per VOLUME_UP / VOLUME_DOWN key event. */
+#define MEDIA_VOLUME_KEY_STEP 10
 /* Device state machine poll interval. Must match the 100 ms/tick assumption
  * in mybot_device_lifecycle_tick() (poll_after_seconds * 10 ticks). */
 #define STATE_TICK_MS 100
@@ -73,7 +75,7 @@ static struct {
     aosl_mpq_t pb_mpq;     /* playback worker thread (aosl_mpq_create) */
     aosl_timer_t pb_timer; /* drives the playback write loop */
     mybot_ringbuf_t pb_ringbuf;
-    uint8_t pb_pending[AUDIO_FRAME_BYTES];
+    int16_t pb_pending[AUDIO_FRAME_SAMPLES * CHANNELS];
     int pb_pending_offset; /* frames already written */
     int pb_pending_frames; /* frames still to write */
 
@@ -228,15 +230,22 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
         }
         s_app.pb_pending_offset = 0;
         s_app.pb_pending_frames = AUDIO_FRAME_SAMPLES;
+
+        /* Software media volume: scale before the platform write and before
+         * the AEC reference is published, so the reference matches the actual
+         * signal reaching the speaker. */
+        mybot_audio_apply_media_volume(s_app.pb_pending, AUDIO_FRAME_SAMPLES * CHANNELS);
+
 #if MYBOT_CLOUD_AEC
         /* Preserve the existing AEC reference timing: publish once when the
          * playback frame is first dequeued. */
-        mybot_ringbuf_write(s_app.ref_ringbuf, (char *)s_app.pb_pending, AUDIO_FRAME_BYTES);
+        mybot_ringbuf_write(s_app.ref_ringbuf, (const char *)s_app.pb_pending, AUDIO_FRAME_BYTES);
 #endif
     }
 
     const int frame_bytes = CHANNELS * BYTES_PER_SAMPLE;
-    int written = ops->write(s_app.pb_ctx, s_app.pb_pending + s_app.pb_pending_offset * frame_bytes,
+    int written = ops->write(s_app.pb_ctx,
+                             (const char *)s_app.pb_pending + s_app.pb_pending_offset * frame_bytes,
                              s_app.pb_pending_frames);
     if (written < 0) {
         AOSL_LOG_ERR("playback write failed, dropping %d pending frames", s_app.pb_pending_frames);
@@ -469,6 +478,18 @@ static void dev_on_state_changed(mybot_device_state_t state) {
     }
 }
 
+static void key_adjust_media_volume(int delta) {
+    int volume = mybot_audio_get_media_volume() + delta;
+    if (volume < MYBOT_AUDIO_VOLUME_MIN) {
+        volume = MYBOT_AUDIO_VOLUME_MIN;
+    } else if (volume > MYBOT_AUDIO_VOLUME_MAX) {
+        volume = MYBOT_AUDIO_VOLUME_MAX;
+    }
+    if (mybot_audio_set_media_volume(volume) == 0) {
+        AOSL_LOG_INF("[KEY] media volume -> %d", volume);
+    }
+}
+
 static void on_key_event(mybot_key_event_t event, void *user_data) {
     (void)user_data;
     switch (event) {
@@ -483,6 +504,12 @@ static void on_key_event(mybot_key_event_t event, void *user_data) {
     case MYBOT_KEY_EVENT_PAIR:
         AOSL_LOG_INF("[KEY] re-pair");
         mybot_app_pair();
+        break;
+    case MYBOT_KEY_EVENT_VOLUME_UP:
+        key_adjust_media_volume(MEDIA_VOLUME_KEY_STEP);
+        break;
+    case MYBOT_KEY_EVENT_VOLUME_DOWN:
+        key_adjust_media_volume(-MEDIA_VOLUME_KEY_STEP);
         break;
     case MYBOT_KEY_EVENT_EXIT:
         AOSL_LOG_INF("[KEY] exit");
@@ -594,6 +621,13 @@ static int start_services(void) {
     if (pb_ops->init(&s_app.pb_ctx, SAMPLE_RATE, CHANNELS, BITS_PER_SAMPLE) < 0) {
         AOSL_LOG_ERR("playback init failed");
         goto fail;
+    }
+
+    /* Optional real-device volume backend. Its init failure is non-fatal: the
+     * missing control only disables device volume, software media volume and
+     * playback keep working. */
+    if (mybot_audio_device_volume_init() < 0) {
+        AOSL_LOG_WRN("device volume backend unavailable, real-device volume control disabled");
     }
 
 #if MYBOT_WAKE_WORDS
@@ -1017,6 +1051,8 @@ void mybot_app_stop(void) {
         pb_ops->destroy(s_app.pb_ctx);
         s_app.pb_ctx = NULL;
     }
+    /* Release the optional device volume backend after the audio devices. */
+    mybot_audio_device_volume_deinit();
 
     /* ---- 7. Stop Wi-Fi after all network users have exited. ---- */
     if (s_app.wifi_provisioning_active) {

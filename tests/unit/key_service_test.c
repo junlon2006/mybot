@@ -51,6 +51,9 @@ int main(void) {
     s_fake.emit(MYBOT_KEY_EVENT_PAIR, s_fake.user_data);
     assert(s_handler_count == 1);
     assert(s_last_event == MYBOT_KEY_EVENT_PAIR);
+    s_fake.emit(MYBOT_KEY_EVENT_VOLUME_UP, s_fake.user_data);
+    assert(s_handler_count == 2);
+    assert(s_last_event == MYBOT_KEY_EVENT_VOLUME_UP);
 
     mybot_key_service_deinit();
     mybot_key_service_deinit();

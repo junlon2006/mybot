@@ -26,6 +26,12 @@ static void wait_for_event(void) {
     }
 }
 
+static void wait_for_event_count(int count) {
+    for (int i = 0; i < 1000 && aosl_atomic_read(&s_event_count) < count; ++i) {
+        aosl_hal_msleep(1);
+    }
+}
+
 int main(void) {
     int pipe_fds[2];
     assert(pipe(pipe_fds) == 0);
@@ -44,11 +50,21 @@ int main(void) {
     assert(aosl_atomic_read(&s_event_count) == 1);
     assert(aosl_atomic_read(&s_last_event) == MYBOT_KEY_EVENT_PAIR);
 
+    assert(write(pipe_fds[1], "u", 1) == 1);
+    wait_for_event_count(2);
+    assert(aosl_atomic_read(&s_event_count) == 2);
+    assert(aosl_atomic_read(&s_last_event) == MYBOT_KEY_EVENT_VOLUME_UP);
+
+    assert(write(pipe_fds[1], "d", 1) == 1);
+    wait_for_event_count(3);
+    assert(aosl_atomic_read(&s_event_count) == 3);
+    assert(aosl_atomic_read(&s_last_event) == MYBOT_KEY_EVENT_VOLUME_DOWN);
+
     mybot_key_service_deinit();
     assert(fcntl(STDIN_FILENO, F_GETFD) >= 0);
     assert(write(pipe_fds[1], "s", 1) == 1);
     aosl_hal_msleep(20);
-    assert(aosl_atomic_read(&s_event_count) == 1);
+    assert(aosl_atomic_read(&s_event_count) == 3);
 
     aosl_dtor();
     close(pipe_fds[1]);
