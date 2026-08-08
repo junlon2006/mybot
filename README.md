@@ -418,7 +418,6 @@ available in English and Simplified Chinese):
 
 - [CONTRIBUTING](CONTRIBUTING.md) ([简体中文](CONTRIBUTING.zh-CN.md)) — development workflow and contribution guidelines
 - [SUPPORT](SUPPORT.md) ([简体中文](SUPPORT.zh-CN.md)) — how to get help
-- [SECURITY](SECURITY.md) ([简体中文](SECURITY.zh-CN.md)) — how to report security vulnerabilities
 
 ## License and third-party dependencies
 

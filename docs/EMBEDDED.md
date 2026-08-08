@@ -88,6 +88,6 @@ power-aware (it is the natural place to keep only the microphone path alive whil
   error). The Linux reference prints to stdout.
 - Keep hot-path logging (audio timers) minimal — formatting happens per call.
 - Never log device tokens. The reference app logs the pairing code at INFO level; production
-  builds should redact it (see [SECURITY.md](../SECURITY.md)).
+  builds should redact it.
 
 See [PORTING.md](PORTING.md) for the full platform contract and acceptance checklist.

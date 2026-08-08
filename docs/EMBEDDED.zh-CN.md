@@ -81,7 +81,6 @@ x86_64 Linux 参考构建（GCC 13，默认优化），**仅供参考**——请
 - 日志来自 AOSL；用 `aosl_set_log_level()` 设置运行级别（debug 到 error）。Linux 参考打印
   到 stdout。
 - 热路径（音频定时器）日志尽量少——每次调用都会做格式化。
-- 绝不打设备 token。参考应用在 INFO 级打印配对码；生产构建应脱敏（见
-  [SECURITY.md](../SECURITY.md)）。
+- 绝不打设备 token。参考应用在 INFO 级打印配对码；生产构建应脱敏。
 
 完整平台契约与验收清单见 [PORTING.md](PORTING.zh-CN.md)。

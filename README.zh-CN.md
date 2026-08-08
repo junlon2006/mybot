@@ -380,7 +380,6 @@ find include src platforms examples tests -type f \
 
 - [CONTRIBUTING](CONTRIBUTING.md)（[简体中文](CONTRIBUTING.zh-CN.md)）— 开发流程与提交规范
 - [SUPPORT](SUPPORT.md)（[简体中文](SUPPORT.zh-CN.md)）— 获取支持的方式
-- [SECURITY](SECURITY.md)（[简体中文](SECURITY.zh-CN.md)）— 安全漏洞报告流程
 
 ## 许可证与第三方依赖
 
