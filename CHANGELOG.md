@@ -30,6 +30,13 @@ between release candidates.
 - Bilingual porting and release guides under `docs/` (PORTING / RELEASING).
 - SPDX license identifiers on all self-maintained C sources (Apache-2.0; MIT for the cJSON-derived
   `mybot_json` sources).
+- Media volume control: the SDK applies a 0..100 digital software gain to playback PCM, so media
+  volume works on every platform without a backend.
+- Real-device volume control: optional `mybot_audio_volume_ops_t` backend contract routed through
+  `mybot_audio_device_set_volume()` / `mybot_audio_device_get_volume()`, with an ALSA mixer
+  reference backend on Linux (Master / PCM / Digital controls).
+- Volume-up / volume-down key events, mapped to `u` / `d` on the Linux example; each event steps
+  the media volume by 10.
 
 ## [0.1.0-rc.1] - Unreleased
 
