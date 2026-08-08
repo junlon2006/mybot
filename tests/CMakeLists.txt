@@ -53,6 +53,9 @@ mybot_add_test(mybot_wake_words_test unit/wake_words_test.c ../src/media/mybot_w
 mybot_add_test(mybot_audio_test unit/audio_test.c ../src/media/mybot_audio.c)
 target_link_libraries(mybot_audio_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
+mybot_add_test(mybot_ringbuf_test unit/ringbuf_test.c ../src/support/mybot_ringbuf.c)
+target_link_libraries(mybot_ringbuf_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
+
 mybot_add_test(mybot_public_headers_test integration/public_headers_test.c)
 target_link_libraries(mybot_public_headers_test PRIVATE mybot::sdk)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")

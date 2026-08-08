@@ -44,6 +44,9 @@ between release candidates.
   layered architecture diagrams.
 - Bilingual (English / Simplified Chinese) community docs: contributing, support, security, and
   code of conduct.
+- Dedicated `mybot_ringbuf_test` unit test covering lifecycle, full/empty boundaries,
+  wrap-around reads and writes, argument validation, and a single-producer/single-consumer
+  concurrency run.
 - Bilingual porting and release guides under `docs/` (PORTING / RELEASING).
 - SPDX license identifiers on all self-maintained C sources (Apache-2.0; MIT for the cJSON-derived
   `mybot_json` sources).
