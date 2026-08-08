@@ -106,8 +106,8 @@ int mybot_device_client_get_binding_status(const char *base_url, const char *dev
     (void)auth_header;
     s_binding_call_count++;
     memset(resp, 0, sizeof(*resp));
-    strcpy(resp->status, s_binding_status);
-    strcpy(resp->device_token, s_binding_token);
+    snprintf(resp->status, sizeof(resp->status), "%s", s_binding_status);
+    snprintf(resp->device_token, sizeof(resp->device_token), "%s", s_binding_token);
     resp->poll_after_seconds = 1;
     return s_binding_result;
 }

@@ -41,7 +41,8 @@ static int fake_init(void **ctx, const char *device_id,
     *ctx = &s_fake;
     s_init_count++;
     if (s_emit_async) {
-        assert(pthread_create(&s_emit_thread, NULL, emit_initial_event, NULL) == 0);
+        int rc = pthread_create(&s_emit_thread, NULL, emit_initial_event, NULL);
+        assert(rc == 0);
         s_emit_thread_active = true;
     } else {
         emit(s_initial_event, user_data);

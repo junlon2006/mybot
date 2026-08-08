@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../../src/support/mybot_http_client.c"
+#include "../../src/support/mybot_http_client.c" // NOLINT(bugprone-suspicious-include)
 
 static char s_tls_host[128];
 static uint16_t s_tls_port;
@@ -65,7 +65,8 @@ static const mybot_https_ops_t s_fake_tls_ops = {
 
 static void expect_success(const char *raw, int stream_closed, const char *expected_body) {
     mybot_http_client_response_t resp;
-    assert(parse_response(raw, strlen(raw), stream_closed, &resp) == 0);
+    int rc = parse_response(raw, strlen(raw), stream_closed, &resp);
+    assert(rc == 0);
     assert(resp.status_code == 200);
     assert(resp.body_len == strlen(expected_body));
     assert(resp.body != NULL);
@@ -75,7 +76,8 @@ static void expect_success(const char *raw, int stream_closed, const char *expec
 
 static void expect_failure(const char *raw, int stream_closed) {
     mybot_http_client_response_t resp;
-    assert(parse_response(raw, strlen(raw), stream_closed, &resp) < 0);
+    int rc = parse_response(raw, strlen(raw), stream_closed, &resp);
+    assert(rc < 0);
     mybot_http_client_response_free(&resp);
 }
 

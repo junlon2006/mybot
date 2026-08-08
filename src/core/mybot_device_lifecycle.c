@@ -527,9 +527,12 @@ void mybot_device_lifecycle_tick(void) {
     }
 
     if (current_state() == MYBOT_DEVICE_STATE_UNPROVISIONED) {
-        if (s_state.pair_retry_ticks_remaining > 0 && --s_state.pair_retry_ticks_remaining == 0) {
-            set_state(MYBOT_DEVICE_STATE_PAIRING);
-            action_create_pair_code();
+        if (s_state.pair_retry_ticks_remaining > 0) {
+            s_state.pair_retry_ticks_remaining--;
+            if (s_state.pair_retry_ticks_remaining == 0) {
+                set_state(MYBOT_DEVICE_STATE_PAIRING);
+                action_create_pair_code();
+            }
         }
         return;
     }

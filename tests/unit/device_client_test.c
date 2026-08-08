@@ -61,8 +61,8 @@ int mybot_http_client_post_ex(const char *url, const char *content_type, const c
     (void)content_type;
     s_post_ex_call_count++;
     assert(snprintf(s_request_url, sizeof(s_request_url), "%s", url) < (int)sizeof(s_request_url));
-    assert(snprintf(s_request_headers, sizeof(s_request_headers), "%s", extra_headers) <
-           (int)sizeof(s_request_headers));
+    assert(snprintf(s_request_headers, sizeof(s_request_headers), "%s",
+                    extra_headers ? extra_headers : "") < (int)sizeof(s_request_headers));
 
     int written = snprintf(s_request_body, sizeof(s_request_body), "%s", body);
     if (written < 0 || (size_t)written >= sizeof(s_request_body)) {

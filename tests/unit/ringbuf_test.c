@@ -189,8 +189,10 @@ static void test_spsc_concurrency(void) {
 
     pthread_t producer;
     pthread_t consumer;
-    assert(pthread_create(&producer, NULL, spsc_producer, &ctx) == 0);
-    assert(pthread_create(&consumer, NULL, spsc_consumer, &ctx) == 0);
+    int rc = pthread_create(&producer, NULL, spsc_producer, &ctx);
+    assert(rc == 0);
+    rc = pthread_create(&consumer, NULL, spsc_consumer, &ctx);
+    assert(rc == 0);
     pthread_join(producer, NULL);
     pthread_join(consumer, NULL);
 

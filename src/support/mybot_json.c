@@ -60,7 +60,8 @@ static char *mybot_json_strdup(const char *str) {
     char *copy;
 
     len = strlen(str) + 1;
-    if (!(copy = (char *)mybot_json_malloc_fn(len)))
+    copy = (char *)mybot_json_malloc_fn(len);
+    if (!copy)
         return 0;
     memcpy(copy, str, len);
     return copy;
@@ -309,7 +310,7 @@ static const char *parse_string(mybot_json_t *item, const char *str) {
                 ptr2 += len;
 
                 switch (len) {
-                case 4:
+                case 4: // NOLINT(bugprone-branch-clone): intentional UTF-8 fallthrough
                     *--ptr2 = ((uc | 0x80) & 0xBF);
                     uc >>= 6;
                     /* falls through */
@@ -323,6 +324,9 @@ static const char *parse_string(mybot_json_t *item, const char *str) {
                     /* falls through */
                 case 1:
                     *--ptr2 = (uc | firstByteMark[len]);
+                    break;
+                default:
+                    break;
                 }
                 ptr2 += len;
                 break;
@@ -528,6 +532,8 @@ static char *print_value(mybot_json_t *item, int depth, int fmt) {
     case MYBOT_JSON_OBJECT:
         out = print_object(item, depth, fmt);
         break;
+    default:
+        break;
     }
     return out;
 }
@@ -554,7 +560,8 @@ static const char *parse_array(mybot_json_t *item, const char *value) {
 
     while (*value == ',') {
         mybot_json_t *new_item;
-        if (!(new_item = mybot_json_new_item()))
+        new_item = mybot_json_new_item();
+        if (!new_item)
             return 0; /* memory fail */
         child->next = new_item;
         new_item->prev = child;
@@ -585,7 +592,7 @@ static char *print_array(mybot_json_t *item, int depth, int fmt) {
     if (!numentries) {
         out = (char *)mybot_json_malloc_fn(3);
         if (out)
-            strcpy(out, "[]");
+            memcpy(out, "[]", 3);
         return out;
     }
     /* Allocate an array to hold the values for each */
@@ -626,8 +633,9 @@ static char *print_array(mybot_json_t *item, int depth, int fmt) {
     ptr = out + 1;
     *ptr = 0;
     for (i = 0; i < numentries; i++) {
-        strcpy(ptr, entries[i]);
-        ptr += strlen(entries[i]);
+        size_t slen = strlen(entries[i]);
+        memcpy(ptr, entries[i], slen + 1);
+        ptr += slen;
         if (i != numentries - 1) {
             *ptr++ = ',';
             if (fmt)
@@ -673,7 +681,8 @@ static const char *parse_object(mybot_json_t *item, const char *value) {
 
     while (*value == ',') {
         mybot_json_t *new_item;
-        if (!(new_item = mybot_json_new_item()))
+        new_item = mybot_json_new_item();
+        if (!new_item)
             return 0; /* memory fail */
         child->next = new_item;
         new_item->prev = child;
@@ -780,13 +789,15 @@ static char *print_object(mybot_json_t *item, int depth, int fmt) {
         if (fmt)
             for (j = 0; j < depth; j++)
                 *ptr++ = '\t';
-        strcpy(ptr, names[i]);
-        ptr += strlen(names[i]);
+        size_t nlen = strlen(names[i]);
+        memcpy(ptr, names[i], nlen + 1);
+        ptr += nlen;
         *ptr++ = ':';
         if (fmt)
             *ptr++ = '\t';
-        strcpy(ptr, entries[i]);
-        ptr += strlen(entries[i]);
+        size_t elen = strlen(entries[i]);
+        memcpy(ptr, entries[i], elen + 1);
+        ptr += elen;
         if (i != numentries - 1)
             *ptr++ = ',';
         if (fmt)
@@ -869,7 +880,7 @@ int mybot_json_add_item_to_array(mybot_json_t *array, mybot_json_t *item) {
     if (!c) {
         array->child = item;
     } else {
-        while (c && c->next)
+        while (c->next)
             c = c->next;
         suffix_object(c, item);
     }
@@ -1085,6 +1096,10 @@ mybot_json_t *mybot_json_create_int_array(const int *numbers, int count) {
     mybot_json_t *n = 0, *p = 0, *a = mybot_json_create_array();
     for (i = 0; a && i < count; i++) {
         n = mybot_json_create_number(numbers[i]);
+        if (!n) {
+            mybot_json_delete(a);
+            return NULL;
+        }
         if (!i)
             a->child = n;
         else
@@ -1098,6 +1113,10 @@ mybot_json_t *mybot_json_create_float_array(const float *numbers, int count) {
     mybot_json_t *n = 0, *p = 0, *a = mybot_json_create_array();
     for (i = 0; a && i < count; i++) {
         n = mybot_json_create_number(numbers[i]);
+        if (!n) {
+            mybot_json_delete(a);
+            return NULL;
+        }
         if (!i)
             a->child = n;
         else
@@ -1111,6 +1130,10 @@ mybot_json_t *mybot_json_create_double_array(const double *numbers, int count) {
     mybot_json_t *n = 0, *p = 0, *a = mybot_json_create_array();
     for (i = 0; a && i < count; i++) {
         n = mybot_json_create_number(numbers[i]);
+        if (!n) {
+            mybot_json_delete(a);
+            return NULL;
+        }
         if (!i)
             a->child = n;
         else
@@ -1124,6 +1147,10 @@ mybot_json_t *mybot_json_create_string_array(const char **strings, int count) {
     mybot_json_t *n = 0, *p = 0, *a = mybot_json_create_array();
     for (i = 0; a && i < count; i++) {
         n = mybot_json_create_string(strings[i]);
+        if (!n) {
+            mybot_json_delete(a);
+            return NULL;
+        }
         if (!i)
             a->child = n;
         else
@@ -1193,14 +1220,8 @@ void mybot_json_free_string(char *text) {
 void mybot_json_minify(char *json) {
     char *into = json;
     while (*json) {
-        if (*json == ' ')
-            json++;
-        else if (*json == '\t')
+        if (*json == ' ' || *json == '\t' || *json == '\r' || *json == '\n')
             json++; // Whitespace characters.
-        else if (*json == '\r')
-            json++;
-        else if (*json == '\n')
-            json++;
         else if (*json == '/' && json[1] == '/')
             while (*json && *json != '\n')
                 json++; // double-slash comments, to end of line.
