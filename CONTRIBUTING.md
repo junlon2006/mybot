@@ -11,7 +11,9 @@ Contributions are welcome for the 0.1 release-candidate series. Public APIs may 
 3. Never commit credentials, device tokens, customer data, or proprietary SDK packages.
 4. Format self-maintained C sources with the repository `.clang-format` and tag every file with an
    SPDX license header (`/* SPDX-License-Identifier: Apache-2.0 */`; the cJSON-derived `mybot_json`
-   sources use `MIT`).
+   sources use `MIT`). After mechanical renames or bulk edits, run
+   `find include src platforms examples tests -type f \( -name '*.c' -o -name '*.h' \) -exec
+   clang-format -i {} +` before committing.
 5. Build and test before opening a pull request:
 
        cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=ON
