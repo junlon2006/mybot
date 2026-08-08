@@ -92,11 +92,11 @@ jobs:
       - name: Collect coverage
         run: |
           lcov --capture --directory build --output-file coverage.info \
-            --rc lcov_branch_coverage=1
+            --rc branch_coverage=1 --rc geninfo_unexecuted_blocks=1
           lcov --remove coverage.info --output-file coverage.info \
-            --rc lcov_branch_coverage=1 \
-            '*/third_party/*' '*/tests/*' '*/examples/*' '/usr/*'
-          lcov --summary coverage.info --rc lcov_branch_coverage=1
+            --rc branch_coverage=1 \
+            '*/third_party/*' '*/tests/*'
+          lcov --summary coverage.info --rc branch_coverage=1
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
