@@ -39,7 +39,7 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 mybot_add_test(mybot_json_test unit/json_test.c ../src/support/mybot_json.c)
-target_link_libraries(mybot_json_test PRIVATE m)
+target_link_libraries(mybot_json_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
 mybot_add_test(mybot_key_service_test unit/key_service_test.c ../src/platform/mybot_key.c)
 

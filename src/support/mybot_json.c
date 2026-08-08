@@ -33,6 +33,8 @@
 #include <ctype.h>
 #include "mybot_json.h"
 
+#include <hal/aosl_hal_memory.h>
+
 #define MYBOT_JSON_TYPE_MASK 0xFF
 
 static const char *ep;
@@ -52,8 +54,11 @@ static int mybot_json_strcasecmp(const char *s1, const char *s2) {
     return tolower(*(const unsigned char *)s1) - tolower(*(const unsigned char *)s2);
 }
 
-static void *(*mybot_json_malloc_fn)(size_t sz) = malloc;
-static void (*mybot_json_free_fn)(void *ptr) = free;
+/* Default to the AOSL HAL allocator so JSON stays consistent with the rest of
+ * the SDK and follows any platform redirect of aosl_hal_malloc(). Tests may
+ * override both through mybot_json_init_hooks(). */
+static void *(*mybot_json_malloc_fn)(size_t sz) = aosl_hal_malloc;
+static void (*mybot_json_free_fn)(void *ptr) = aosl_hal_free;
 
 static char *mybot_json_strdup(const char *str) {
     size_t len;
@@ -69,8 +74,8 @@ static char *mybot_json_strdup(const char *str) {
 
 int mybot_json_init_hooks(const mybot_json_hooks_t *hooks) {
     if (!hooks) { /* Reset hooks */
-        mybot_json_malloc_fn = malloc;
-        mybot_json_free_fn = free;
+        mybot_json_malloc_fn = aosl_hal_malloc;
+        mybot_json_free_fn = aosl_hal_free;
         return 0;
     }
     if (!hooks->malloc_fn || !hooks->free_fn)
