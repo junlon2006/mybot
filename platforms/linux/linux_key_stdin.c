@@ -45,6 +45,12 @@ static void key_stdin_emit_char(linux_key_stdin_ctx_t *ctx, char ch) {
     case 'p':
         ctx->emit(MYBOT_KEY_EVENT_PAIR, ctx->user_data);
         break;
+    case 'u':
+        ctx->emit(MYBOT_KEY_EVENT_VOLUME_UP, ctx->user_data);
+        break;
+    case 'd':
+        ctx->emit(MYBOT_KEY_EVENT_VOLUME_DOWN, ctx->user_data);
+        break;
     case 'e':
         ctx->emit(MYBOT_KEY_EVENT_EXIT, ctx->user_data);
         break;
@@ -52,7 +58,8 @@ static void key_stdin_emit_char(linux_key_stdin_ctx_t *ctx, char ch) {
     case '\r':
         break;
     default:
-        AOSL_LOG_INF("[KEY] '%c' ignored (s=start, q=stop, p=pair, e=exit)", ch);
+        AOSL_LOG_INF("[KEY] '%c' ignored (s=start, q=stop, p=pair, e=exit, u=vol_up, d=vol_down)",
+                     ch);
         break;
     }
 }
@@ -135,14 +142,14 @@ static void key_stdin_destroy(void *opaque) {
     free(ctx);
 }
 
-static const mybot_key_service_ops_t s_key_stdin_ops = {
+static const mybot_key_ops_t s_key_stdin_ops = {
     .name = "stdin",
     .init = key_stdin_init,
     .destroy = key_stdin_destroy,
 };
 
 int linux_key_platform_register_stdin(void) {
-    int ret = mybot_key_service_register(&s_key_stdin_ops);
+    int ret = mybot_key_register(&s_key_stdin_ops);
     if (ret < 0) {
         AOSL_LOG_ERR("key platform registration failed");
     }

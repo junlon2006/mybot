@@ -4,8 +4,10 @@
 
 ## Prepare
 
-- [ ] Choose a semantic prerelease version and update `CMakeLists.txt`,
-      `include/mybot/mybot_version.h`, `CHANGELOG.md`, and example output together.
+- [ ] Choose a semantic prerelease version and update the version variables at the top of
+      `CMakeLists.txt` — the single source of truth. `mybot_version.h` is generated from
+      `mybot_version.h.in` at configure time; do not edit it directly. Update `CHANGELOG.md` and
+      example output together.
 - [ ] Confirm README and `docs/PORTING.md` match the actual public APIs and CMake options.
 - [ ] Review all third-party changes and `THIRD_PARTY_NOTICES.md`.
 - [ ] Obtain written confirmation that bundled Agora artifacts may be redistributed, or remove them

@@ -1,0 +1,4 @@
+Checks: 'clang-analyzer-*,clang-diagnostic-*,bugprone-*,-bugprone-easily-swappable-parameters,-bugprone-macro-parentheses,-bugprone-reserved-identifier,-bugprone-suspicious-string-compare,-bugprone-narrowing-conversions,-bugprone-implicit-widening-of-multiplication-result,-bugprone-misplaced-widening-cast,-bugprone-multi-level-implicit-pointer-conversion,-clang-analyzer-optin.performance.Padding'
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*'
+FormatStyle: file

@@ -3,11 +3,11 @@
 
 #include <stddef.h>
 
-static const mybot_key_service_ops_t *s_ops;
+static const mybot_key_ops_t *s_ops;
 static void *s_ctx;
 static int s_active;
 
-int mybot_key_service_register(const mybot_key_service_ops_t *ops) {
+int mybot_key_register(const mybot_key_ops_t *ops) {
     if (!ops || !ops->init || !ops->destroy || s_active) {
         return -1;
     }
@@ -15,7 +15,7 @@ int mybot_key_service_register(const mybot_key_service_ops_t *ops) {
     return 0;
 }
 
-int mybot_key_service_init(mybot_key_event_handler_t handler, void *user_data) {
+int mybot_key_init(mybot_key_event_handler_t handler, void *user_data) {
     if (s_active || !s_ops || !handler) {
         return -1;
     }
@@ -28,7 +28,7 @@ int mybot_key_service_init(mybot_key_event_handler_t handler, void *user_data) {
     return 0;
 }
 
-void mybot_key_service_deinit(void) {
+void mybot_key_deinit(void) {
     if (!s_active) {
         return;
     }

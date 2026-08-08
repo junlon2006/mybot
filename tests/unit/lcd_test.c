@@ -100,8 +100,10 @@ int main(void) {
     render_thread_arg_t second = {.screen = MYBOT_LCD_SCREEN_IN_CONVERSATION};
     pthread_t first_thread;
     pthread_t second_thread;
-    assert(pthread_create(&first_thread, NULL, render_screens, &first) == 0);
-    assert(pthread_create(&second_thread, NULL, render_screens, &second) == 0);
+    int rc = pthread_create(&first_thread, NULL, render_screens, &first);
+    assert(rc == 0);
+    rc = pthread_create(&second_thread, NULL, render_screens, &second);
+    assert(rc == 0);
     assert(pthread_join(first_thread, NULL) == 0);
     assert(pthread_join(second_thread, NULL) == 0);
     assert(first.result == 0);

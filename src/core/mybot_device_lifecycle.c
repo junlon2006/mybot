@@ -118,7 +118,7 @@ static bool load_device_auth(void) {
     memset(&record, 0, sizeof(record));
 
     int ret = mybot_kv_store_get(MYBOT_DEVICE_AUTH_KEY, &record, sizeof(record), &len);
-    if (ret == MYBOT_KV_STORE_NOT_FOUND) {
+    if (ret == MYBOT_ERR_NOT_FOUND) {
         return false;
     }
     if (ret < 0 || len != sizeof(record) || record.version != MYBOT_DEVICE_AUTH_VERSION ||
@@ -527,9 +527,12 @@ void mybot_device_lifecycle_tick(void) {
     }
 
     if (current_state() == MYBOT_DEVICE_STATE_UNPROVISIONED) {
-        if (s_state.pair_retry_ticks_remaining > 0 && --s_state.pair_retry_ticks_remaining == 0) {
-            set_state(MYBOT_DEVICE_STATE_PAIRING);
-            action_create_pair_code();
+        if (s_state.pair_retry_ticks_remaining > 0) {
+            s_state.pair_retry_ticks_remaining--;
+            if (s_state.pair_retry_ticks_remaining == 0) {
+                set_state(MYBOT_DEVICE_STATE_PAIRING);
+                action_create_pair_code();
+            }
         }
         return;
     }

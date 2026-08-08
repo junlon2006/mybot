@@ -8,20 +8,134 @@ permissions:
   contents: read
 
 jobs:
-  linux:
+  build:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: gcc-asan
+            cc: gcc
+            cxx: g++
+            sanitizer: ASAN
+          - name: clang-asan
+            cc: clang
+            cxx: clang++
+            sanitizer: ASAN
+          - name: gcc-ubsan
+            cc: gcc
+            cxx: g++
+            sanitizer: UBSAN
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
     steps:
       - uses: actions/checkout@v4
       - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y cmake libasound2-dev libssl-dev clang-format
+        run: sudo apt-get update && sudo apt-get install -y cmake libasound2-dev libssl-dev clang-format clang cppcheck clang-tidy
       - name: Configure
-        run: cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=ON
+        run: cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_${{ matrix.sanitizer }}=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
       - name: Build
         run: cmake --build build -j2
       - name: Test
         run: ctest --test-dir build --output-on-failure
       - name: Format check
+        if: matrix.name == 'gcc-asan'
         run: |
           find include src platforms examples tests -type f \
             \( -name '*.c' -o -name '*.h' \) \
             -exec clang-format --dry-run --Werror {} +
+      - name: Static analysis (cppcheck)
+        if: matrix.name == 'gcc-asan'
+        run: |
+          cppcheck --enable=warning,performance,portability --inline-suppr \
+            --suppress=missingIncludeSystem --error-exitcode=1 --std=c99 \
+            -I include -I src/internal \
+            -I third_party/aosl/include -I third_party/aosl/platform/include \
+            -I third_party/aosl/platform/src/linux/config \
+            src platforms/linux examples tests
+      - name: Static analysis (clang-tidy)
+        if: matrix.name == 'gcc-asan'
+        run: |
+          clang-tidy -p build $(find src platforms/linux examples tests -name '*.c' | sort)
+      - name: Validate commit messages
+        if: matrix.name == 'gcc-asan'
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            range="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          else
+            before="${{ github.event.before }}"
+            if [ "$before" = "0000000000000000000000000000000000000000" ]; then
+              range="HEAD~1..HEAD"
+            else
+              range="$before..${{ github.event.after }}"
+            fi
+          fi
+          git log --no-merges --format='%s' "$range" | while IFS= read -r subject; do
+            printf '%s\n' "$subject" | ./githooks/commit-msg --subject-only >/dev/null
+          done
+
+  coverage:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake libasound2-dev libssl-dev lcov
+      - name: Configure
+        run: cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_COVERAGE=ON -DCMAKE_BUILD_TYPE=Debug
+      - name: Build
+        run: cmake --build build -j2
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Collect coverage
+        run: |
+          lcov --capture --directory build --output-file coverage.info \
+            --rc branch_coverage=1 --rc geninfo_unexecuted_blocks=1
+          lcov --remove coverage.info --output-file coverage.info \
+            --rc branch_coverage=1 \
+            '*/third_party/*' '*/tests/*'
+          lcov --summary coverage.info --rc branch_coverage=1
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.info
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.info
+          fail_ci_if_error: false
+
+  docs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake doxygen
+      - name: Configure
+        run: cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_BUILD_TESTS=OFF -DMYBOT_BUILD_EXAMPLES=OFF -DMYBOT_BUILD_LINUX_PLATFORM=OFF
+      - name: Build API reference
+        run: doxygen build/docs/Doxyfile
+      - name: Upload API reference
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-reference
+          path: build/docs/api/html
+
+  docs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake doxygen
+      - name: Configure
+        run: cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_BUILD_TESTS=OFF -DMYBOT_BUILD_EXAMPLES=OFF -DMYBOT_BUILD_LINUX_PLATFORM=OFF
+      - name: Build API reference
+        run: doxygen build/docs/Doxyfile
+      - name: Upload API reference
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-reference
+          path: build/docs/api/html

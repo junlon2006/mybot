@@ -6,7 +6,7 @@
 #include <mybot/platform/mybot_key.h>
 #include <mybot/platform/mybot_kv_store.h>
 #include <mybot/platform/mybot_lcd.h>
-#include <mybot/platform/mybot_https_transport.h>
+#include <mybot/platform/mybot_https.h>
 #include <mybot/platform/mybot_wake_words.h>
 #include <mybot/platform/mybot_wifi.h>
 

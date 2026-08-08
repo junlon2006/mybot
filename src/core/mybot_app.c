@@ -7,7 +7,7 @@
 #include <mybot/platform/mybot_lcd.h>
 #include <mybot/platform/mybot_wake_words.h>
 #include <mybot/platform/mybot_wifi.h>
-#include <mybot/platform/mybot_https_transport.h>
+#include <mybot/platform/mybot_https.h>
 
 #include "mybot_device_lifecycle.h"
 #include "mybot_ringbuf.h"
@@ -37,6 +37,8 @@
 #define AUDIO_RINGBUF_DURATION_MS 2000
 #define AUDIO_RINGBUF_SIZE                                                                         \
     (SAMPLE_RATE * AUDIO_RINGBUF_DURATION_MS / 1000 * CHANNELS * BYTES_PER_SAMPLE)
+/* Volume change per VOLUME_UP / VOLUME_DOWN key event. */
+#define MEDIA_VOLUME_KEY_STEP 10
 /* Device state machine poll interval. Must match the 100 ms/tick assumption
  * in mybot_device_lifecycle_tick() (poll_after_seconds * 10 ticks). */
 #define STATE_TICK_MS 100
@@ -49,9 +51,9 @@ static struct {
     aosl_atomic_t running;
     aosl_atomic_t state;
     bool aosl_active;
-    bool wifi_provisioning_active;
+    bool wifi_active;
     bool kv_store_active;
-    bool key_service_active;
+    bool key_active;
     bool lcd_active;
 #if MYBOT_WAKE_WORDS
     bool wake_words_active;
@@ -73,7 +75,7 @@ static struct {
     aosl_mpq_t pb_mpq;     /* playback worker thread (aosl_mpq_create) */
     aosl_timer_t pb_timer; /* drives the playback write loop */
     mybot_ringbuf_t pb_ringbuf;
-    uint8_t pb_pending[AUDIO_FRAME_BYTES];
+    int16_t pb_pending[AUDIO_FRAME_SAMPLES * CHANNELS];
     int pb_pending_offset; /* frames already written */
     int pb_pending_frames; /* frames still to write */
 
@@ -136,7 +138,7 @@ static void capture_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc,
         return;
     }
 
-    const mybot_audio_capture_ops_t *ops = mybot_audio_device_get_capture();
+    const mybot_audio_capture_ops_t *ops = mybot_audio_get_capture();
 
     int frames = ops->read(s_app.cap_ctx, s_app.cap_frame, AUDIO_FRAME_SAMPLES);
     if (frames <= 0) {
@@ -216,7 +218,7 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
         return;
     }
 
-    const mybot_audio_playback_ops_t *ops = mybot_audio_device_get_playback();
+    const mybot_audio_playback_ops_t *ops = mybot_audio_get_playback();
 
     if (s_app.pb_pending_frames == 0) {
         if (mybot_ringbuf_get_data_size(s_app.pb_ringbuf) < AUDIO_FRAME_BYTES) {
@@ -228,15 +230,22 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
         }
         s_app.pb_pending_offset = 0;
         s_app.pb_pending_frames = AUDIO_FRAME_SAMPLES;
+
+        /* Software media volume: scale before the platform write and before
+         * the AEC reference is published, so the reference matches the actual
+         * signal reaching the speaker. */
+        mybot_audio_apply_media_volume(s_app.pb_pending, AUDIO_FRAME_SAMPLES * CHANNELS);
+
 #if MYBOT_CLOUD_AEC
         /* Preserve the existing AEC reference timing: publish once when the
          * playback frame is first dequeued. */
-        mybot_ringbuf_write(s_app.ref_ringbuf, (char *)s_app.pb_pending, AUDIO_FRAME_BYTES);
+        mybot_ringbuf_write(s_app.ref_ringbuf, (const char *)s_app.pb_pending, AUDIO_FRAME_BYTES);
 #endif
     }
 
     const int frame_bytes = CHANNELS * BYTES_PER_SAMPLE;
-    int written = ops->write(s_app.pb_ctx, s_app.pb_pending + s_app.pb_pending_offset * frame_bytes,
+    int written = ops->write(s_app.pb_ctx,
+                             (const char *)s_app.pb_pending + s_app.pb_pending_offset * frame_bytes,
                              s_app.pb_pending_frames);
     if (written < 0) {
         AOSL_LOG_ERR("playback write failed, dropping %d pending frames", s_app.pb_pending_frames);
@@ -469,6 +478,18 @@ static void dev_on_state_changed(mybot_device_state_t state) {
     }
 }
 
+static void key_adjust_media_volume(int delta) {
+    int volume = mybot_audio_get_media_volume() + delta;
+    if (volume < MYBOT_AUDIO_VOLUME_MIN) {
+        volume = MYBOT_AUDIO_VOLUME_MIN;
+    } else if (volume > MYBOT_AUDIO_VOLUME_MAX) {
+        volume = MYBOT_AUDIO_VOLUME_MAX;
+    }
+    if (mybot_audio_set_media_volume(volume) == 0) {
+        AOSL_LOG_INF("[KEY] media volume -> %d", volume);
+    }
+}
+
 static void on_key_event(mybot_key_event_t event, void *user_data) {
     (void)user_data;
     switch (event) {
@@ -483,6 +504,12 @@ static void on_key_event(mybot_key_event_t event, void *user_data) {
     case MYBOT_KEY_EVENT_PAIR:
         AOSL_LOG_INF("[KEY] re-pair");
         mybot_app_pair();
+        break;
+    case MYBOT_KEY_EVENT_VOLUME_UP:
+        key_adjust_media_volume(MEDIA_VOLUME_KEY_STEP);
+        break;
+    case MYBOT_KEY_EVENT_VOLUME_DOWN:
+        key_adjust_media_volume(-MEDIA_VOLUME_KEY_STEP);
         break;
     case MYBOT_KEY_EVENT_EXIT:
         AOSL_LOG_INF("[KEY] exit");
@@ -561,6 +588,113 @@ static void mpq_fini(void *arg) {
     mybot_rtc_session_leave();
 }
 
+/* ----------------------------------------------------------
+ * Service teardown
+ *
+ * cleanup_services() releases everything start_services() may have
+ * initialized. It is idempotent and is called both from the
+ * start_services() failure path (so partial startup leaks nothing even if
+ * the host never calls mybot_app_stop()) and from mybot_app_stop().
+ *
+ * Ring buffers are intentionally NOT destroyed here: on_remote_audio() (an
+ * RTC SDK callback thread) writes pb_ringbuf, and only mybot_rtc_session_fini()
+ * guarantees the callback queue has drained. Callers must run
+ * destroy_audio_ringbufs() after RTC finalization; in the start_services()
+ * failure path RTC is never initialized, so it is safe there as well.
+ * ---------------------------------------------------------- */
+static void cleanup_services(void) {
+    if (s_app.key_active) {
+        mybot_key_deinit();
+        s_app.key_active = false;
+    }
+
+    /* Wait for any in-flight HTTP operation, prevent further state-machine
+     * actions, and close an active server conversation before RTC/audio
+     * resources are dismantled. */
+    if (!aosl_mpq_invalid(s_app.state_mpq)) {
+        aosl_mpq_destroy_wait(s_app.state_mpq);
+        s_app.state_mpq = AOSL_MPQ_INVALID;
+    }
+
+    /* The main MPQ fini callback kills the send timer and leaves the RTC
+     * channel. Must happen before mybot_rtc_session_fini(): the RTC SDK
+     * finalizes AOSL itself in agora_rtc_fini(), after which no AOSL call
+     * may be made. */
+    if (!aosl_mpq_invalid(s_app.mpq)) {
+        aosl_mpq_destroy_wait(s_app.mpq);
+        s_app.mpq = AOSL_MPQ_INVALID;
+    }
+
+    /* Capture/playback worker MPQs: aosl_mpq_destroy_wait() destroys the
+     * queue and joins its thread in one call, replacing the thread-HAL join
+     * that is not portable. */
+    if (!aosl_mpq_invalid(s_app.cap_mpq)) {
+        aosl_mpq_destroy_wait(s_app.cap_mpq);
+        s_app.cap_mpq = AOSL_MPQ_INVALID;
+    }
+    if (!aosl_mpq_invalid(s_app.pb_mpq)) {
+        aosl_mpq_destroy_wait(s_app.pb_mpq);
+        s_app.pb_mpq = AOSL_MPQ_INVALID;
+    }
+
+#if MYBOT_WAKE_WORDS
+    /* The capture MPQ has exited, so process() cannot race with destroy(). */
+    if (s_app.wake_words_active) {
+        mybot_wake_words_deinit();
+        s_app.wake_words_active = false;
+    }
+#endif
+
+    if (s_app.kv_store_active) {
+        mybot_kv_store_deinit();
+        s_app.kv_store_active = false;
+    }
+
+    /* Audio devices: their worker MPQs have exited, so no read/write can
+     * race with stop. */
+    const mybot_audio_capture_ops_t *cap_ops = mybot_audio_get_capture();
+    const mybot_audio_playback_ops_t *pb_ops = mybot_audio_get_playback();
+    if (s_app.pb_started) {
+        if (pb_ops && pb_ops->stop && pb_ops->stop(s_app.pb_ctx) < 0) {
+            AOSL_LOG_ERR("playback stop failed");
+        }
+        s_app.pb_started = false;
+    }
+    if (s_app.cap_started) {
+        if (cap_ops && cap_ops->stop && cap_ops->stop(s_app.cap_ctx) < 0) {
+            AOSL_LOG_ERR("capture stop failed");
+        }
+        s_app.cap_started = false;
+    }
+    if (cap_ops && s_app.cap_ctx) {
+        cap_ops->destroy(s_app.cap_ctx);
+        s_app.cap_ctx = NULL;
+    }
+    if (pb_ops && s_app.pb_ctx) {
+        pb_ops->destroy(s_app.pb_ctx);
+        s_app.pb_ctx = NULL;
+    }
+    /* Release the optional device volume backend after the audio devices. */
+    mybot_audio_device_volume_deinit();
+}
+
+static void destroy_audio_ringbufs(void) {
+    if (s_app.cap_ringbuf) {
+        mybot_ringbuf_destroy(s_app.cap_ringbuf);
+        s_app.cap_ringbuf = NULL;
+    }
+    if (s_app.pb_ringbuf) {
+        mybot_ringbuf_destroy(s_app.pb_ringbuf);
+        s_app.pb_ringbuf = NULL;
+    }
+#if MYBOT_CLOUD_AEC
+    if (s_app.ref_ringbuf) {
+        mybot_ringbuf_destroy(s_app.ref_ringbuf);
+        s_app.ref_ringbuf = NULL;
+    }
+#endif
+}
+
 static int start_services(void) {
     const mybot_app_config_t *cfg = &s_app.config;
 
@@ -571,17 +705,17 @@ static int start_services(void) {
     }
     s_app.kv_store_active = true;
 
-    if (mybot_key_service_init(on_key_event, NULL) < 0) {
+    if (mybot_key_init(on_key_event, NULL) < 0) {
         AOSL_LOG_ERR("key service init failed");
         goto fail;
     }
-    s_app.key_service_active = true;
+    s_app.key_active = true;
 
     /* ---- 2. Initialize audio devices via the registered platform ops ----
      * The platform backend (e.g. ALSA on Linux) must have registered itself
-     * through audio_device_register_*() before mybot_app_start() is called. */
-    const mybot_audio_capture_ops_t *cap_ops = mybot_audio_device_get_capture();
-    const mybot_audio_playback_ops_t *pb_ops = mybot_audio_device_get_playback();
+     * through mybot_audio_register_*() before mybot_app_start() is called. */
+    const mybot_audio_capture_ops_t *cap_ops = mybot_audio_get_capture();
+    const mybot_audio_playback_ops_t *pb_ops = mybot_audio_get_playback();
     if (!cap_ops || !pb_ops) {
         AOSL_LOG_ERR("no audio platform registered");
         goto fail;
@@ -594,6 +728,13 @@ static int start_services(void) {
     if (pb_ops->init(&s_app.pb_ctx, SAMPLE_RATE, CHANNELS, BITS_PER_SAMPLE) < 0) {
         AOSL_LOG_ERR("playback init failed");
         goto fail;
+    }
+
+    /* Optional real-device volume backend. Its init failure is non-fatal: the
+     * missing control only disables device volume, software media volume and
+     * playback keep working. */
+    if (mybot_audio_device_volume_init() < 0) {
+        AOSL_LOG_WRN("device volume backend unavailable, real-device volume control disabled");
     }
 
 #if MYBOT_WAKE_WORDS
@@ -697,6 +838,11 @@ static int start_services(void) {
     return 0;
 
 fail:
+    /* Release everything initialized so far. RTC is never initialized before
+     * the state machine runs (the last step), so destroying the ring buffers
+     * here cannot race with RTC callbacks. */
+    cleanup_services();
+    destroy_audio_ringbufs();
     return -1;
 }
 
@@ -713,9 +859,8 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
         return;
     }
 
-    mybot_wifi_provisioning_state_t wifi_state = (mybot_wifi_provisioning_state_t)argv[0];
-    if (wifi_state == MYBOT_WIFI_PROVISIONING_STATE_FAILED &&
-        app_state == MYBOT_APP_STATE_WIFI_PROVISIONING) {
+    mybot_wifi_state_t wifi_state = (mybot_wifi_state_t)argv[0];
+    if (wifi_state == MYBOT_WIFI_STATE_FAILED && app_state == MYBOT_APP_STATE_WIFI_PROVISIONING) {
         if (aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING,
                                 MYBOT_APP_STATE_FAILED) == MYBOT_APP_STATE_WIFI_PROVISIONING) {
             lcd_show_screen(MYBOT_LCD_SCREEN_FAILED);
@@ -725,7 +870,7 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
         return;
     }
 
-    if (wifi_state == MYBOT_WIFI_PROVISIONING_STATE_DISCONNECTED) {
+    if (wifi_state == MYBOT_WIFI_STATE_DISCONNECTED) {
         if (app_state == MYBOT_APP_STATE_READY) {
             mybot_device_lifecycle_set_network_available(false);
             aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_WIFI_DISCONNECTED);
@@ -737,8 +882,7 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
         return;
     }
 
-    if (wifi_state == MYBOT_WIFI_PROVISIONING_STATE_FAILED &&
-        app_state != MYBOT_APP_STATE_WIFI_PROVISIONING) {
+    if (wifi_state == MYBOT_WIFI_STATE_FAILED && app_state != MYBOT_APP_STATE_WIFI_PROVISIONING) {
         mybot_device_lifecycle_set_network_available(false);
         aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_WIFI_DISCONNECTED);
         lcd_show_screen(MYBOT_LCD_SCREEN_WIFI_DISCONNECTED);
@@ -746,7 +890,7 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
         return;
     }
 
-    if (wifi_state == MYBOT_WIFI_PROVISIONING_STATE_CONNECTED &&
+    if (wifi_state == MYBOT_WIFI_STATE_CONNECTED &&
         app_state == MYBOT_APP_STATE_WIFI_DISCONNECTED) {
         mybot_device_lifecycle_set_network_available(true);
         aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_READY);
@@ -755,7 +899,7 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
         return;
     }
 
-    if (wifi_state != MYBOT_WIFI_PROVISIONING_STATE_CONNECTED ||
+    if (wifi_state != MYBOT_WIFI_STATE_CONNECTED ||
         aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING,
                             MYBOT_APP_STATE_STARTING_SERVICES) !=
             MYBOT_APP_STATE_WIFI_PROVISIONING) {
@@ -778,7 +922,7 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
     }
 }
 
-static void on_wifi_state_changed(mybot_wifi_provisioning_state_t state, void *user_data) {
+static void on_wifi_state_changed(mybot_wifi_state_t state, void *user_data) {
     (void)user_data;
     mybot_app_state_t app_state = mybot_app_get_state();
     if (app_state == MYBOT_APP_STATE_STOPPING || app_state == MYBOT_APP_STATE_FAILED ||
@@ -812,7 +956,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
     bool use_https = strncmp(cfg->server_base, "https://", 8) == 0;
     bool use_http = strncmp(cfg->server_base, "http://", 7) == 0;
 #if MYBOT_ENABLE_HTTPS
-    if (use_https && !mybot_https_transport_is_registered()) {
+    if (use_https && !mybot_https_is_registered()) {
         return -1;
     }
 #else
@@ -864,11 +1008,11 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
 
     aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING);
     lcd_show_screen(MYBOT_LCD_SCREEN_WIFI_PROVISIONING);
-    if (mybot_wifi_provisioning_init(s_app.config.device_id, on_wifi_state_changed, NULL) < 0) {
+    if (mybot_wifi_init(s_app.config.device_id, on_wifi_state_changed, NULL) < 0) {
         AOSL_LOG_ERR("wifi provisioning init failed");
         goto fail;
     }
-    s_app.wifi_provisioning_active = true;
+    s_app.wifi_active = true;
     AOSL_LOG_INF("wifi provisioning started");
     return 0;
 
@@ -931,130 +1075,47 @@ void mybot_app_stop(void) {
         lcd_show_screen(MYBOT_LCD_SCREEN_STOPPING);
     }
 
-    /* A Wi-Fi event may already be running start_services() on this queue.
+    /* ---- 2. Join the startup queue ----
+     * A Wi-Fi event may already be running start_services() on this queue.
      * Joining it before teardown serializes partial startup with cleanup. */
     if (!aosl_mpq_invalid(s_app.startup_mpq)) {
         aosl_mpq_destroy_wait(s_app.startup_mpq);
         s_app.startup_mpq = AOSL_MPQ_INVALID;
     }
 
-    if (s_app.key_service_active) {
-        mybot_key_service_deinit();
-        s_app.key_service_active = false;
-    }
-
-    /* ---- 2. Stop device-state activity ----
-     * Wait for any in-flight HTTP operation, prevent further state-machine
-     * actions, and close an active server conversation before RTC/audio
-     * resources are dismantled. */
-    if (!aosl_mpq_invalid(s_app.state_mpq)) {
-        aosl_mpq_destroy_wait(s_app.state_mpq);
-        s_app.state_mpq = AOSL_MPQ_INVALID;
-    }
+    /* ---- 3. Tear down all services started by start_services() ----
+     * Idempotent: the same function runs on the start_services() failure
+     * path, so stopping after a failed startup releases nothing twice. */
+    cleanup_services();
 
     /* Reassert the terminal screen after all device workflow callbacks have drained. */
     lcd_show_screen(previous_state == MYBOT_APP_STATE_FAILED ? MYBOT_LCD_SCREEN_FAILED
                                                              : MYBOT_LCD_SCREEN_STOPPING);
 
-    /* ---- 3. Stop the MPQ loop ----
-     * Its fini callback kills the send timer and leaves the RTC channel.
-     * Must happen before mybot_rtc_session_fini(): the RTC SDK finalizes AOSL
-     * itself in agora_rtc_fini(), after which no AOSL call may be made. */
-    if (!aosl_mpq_invalid(s_app.mpq)) {
-        aosl_mpq_destroy_wait(s_app.mpq);
-        s_app.mpq = AOSL_MPQ_INVALID;
+    /* ---- 4. Stop Wi-Fi after all network users have exited. ---- */
+    if (s_app.wifi_active) {
+        mybot_wifi_deinit();
+        s_app.wifi_active = false;
     }
 
-    /* ---- 4. Stop the capture/playback MPQ threads ----
-     * aosl_mpq_destroy_wait() destroys the queue and joins its thread in one
-     * call, replacing the thread-HAL join that is not portable. These must be
-     * torn down before mybot_rtc_session_fini() (which finalizes AOSL). */
-    if (!aosl_mpq_invalid(s_app.cap_mpq)) {
-        aosl_mpq_destroy_wait(s_app.cap_mpq);
-        s_app.cap_mpq = AOSL_MPQ_INVALID;
-    }
-    if (!aosl_mpq_invalid(s_app.pb_mpq)) {
-        aosl_mpq_destroy_wait(s_app.pb_mpq);
-        s_app.pb_mpq = AOSL_MPQ_INVALID;
-    }
-
-#if MYBOT_WAKE_WORDS
-    /* The capture MPQ has exited, so process() cannot race with destroy(). */
-    if (s_app.wake_words_active) {
-        mybot_wake_words_deinit();
-        s_app.wake_words_active = false;
-    }
-#endif
-
-    if (s_app.kv_store_active) {
-        mybot_kv_store_deinit();
-        s_app.kv_store_active = false;
-    }
-
-    /* ---- 5. Stop audio devices ----
-     * Their worker MPQs have exited, so no read/write can race with stop. */
-    const mybot_audio_capture_ops_t *cap_ops = mybot_audio_device_get_capture();
-    const mybot_audio_playback_ops_t *pb_ops = mybot_audio_device_get_playback();
-    if (s_app.pb_started) {
-        if (pb_ops && pb_ops->stop && pb_ops->stop(s_app.pb_ctx) < 0) {
-            AOSL_LOG_ERR("playback stop failed");
-        }
-        s_app.pb_started = false;
-    }
-    if (s_app.cap_started) {
-        if (cap_ops && cap_ops->stop && cap_ops->stop(s_app.cap_ctx) < 0) {
-            AOSL_LOG_ERR("capture stop failed");
-        }
-        s_app.cap_started = false;
-    }
-
-    /* ---- 6. Destroy devices while AOSL logging is still available ---- */
-    if (cap_ops && s_app.cap_ctx) {
-        cap_ops->destroy(s_app.cap_ctx);
-        s_app.cap_ctx = NULL;
-    }
-    if (pb_ops && s_app.pb_ctx) {
-        pb_ops->destroy(s_app.pb_ctx);
-        s_app.pb_ctx = NULL;
-    }
-
-    /* ---- 7. Stop Wi-Fi after all network users have exited. ---- */
-    if (s_app.wifi_provisioning_active) {
-        mybot_wifi_provisioning_deinit();
-        s_app.wifi_provisioning_active = false;
-    }
-
-    /* ---- 8. Stop the LCD after all workflow event sources have exited. ---- */
+    /* ---- 5. Stop the LCD after all workflow event sources have exited. ---- */
     if (s_app.lcd_active) {
         mybot_lcd_deinit();
         s_app.lcd_active = false;
     }
 
-    /* ---- 9. Finalize RTC ----
+    /* ---- 6. Finalize RTC ----
      * The SDK waits for its callback queue before returning, so no callback can
      * access pb_ringbuf after this point. It also finalizes AOSL when active. */
     AOSL_LOG_INF("app stopped cleanly");
     s_app.aosl_active = false;
     bool rtc_finalized_aosl = mybot_rtc_session_fini();
 
-    /* ---- 10. Destroy ring buffers ----
+    /* ---- 7. Destroy ring buffers ----
      * The AOSL HAL allocator is independent of the AOSL global lifecycle. */
-    if (s_app.cap_ringbuf) {
-        mybot_ringbuf_destroy(s_app.cap_ringbuf);
-        s_app.cap_ringbuf = NULL;
-    }
-    if (s_app.pb_ringbuf) {
-        mybot_ringbuf_destroy(s_app.pb_ringbuf);
-        s_app.pb_ringbuf = NULL;
-    }
-#if MYBOT_CLOUD_AEC
-    if (s_app.ref_ringbuf) {
-        mybot_ringbuf_destroy(s_app.ref_ringbuf);
-        s_app.ref_ringbuf = NULL;
-    }
-#endif
+    destroy_audio_ringbufs();
 
-    /* ---- 11. Finalize AOSL when RTC never owned it ---- */
+    /* ---- 8. Finalize AOSL when RTC never owned it ---- */
     if (!rtc_finalized_aosl) {
         aosl_dtor();
     }

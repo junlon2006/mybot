@@ -17,6 +17,34 @@ between release candidates.
   header values and request targets.
 - Reject conversation-start responses without a valid conversation ID before entering the active
   conversation state.
+- Reject `MYBOT_BUILD_LINUX_PLATFORM=ON` with a non-Linux `CONFIG_PLATFORM` at configure time, and
+  document the two independent platform-selection variables (`CONFIG_PLATFORM` selects the AOSL
+  HAL port; `MYBOT_BUILD_LINUX_PLATFORM` builds the Linux reference backends).
+- Fix a NULL dereference in `mybot_json_create_*_array()` when an allocation fails mid-array,
+  replace unbounded `strcpy` in JSON printing with bounded copies, and stop calling side-effecting
+  functions inside test `assert()` (found by cppcheck / clang-tidy).
+- Fix a heap buffer overflow in `mybot_json` string parsing: a malformed `\u` escape followed by a
+  quote could swallow the closing quote and overflow the output buffer (found by the new
+  deterministic JSON parser fuzz).
+- Guard `mybot_rtc_session_join()` and `mybot_rtc_session_send_audio()` against calls before
+  initialization, which previously dereferenced a NULL mutex (found by the new RTC session test).
+- Release partially initialized services immediately when `start_services()` fails, instead of
+  relying on a later `mybot_app_stop()` call; service teardown is shared, idempotent, and safe to
+  run twice after a failed startup.
+
+### Changed
+
+- Unify public API naming around `mybot_<module>_register / init / deinit`: drop redundant middle
+  words (`mybot_audio_register_capture()`, `mybot_audio_register_playback()`, `mybot_key_register()`,
+  `mybot_wifi_register()`, `mybot_https_register()`), rename the HTTPS transport header to
+  `mybot_https.h`, and keep the device-volume family (`mybot_audio_device_volume_*`) distinct from
+  media volume.
+- Unify result codes: add `mybot_errors.h` (0 success, positive payload, negative failure).
+  `mybot_kv_store_get()` now returns `MYBOT_ERR_NOT_FOUND` instead of the positive
+  `MYBOT_KV_STORE_NOT_FOUND`.
+- The `.clang-format` language standard is `Auto` (inferred per file) instead of the misleading
+  `Cpp03`, and the installed `mybot.pc` is relocatable: its prefix is derived from the pkg-config
+  directory at any `CMAKE_INSTALL_LIBDIR` depth rather than baked in at configure time.
 
 ### Added
 
@@ -27,9 +55,41 @@ between release candidates.
   layered architecture diagrams.
 - Bilingual (English / Simplified Chinese) community docs: contributing, support, security, and
   code of conduct.
+- Dedicated `mybot_ringbuf_test` unit test covering lifecycle, full/empty boundaries,
+  wrap-around reads and writes, argument validation, and a single-producer/single-consumer
+  concurrency run.
+- Enforce Conventional Commits with a repository-local `commit-msg` hook
+  (`githooks/commit-msg`), a one-command installer (`scripts/setup-githooks.sh`), a commit
+  template (`.gitmessage`), and a CI step that validates pushed / PR commit subjects.
+- CI matrix across GCC and Clang with ASan and UBSan, cppcheck and clang-tidy static analysis,
+  gcov/lcov coverage collection with Codecov upload, and new `MYBOT_ENABLE_UBSAN` /
+  `MYBOT_ENABLE_COVERAGE` CMake options.
+- Add a `MYBOT_API` symbol-visibility macro (`mybot_export.h`) to every public header, preparing
+  the SDK for shared-library and Windows DLL builds; the SDK target builds with
+  `-fvisibility=hidden` and defines `MYBOT_BUILDING_LIBRARY` while compiling.
+- Doxygen API reference generated from the public headers (`docs/Doxyfile.in`, version
+  single-sourced through CMake, warnings treated as errors) and built as a CI artifact on every
+  push / PR.
+- Deterministic fuzz loops for the HTTP response parser and JSON parser, allocator fault injection
+  for the HTTP client (linker-wrapped `aosl_hal_malloc`/`realloc`), and an RTC session state-machine
+  unit test that drives the wrapper through stubbed Agora SDK callbacks.
+- Embedded integration notes (`docs/EMBEDDED.md` / `docs/EMBEDDED.zh-CN.md`) with measured
+  footprint, memory model, thread/stack budget, timing, power and logging guidance for MCU
+  integrators.
 - Bilingual porting and release guides under `docs/` (PORTING / RELEASING).
 - SPDX license identifiers on all self-maintained C sources (Apache-2.0; MIT for the cJSON-derived
   `mybot_json` sources).
+- Media volume control: the SDK applies a 0..100 digital software gain to playback PCM, so media
+  volume works on every platform without a backend.
+- Real-device volume control: optional `mybot_audio_volume_ops_t` backend contract routed through
+  `mybot_audio_device_set_volume()` / `mybot_audio_device_get_volume()`, with an ALSA mixer
+  reference backend on Linux (Master / PCM / Digital controls).
+- Volume-up / volume-down key events, mapped to `u` / `d` on the Linux example; each event steps
+  the media volume by 10.
+- Installable CMake package: `find_package(mybot)` with exported `mybot::sdk` / `mybot::aosl`
+  targets, a package version file, bundled AOSL headers and library, and a pkg-config file. The
+  Agora RTSA library is supplied by the consumer via `MYBOT_AGORA_SDK_DIR` /
+  `MYBOT_AGORA_RTC_LIBRARY` and is covered by an install-and-consume integration test.
 
 ## [0.1.0-rc.1] - Unreleased
 

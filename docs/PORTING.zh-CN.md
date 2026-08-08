@@ -52,16 +52,28 @@ platforms/my_mcu/
 - I/O 运行在专用的 AOSL MPQ 工作线程上。阻塞必须有界，以便关闭流程能完成。
 - `stop` 应解除在途 I/O 的阻塞；`destroy` 在工作线程停止后释放上下文。
 
-使用 `mybot_audio_device_register_capture()` 与 `mybot_audio_device_register_playback()`
+使用 `mybot_audio_register_capture()` 与 `mybot_audio_register_playback()`
 注册。
+
+#### 设备音量（可选）
+
+音量控制分为两个相互独立的层次：
+
+- **媒体音量**完全由 SDK 管理。`mybot_audio_set_media_volume()` 保存 0..100 的软件增益，
+  播放流水线在 PCM 到达设备前以数字方式应用（线性幅度，100 为原增益）。无需平台代码。
+- **设备音量**是可选的平台钩子。实现 `mybot_audio_volume_ops_t` 并调用
+  `mybot_audio_device_register_volume()`，即可让 `mybot_audio_device_set_volume()` /
+  `mybot_audio_device_get_volume()` 路由到真实硬件（Codec 寄存器、功放或混音器）。
+  `init`、`set_volume`、`destroy` 为必需；`get_volume` 可选。SDK 在启动时初始化该后端，
+  关闭时释放；初始化失败仅禁用设备音量控制——播放与媒体音量不受影响。
 
 ### Wi-Fi 配网
 
-实现 `mybot_wifi_provisioning_ops_t`。`init` 无需等待用户即启动 APSTA。将 connected、
+实现 `mybot_wifi_ops_t`。`init` 无需等待用户即启动 APSTA。将 connected、
 disconnected 与 failed 事件作为状态变化发出。事件可来自平台线程，但 `destroy` 返回后不得
 再运行任何事件。Destroy 必须停止传输并等待在途回调。后端在首次成功连接后必须持续监控 STA
 链路，并上报运行期断开与重连事件；SDK 在离线期间暂停设备服务流量，重连后恢复。使用
-`mybot_wifi_provisioning_register()` 注册。
+`mybot_wifi_register()` 注册。
 
 Linux 后端立即上报已连接，不是真正的 APSTA 参考实现。
 
@@ -69,7 +81,7 @@ Linux 后端立即上报已连接，不是真正的 APSTA 参考实现。
 
 实现 `mybot_kv_store_ops_t` 的全部回调。
 
-- `get` 成功返回 0，条目缺失返回 `MYBOT_KV_STORE_NOT_FOUND`，失败返回负值。必须遵守
+- `get` 成功返回 0，条目缺失返回 `MYBOT_ERR_NOT_FOUND`，失败返回负值。必须遵守
   `capacity`，且只在成功时设置 `out_len`。
 - `set` 应能在断电时存活，且不暴露部分替换。
 - `erase` 是幂等的。
@@ -80,7 +92,7 @@ Linux 后端立即上报已连接，不是真正的 APSTA 参考实现。
 ### HTTPS 传输
 
 生产构建保持 `MYBOT_ENABLE_HTTPS=ON`，并在 `mybot_app_start()` 之前注册一个
-`mybot_https_transport_ops_t`。封装 mbedTLS、BearSSL 或芯片厂商 TLS socket API；SDK 核心
+`mybot_https_ops_t`。封装 mbedTLS、BearSSL 或芯片厂商 TLS socket API；SDK 核心
 不链接 OpenSSL。后端必须：
 
 - 在给定超时内建立 TCP 与 TLS；
@@ -89,15 +101,15 @@ Linux 后端立即上报已连接，不是真正的 APSTA 参考实现。
   返回 -1；
 - `close` 释放整个 TLS 连接。
 
-使用 `mybot_https_transport_register()` 注册。不要为开发证书关闭证书或主机名校验；请将
+使用 `mybot_https_register()` 注册。不要为开发证书关闭证书或主机名校验；请将
 所需 CA 安装到设备信任库。Linux 参考后端使用 OpenSSL 与系统 CA 库。明文 HTTP 仅存在于
 配置了 `MYBOT_ENABLE_HTTPS=OFF -DMYBOT_ALLOW_INSECURE_HTTP=ON` 的隔离开发构建。
 
 ### 按键
 
-实现 `mybot_key_service_ops_t`，将硬件输入转换为会话开始、停止、配对与退出事件。事件可以
-是异步的。Destroy 必须停止输入源并等待所有处理器。使用 `mybot_key_service_register()`
-注册。
+实现 `mybot_key_ops_t`，将硬件输入转换为会话开始、停止、配对、退出、音量增大与
+音量减小事件。SDK 收到音量事件时将媒体音量步进 10；音量事件为可选。事件可以是异步的。
+Destroy 必须停止输入源并等待所有处理器。使用 `mybot_key_register()` 注册。
 
 ### LCD（可选）
 
@@ -142,8 +154,11 @@ target_link_libraries(my_mcu_platform PUBLIC mybot::sdk)
 target_link_libraries(device_firmware PRIVATE mybot::sdk my_mcu_platform)
 ```
 
-宿主可预定义名为 `agora-rtc-sdk` 的导入目标。本 RC 支持通过 `add_subdirectory()` 进行
-源码集成；安装产物还不是完整的 `find_package(mybot)` 包。
+两个相互独立的变量选择平台代码：`CONFIG_PLATFORM` 选择 `third_party/aosl` 消费的 AOSL HAL
+端口（如 `linux`、`esp32`）；`MYBOT_BUILD_LINUX_PLATFORM` 构建随附的 Linux 参考后端
+（`platforms/linux/`）并要求 `CONFIG_PLATFORM=linux`。MCU 移植保持
+`MYBOT_BUILD_LINUX_PLATFORM=OFF`。宿主可预定义名为 `agora-rtc-sdk` 的导入目标。本 RC 支持
+`add_subdirectory()` 源码集成，也支持通过 `find_package(mybot)` 消费已安装包。
 
 ## 第 6 步：启动与停止
 

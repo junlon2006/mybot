@@ -1,7 +1,27 @@
 cmake_minimum_required(VERSION 3.16)
-project(mybot VERSION 0.1.0 LANGUAGES C)
+
+# Single source of truth for the SDK version. include/mybot/mybot_version.h is
+# generated from mybot_version.h.in at configure time, so the code can never
+# drift from the version declared here.
+set(MYBOT_VERSION_MAJOR 0)
+set(MYBOT_VERSION_MINOR 1)
+set(MYBOT_VERSION_PATCH 0)
+set(MYBOT_VERSION_PRERELEASE "rc.1")
+if(MYBOT_VERSION_PRERELEASE)
+    set(MYBOT_VERSION_STRING
+        "${MYBOT_VERSION_MAJOR}.${MYBOT_VERSION_MINOR}.${MYBOT_VERSION_PATCH}-${MYBOT_VERSION_PRERELEASE}")
+else()
+    set(MYBOT_VERSION_STRING
+        "${MYBOT_VERSION_MAJOR}.${MYBOT_VERSION_MINOR}.${MYBOT_VERSION_PATCH}")
+endif()
+
+project(mybot VERSION ${MYBOT_VERSION_MAJOR}.${MYBOT_VERSION_MINOR}.${MYBOT_VERSION_PATCH}
+        LANGUAGES C)
 
 include(GNUInstallDirs)
+
+configure_file(include/mybot/mybot_version.h.in
+               ${CMAKE_CURRENT_BINARY_DIR}/include/mybot/mybot_version.h @ONLY)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -18,10 +38,16 @@ else()
     set(MYBOT_LINUX_DEFAULT OFF)
 endif()
 
-option(MYBOT_BUILD_LINUX_PLATFORM "Build the bundled Linux platform backend" ${MYBOT_LINUX_DEFAULT})
+# MYBOT_BUILD_LINUX_PLATFORM selects the mybot reference backends under
+# platforms/linux/ (ALSA, stdin, file KV, console LCD, OpenSSL TLS). It is
+# independent from CONFIG_PLATFORM, which selects the AOSL HAL port consumed
+# by third_party/aosl (e.g. linux, esp32, bk725x).
+option(MYBOT_BUILD_LINUX_PLATFORM "Build the bundled Linux reference backends (requires CONFIG_PLATFORM=linux)" ${MYBOT_LINUX_DEFAULT})
 option(MYBOT_BUILD_EXAMPLES "Build mybot example applications" ${MYBOT_LINUX_DEFAULT})
 option(MYBOT_BUILD_TESTS "Build mybot tests" ${MYBOT_LINUX_DEFAULT})
 option(MYBOT_ENABLE_ASAN "Enable AddressSanitizer for mybot targets" OFF)
+option(MYBOT_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer for mybot targets" OFF)
+option(MYBOT_ENABLE_COVERAGE "Instrument mybot targets for gcov code coverage" OFF)
 
 set(MYBOT_AUDIO_PTIME_MS "60" CACHE STRING "Audio packet duration: 20, 40, or 60 ms")
 set_property(CACHE MYBOT_AUDIO_PTIME_MS PROPERTY STRINGS 20 40 60)
@@ -64,6 +90,16 @@ if(NOT TARGET aosl)
     )
     target_compile_options(aosl PRIVATE ${AOSL_ADD_OPTIONS})
     target_compile_definitions(aosl PRIVATE ${AOSL_ADD_DEFINITIONS})
+    # Make the exported target relocatable: installed AOSL headers are merged
+    # under ${CMAKE_INSTALL_INCLUDEDIR}. Builds inside this tree keep the
+    # original source include roots through per-path BUILD_INTERFACE entries.
+    set_property(TARGET aosl PROPERTY INTERFACE_INCLUDE_DIRECTORIES "")
+    foreach(_aosl_dir IN LISTS AOSL_ADD_INCLUDES_PUBLIC)
+        set_property(TARGET aosl APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+            "$<BUILD_INTERFACE:${_aosl_dir}>")
+    endforeach()
+    set_property(TARGET aosl APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+        "$<INSTALL_INTERFACE:include>")
 endif()
 
 if(NOT TARGET agora-rtc-sdk)
@@ -87,6 +123,14 @@ function(mybot_enable_sanitizers target)
         target_compile_options(${target} PRIVATE -fsanitize=address -fno-omit-frame-pointer -g)
         target_link_options(${target} PRIVATE -fsanitize=address)
     endif()
+    if(MYBOT_ENABLE_UBSAN AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(${target} PRIVATE -fsanitize=undefined -fno-sanitize-recover=all)
+        target_link_options(${target} PRIVATE -fsanitize=undefined)
+    endif()
+    if(MYBOT_ENABLE_COVERAGE AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(${target} PRIVATE --coverage -g -O0)
+        target_link_options(${target} PRIVATE --coverage)
+    endif()
 endfunction()
 
 add_library(mybot_sdk STATIC
@@ -96,7 +140,7 @@ add_library(mybot_sdk STATIC
     src/media/mybot_audio.c
     src/media/mybot_wake_words.c
     src/platform/mybot_key.c
-    src/platform/mybot_https_transport.c
+    src/platform/mybot_https.c
     src/platform/mybot_kv_store.c
     src/platform/mybot_lcd.c
     src/platform/mybot_wifi.c
@@ -109,8 +153,17 @@ add_library(mybot_sdk STATIC
 add_library(mybot::sdk ALIAS mybot_sdk)
 set_target_properties(mybot_sdk PROPERTIES EXPORT_NAME sdk)
 
+# MYBOT_API expands to dllexport / default-visibility while the library is
+# being built; consumers see dllimport or nothing. -fvisibility=hidden keeps
+# internal symbols out of any future shared build.
+target_compile_definitions(mybot_sdk PRIVATE MYBOT_BUILDING_LIBRARY)
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(mybot_sdk PRIVATE -fvisibility=hidden)
+endif()
+
 target_include_directories(mybot_sdk
     PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
@@ -126,7 +179,11 @@ target_compile_definitions(mybot_sdk PUBLIC
     MYBOT_ENABLE_HTTPS=$<BOOL:${MYBOT_ENABLE_HTTPS}>
     MYBOT_ALLOW_INSECURE_HTTP=$<BOOL:${MYBOT_ALLOW_INSECURE_HTTP}>
 )
-target_link_libraries(mybot_sdk PUBLIC aosl agora-rtc-sdk)
+target_link_libraries(mybot_sdk PUBLIC
+    aosl
+    $<BUILD_INTERFACE:agora-rtc-sdk>
+    $<INSTALL_INTERFACE:mybot::agora-rtc-sdk>
+)
 if(UNIX)
     find_package(Threads REQUIRED)
     target_link_libraries(mybot_sdk PUBLIC Threads::Threads ${CMAKE_DL_LIBS} m)
@@ -135,6 +192,16 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(mybot_sdk PUBLIC rt)
 endif()
 mybot_enable_sanitizers(mybot_sdk)
+
+# The Linux reference backends (ALSA) require the AOSL Linux HAL. CONFIG_PLATFORM
+# is set by third_party/aosl; reject a mismatch at configure time instead of
+# failing later with confusing compiler errors.
+if(MYBOT_BUILD_LINUX_PLATFORM AND NOT CONFIG_PLATFORM STREQUAL "linux")
+    message(FATAL_ERROR
+        "MYBOT_BUILD_LINUX_PLATFORM=ON requires CONFIG_PLATFORM=linux "
+        "(current: '${CONFIG_PLATFORM}'). CONFIG_PLATFORM selects the AOSL HAL port; "
+        "MYBOT_BUILD_LINUX_PLATFORM selects the mybot Linux reference backends.")
+endif()
 
 if(MYBOT_BUILD_LINUX_PLATFORM)
     add_subdirectory(platforms/linux)
@@ -152,7 +219,62 @@ if(MYBOT_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-install(TARGETS mybot_sdk
+include(CMakePackageConfigHelpers)
+set(MYBOT_INSTALL_CMAKEDIR ${CMAKE_INSTALL_LIBDIR}/cmake/mybot)
+
+install(TARGETS mybot_sdk aosl
+    EXPORT mybotTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
-install(DIRECTORY include/mybot DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(EXPORT mybotTargets
+    FILE mybotTargets.cmake
+    NAMESPACE mybot::
+    DESTINATION ${MYBOT_INSTALL_CMAKEDIR}
+)
+
+configure_package_config_file(
+    cmake/mybotConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/mybotConfig.cmake
+    INSTALL_DESTINATION ${MYBOT_INSTALL_CMAKEDIR}
+)
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/mybotConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/mybotConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/mybotConfigVersion.cmake
+    DESTINATION ${MYBOT_INSTALL_CMAKEDIR}
+)
+
+set(MYBOT_PC_PREFIX_REL "")
+string(REPLACE "/" ";" _mybot_pc_segments "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
+list(LENGTH _mybot_pc_segments _mybot_pc_depth)
+foreach(_i RANGE 1 ${_mybot_pc_depth})
+    string(APPEND MYBOT_PC_PREFIX_REL "../")
+endforeach()
+
+configure_file(cmake/mybot.pc.in ${CMAKE_CURRENT_BINARY_DIR}/mybot.pc @ONLY)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/mybot.pc
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+
+configure_file(docs/Doxyfile.in ${CMAKE_CURRENT_BINARY_DIR}/docs/Doxyfile @ONLY)
+
+# AOSL is bundled with the installed package (see THIRD_PARTY_NOTICES.md for
+# its license). Headers merge into include/api and include/hal, matching the
+# build-time include layout.
+install(DIRECTORY ${AOSL_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY ${AOSL_DIR}/platform/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILES_MATCHING PATTERN "*.h")
+install(DIRECTORY ${AOSL_DIR}/platform/src/${CONFIG_PLATFORM}/config/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} FILES_MATCHING PATTERN "*.h")
+install(FILES ${AOSL_DIR}/LICENSE DESTINATION ${CMAKE_INSTALL_DOCDIR} RENAME aosl-LICENSE)
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/mybot/mybot_version.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mybot)
+install(DIRECTORY include/mybot DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        PATTERN "*.in" EXCLUDE)

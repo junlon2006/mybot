@@ -106,6 +106,8 @@ int main(int argc, char **argv) {
                          "  s - start conversation\n"
                          "  q - stop conversation\n"
                          "  p - re-pair device\n"
+                         "  u - volume up\n"
+                         "  d - volume down\n"
                          "  e - exit\n"
                          "  Ctrl+C - exit");
             interactive_help_printed = true;

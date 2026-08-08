@@ -3,6 +3,7 @@
 #define MYBOT_WAKE_WORDS_H_
 
 #include <stdbool.h>
+#include <mybot/mybot_export.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -28,20 +29,20 @@ typedef struct {
 } mybot_wake_words_ops_t;
 
 /** Register the local ASR backend for the current platform. Call before mybot_app_start(). */
-int mybot_wake_words_register(const mybot_wake_words_ops_t *ops);
+MYBOT_API int mybot_wake_words_register(const mybot_wake_words_ops_t *ops);
 
 /** Return whether the current platform registered a local ASR backend. */
-bool mybot_wake_words_is_registered(void);
+MYBOT_API bool mybot_wake_words_is_registered(void);
 
 /** Initialize the registered backend for the capture PCM format. */
-int mybot_wake_words_init(int sample_rate, int channels, int bits_per_sample,
-                          mybot_wake_words_handler_t handler, void *user_data);
+MYBOT_API int mybot_wake_words_init(int sample_rate, int channels, int bits_per_sample,
+                                    mybot_wake_words_handler_t handler, void *user_data);
 
 /** Feed captured interleaved PCM frames to the local ASR backend. */
-int mybot_wake_words_process(const void *pcm, int frames);
+MYBOT_API int mybot_wake_words_process(const void *pcm, int frames);
 
 /** Stop local ASR and release its resources. Idempotent. */
-void mybot_wake_words_deinit(void);
+MYBOT_API void mybot_wake_words_deinit(void);
 
 #ifdef __cplusplus
 }

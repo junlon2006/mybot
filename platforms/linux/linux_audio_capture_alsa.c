@@ -290,7 +290,7 @@ static const mybot_audio_capture_ops_t g_alsa_capture_ops = {
 };
 
 int linux_audio_platform_register_alsa_capture(void) {
-    int ret = mybot_audio_device_register_capture(&g_alsa_capture_ops);
+    int ret = mybot_audio_register_capture(&g_alsa_capture_ops);
     if (ret == 0) {
         AOSL_LOG_INF("ALSA capture platform registered");
     }

@@ -201,15 +201,15 @@ int mybot_rtc_session_init(const char *app_id, mybot_rtc_session_callbacks_t *cb
 }
 
 int mybot_rtc_session_join(const char *channel, const char *token, const char *user_account) {
+    if (!aosl_atomic_read(&s_rtc.initialized)) {
+        AOSL_LOG_ERR("[RTC] not initialized");
+        return -1;
+    }
+
     int ret = 0;
 
     aosl_hal_mutex_lock(s_rtc.lock);
 
-    if (!aosl_atomic_read(&s_rtc.initialized)) {
-        AOSL_LOG_ERR("[RTC] not initialized");
-        ret = -1;
-        goto out;
-    }
     mybot_rtc_state_t cur = (mybot_rtc_state_t)aosl_atomic_read(&s_rtc.state);
     if (cur == MYBOT_RTC_STATE_CONNECTED || cur == MYBOT_RTC_STATE_CONNECTING) {
         AOSL_LOG_ERR("[RTC] already joining/joined");
@@ -339,6 +339,10 @@ bool mybot_rtc_session_fini(void) {
 
 int mybot_rtc_session_send_audio(const void *data, size_t len) {
     int ret;
+
+    if (!aosl_atomic_read(&s_rtc.initialized)) {
+        return -1;
+    }
 
     aosl_hal_mutex_lock(s_rtc.lock);
 

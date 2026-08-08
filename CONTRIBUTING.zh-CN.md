@@ -11,6 +11,9 @@
 3. 绝不提交凭据、设备 token、客户数据或专有 SDK 包。
 4. 自维护的 C 源码遵循仓库根目录 `.clang-format`，并为每个文件标注 SPDX 许可证头
    （`/* SPDX-License-Identifier: Apache-2.0 */`；cJSON 派生的 `mybot_json` 源码使用 `MIT`）。
+   机械重命名或批量编辑后，提交前先执行
+   `find include src platforms examples tests -type f \( -name '*.c' -o -name '*.h' \) -exec
+   clang-format -i {} +`。
 5. 提交 pull request 前先构建并测试：
 
        cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=ON
@@ -22,3 +25,21 @@
 
 Pull request 应说明问题、设计、兼容性影响、测试与使用的硬件。通过提交，你同意你的
 贡献按仓库 `LICENSE` 许可发布，除非该文件明确带有自身兼容的许可证。
+
+## 提交信息
+
+使用 [Conventional Commits](https://www.conventionalcommits.org/) 以便发布与变更日志可以机械生成：
+
+    <type>[optional scope][!]: <subject>
+
+    <optional body>
+
+    <optional footer>
+
+类型：`feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、
+`revert`。破坏性变更在类型或 scope 后加 `!`，并在正文用 `BREAKING CHANGE:` footer 说明。
+主题行不超过 72 个字符、使用祈使句、除标识符外小写。
+
+仓库通过本地 `commit-msg` hook 与 CI 强制执行该格式。每个克隆安装一次 hook：
+
+    ./scripts/setup-githooks.sh
