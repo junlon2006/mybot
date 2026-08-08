@@ -37,6 +37,9 @@ between release candidates.
 - Unify result codes: add `mybot_errors.h` (0 success, positive payload, negative failure).
   `mybot_kv_store_get()` now returns `MYBOT_ERR_NOT_FOUND` instead of the positive
   `MYBOT_KV_STORE_NOT_FOUND`.
+- The `.clang-format` language standard is `Auto` (inferred per file) instead of the misleading
+  `Cpp03`, and the installed `mybot.pc` is relocatable: its prefix is derived from the pkg-config
+  directory at any `CMAKE_INSTALL_LIBDIR` depth rather than baked in at configure time.
 
 ### Added
 
