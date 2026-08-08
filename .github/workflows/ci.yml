@@ -25,3 +25,35 @@ jobs:
           find include src platforms examples tests -type f \
             \( -name '*.c' -o -name '*.h' \) \
             -exec clang-format --dry-run --Werror {} +
+      - name: Validate commit messages
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            range="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          else
+            before="${{ github.event.before }}"
+            if [ "$before" = "0000000000000000000000000000000000000000" ]; then
+              range="HEAD~1..HEAD"
+            else
+              range="$before..${{ github.event.after }}"
+            fi
+          fi
+          git log --no-merges --format='%s' "$range" | while IFS= read -r subject; do
+            printf '%s\n' "$subject" | ./githooks/commit-msg --subject-only >/dev/null
+          done
+      - name: Validate commit messages
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            range="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          else
+            before="${{ github.event.before }}"
+            if [ "$before" = "0000000000000000000000000000000000000000" ]; then
+              range="HEAD~1..HEAD"
+            else
+              range="$before..${{ github.event.after }}"
+            fi
+          fi
+          git log --no-merges --format='%s' "$range" | while IFS= read -r subject; do
+            printf '%s\n' "$subject" | ./githooks/commit-msg --subject-only >/dev/null
+          done

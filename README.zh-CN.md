@@ -362,6 +362,9 @@ find include src platforms examples tests -type f \
 - 自研 C 代码遵循根目录 `.clang-format`；`third_party/` 保持上游内容，不参与格式化检查。
 - CI（[.github/workflows/ci.yml](.github/workflows/ci.yml)）在每个 push / PR 上执行
   构建、测试与格式检查，提交前请确保本地命令与 CI 一致。
+- 提交信息遵循 Conventional Commits（见 `CONTRIBUTING.md`）。每个克隆执行一次
+  `./scripts/setup-githooks.sh` 安装本地 `commit-msg` hook；CI 会校验每个 push / PR 的
+  提交主题行。
 
 ## 贡献与支持
 

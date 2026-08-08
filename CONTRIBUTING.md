@@ -24,3 +24,45 @@ validation. Update public documentation and `CHANGELOG.md` for user-visible beha
 Pull requests should explain the problem, design, compatibility impact, tests, and hardware used.
 By contributing, you agree that your contribution is licensed under the repository `LICENSE`
 unless the file clearly carries its own compatible license.
+
+## Commit messages
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) so releases and the changelog can
+be derived mechanically:
+
+    <type>[optional scope][!]: <subject>
+
+    <optional body>
+
+    <optional footer>
+
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`,
+`revert`. Add `!` after the type or scope for breaking changes and describe the break in a
+`BREAKING CHANGE:` footer. Keep the subject under 72 characters, in the imperative mood, lowercase
+except identifiers.
+
+The repository enforces this format with a local `commit-msg` hook and in CI. Install the hook once
+per clone:
+
+    ./scripts/setup-githooks.sh
+
+## Commit messages
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) so releases and the changelog can
+be derived mechanically:
+
+    <type>[optional scope][!]: <subject>
+
+    <optional body>
+
+    <optional footer>
+
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`,
+`revert`. Add `!` after the type or scope for breaking changes and describe the break in a
+`BREAKING CHANGE:` footer. Keep the subject under 72 characters, in the imperative mood, lowercase
+except identifiers.
+
+The repository enforces this format with a local `commit-msg` hook and in CI. Install the hook once
+per clone:
+
+    ./scripts/setup-githooks.sh

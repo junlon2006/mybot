@@ -397,6 +397,9 @@ find include src platforms examples tests -type f \
   excluded from the format check.
 - CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the build, tests, and format check
   on every push / PR; make sure your local commands match CI before merging.
+- Commit messages follow Conventional Commits (see `CONTRIBUTING.md`). Install the local
+  `commit-msg` hook once per clone with `./scripts/setup-githooks.sh`; CI validates every pushed /
+  PR commit subject.
 
 ## Contributing and support
 

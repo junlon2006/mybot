@@ -1,0 +1,9 @@
+
+# Write your commit message here.
+#
+#   <type>[optional scope][!]: <subject>
+#
+# Types: feat | fix | docs | style | refactor | perf | test | build | ci | chore | revert
+# Keep the subject under 72 characters, imperative mood, lowercase except identifiers.
+# Add ! after the type or scope for breaking changes, and describe the break in a
+# BREAKING CHANGE: footer in the body.

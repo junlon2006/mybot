@@ -22,3 +22,21 @@
 
 Pull request 应说明问题、设计、兼容性影响、测试与使用的硬件。通过提交，你同意你的
 贡献按仓库 `LICENSE` 许可发布，除非该文件明确带有自身兼容的许可证。
+
+## 提交信息
+
+使用 [Conventional Commits](https://www.conventionalcommits.org/) 以便发布与变更日志可以机械生成：
+
+    <type>[optional scope][!]: <subject>
+
+    <optional body>
+
+    <optional footer>
+
+类型：`feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、
+`revert`。破坏性变更在类型或 scope 后加 `!`，并在正文用 `BREAKING CHANGE:` footer 说明。
+主题行不超过 72 个字符、使用祈使句、除标识符外小写。
+
+仓库通过本地 `commit-msg` hook 与 CI 强制执行该格式。每个克隆安装一次 hook：
+
+    ./scripts/setup-githooks.sh

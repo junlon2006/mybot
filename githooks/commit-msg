@@ -1,0 +1,82 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+#
+# Conventional Commits commit-message validator.
+#
+# Usage:
+#   Hook mode:        invoked by git as commit-msg <message-file>
+#   Subject-only CI:  printf '%s\n' "$subject" | githooks/commit-msg --subject-only
+#
+# Format:
+#   <type>[optional scope][!]: <subject>
+#   <blank line>
+#   <optional body>
+#   <blank line>
+#   <optional footer>
+
+set -u
+
+if [ "${1:-}" = "--subject-only" ]; then
+    subject_only=1
+    message=$(cat)
+elif [ $# -eq 1 ] && [ -r "$1" ]; then
+    subject_only=0
+    message=$(cat "$1")
+else
+    echo "commit-msg: usage: commit-msg <message-file> | --subject-only" >&2
+    exit 2
+fi
+
+# Drop comment lines git may leave in the message file.
+message=$(printf '%s\n' "$message" | sed '/^#/d')
+
+subject=$(printf '%s\n' "$message" | sed -n '1p')
+[ -n "$subject" ] || {
+    echo "commit-msg: empty subject" >&2
+    exit 1
+}
+
+# Allow git's own merge and revert messages.
+case "$subject" in
+    Merge\ *) exit 0 ;;
+    Revert\ \"*) exit 0 ;;
+esac
+
+[ "$(printf '%s' "$subject" | wc -c)" -le 72 ] || {
+    echo "commit-msg: subject is longer than 72 characters" >&2
+    exit 1
+}
+
+if printf '%s\n' "$subject" | grep -Eq '[[:space:]]+$'; then
+    echo "commit-msg: subject has trailing whitespace" >&2
+    exit 1
+fi
+
+# <type>(<scope>)!: <subject> | <type>!: <subject> | <type>: <subject>
+printf '%s\n' "$subject" | grep -Eq '^[a-z]+(\([a-z0-9._/-]+\))?!?: .+$' || {
+    echo "commit-msg: subject does not follow Conventional Commits" >&2
+    echo "  expected: <type>[optional scope][!]: <subject>" >&2
+    exit 1
+}
+
+type=$(printf '%s' "$subject" | sed 's/^\([a-z]*\).*/\1/')
+case "$type" in
+    feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert) ;;
+    *)
+        echo "commit-msg: unknown type '$type'" >&2
+        echo "  allowed: feat fix docs style refactor perf test build ci chore revert" >&2
+        exit 1
+        ;;
+esac
+
+if [ "$subject_only" -eq 0 ]; then
+    # A body, when present, must be separated from the subject by a blank line.
+    body_lines=$(printf '%s\n' "$message" | sed '1d' | sed '/^$/d' | wc -l)
+    second_line=$(printf '%s\n' "$message" | sed -n '2p')
+    if [ "$body_lines" -gt 0 ] && [ -n "$second_line" ]; then
+        echo "commit-msg: subject must be followed by a blank line before the body" >&2
+        exit 1
+    fi
+fi
+
+exit 0
