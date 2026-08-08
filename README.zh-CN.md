@@ -348,6 +348,8 @@ mybot/
 
 - [docs/PORTING.md](docs/PORTING.md)（[简体中文](docs/PORTING.zh-CN.md)）— 新平台移植指南
   与验收契约
+- [docs/EMBEDDED.md](docs/EMBEDDED.md)（[简体中文](docs/EMBEDDED.zh-CN.md)）— 面向 MCU
+  集成者的体积、内存、线程/栈、时序、功耗与日志说明
 - [docs/RELEASING.md](docs/RELEASING.md)（[简体中文](docs/RELEASING.zh-CN.md)）— 版本发布流程
 - [CHANGELOG.md](CHANGELOG.md) — 版本变更记录
 - API 参考 — 由 Doxygen 从公共头文件生成，命令为 `doxygen build/docs/Doxyfile`；CI 在每个

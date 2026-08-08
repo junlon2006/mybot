@@ -73,6 +73,9 @@ between release candidates.
 - Deterministic fuzz loops for the HTTP response parser and JSON parser, allocator fault injection
   for the HTTP client (linker-wrapped `aosl_hal_malloc`/`realloc`), and an RTC session state-machine
   unit test that drives the wrapper through stubbed Agora SDK callbacks.
+- Embedded integration notes (`docs/EMBEDDED.md` / `docs/EMBEDDED.zh-CN.md`) with measured
+  footprint, memory model, thread/stack budget, timing, power and logging guidance for MCU
+  integrators.
 - Bilingual porting and release guides under `docs/` (PORTING / RELEASING).
 - SPDX license identifiers on all self-maintained C sources (Apache-2.0; MIT for the cJSON-derived
   `mybot_json` sources).
