@@ -7,8 +7,8 @@
 
 `mybot` is a cross-platform **AI voice-chat SDK** for edge devices: it lets smart devices hold
 real-time voice conversations with cloud AI agents over Agora RTC. The SDK handles APSTA
-provisioning, device pairing and authentication, a conversation state machine, two-way real-time
-audio (Agora RTSA with Agora AI capabilities), button/LCD workflows, and optional local wake-word
+provisioning, device pairing and authentication, a conversation state machine, full-duplex voice
+interaction (Agora RTSA with Agora AI capabilities), button/LCD workflows, and optional local wake-word
 recognition. Platform-specific capabilities are injected through a small set of `ops` interfaces;
 the core depends only on C99 and AOSL and can be ported to virtually any platform — Linux, an
 RTOS, or a bare-metal MCU.
@@ -48,8 +48,8 @@ RTOS, or a bare-metal MCU.
 - **Full-duplex voice · barge-in**: Uplink and downlink run simultaneously; the user can interrupt
   the AI mid-reply at any time, and the microphone keeps streaming so the cloud agent hears and
   responds to new input.
-- **Two-way real-time audio · Agora AI capabilities**: Built on Agora RTSA, with cloud AEC, AI QoS,
-  and optional real-time transcription.
+- **Full-duplex voice interaction · Agora AI capabilities**: Built on Agora RTSA, with cloud AEC, AI
+  QoS, and optional real-time transcription.
 - **Optional local wake words**: Off by default; wake behavior is identical to starting a
   conversation with a physical button.
 - **Button and LCD workflows**: Semantic screen states (provisioning / pair code / ready / in
