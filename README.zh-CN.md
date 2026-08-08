@@ -175,6 +175,12 @@ mybot_app_stop();
 | `MYBOT_ALLOW_INSECURE_HTTP` | `OFF` | 仅本地开发：显式允许明文 HTTP |
 | `MYBOT_ENABLE_ASAN` | `OFF` | GCC/Clang 地址消毒器，建议在宿主测试中开启 |
 
+两个相互独立的变量选择平台代码：`CONFIG_PLATFORM` 选择 `third_party/aosl` 消费的 AOSL HAL
+端口（如 `linux`、`esp32`）；`MYBOT_BUILD_LINUX_PLATFORM` 构建随附的 Linux 参考后端
+（`platforms/linux/`：ALSA、stdin、文件 KV、控制台 LCD、OpenSSL），并要求
+`CONFIG_PLATFORM=linux`。MCU 移植设置 `CONFIG_PLATFORM=my_mcu` 并保持
+`MYBOT_BUILD_LINUX_PLATFORM=OFF`。
+
 例如：
 
 ```bash

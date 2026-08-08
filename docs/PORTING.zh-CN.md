@@ -154,8 +154,11 @@ target_link_libraries(my_mcu_platform PUBLIC mybot::sdk)
 target_link_libraries(device_firmware PRIVATE mybot::sdk my_mcu_platform)
 ```
 
-宿主可预定义名为 `agora-rtc-sdk` 的导入目标。本 RC 支持通过 `add_subdirectory()` 进行
-源码集成；安装产物还不是完整的 `find_package(mybot)` 包。
+两个相互独立的变量选择平台代码：`CONFIG_PLATFORM` 选择 `third_party/aosl` 消费的 AOSL HAL
+端口（如 `linux`、`esp32`）；`MYBOT_BUILD_LINUX_PLATFORM` 构建随附的 Linux 参考后端
+（`platforms/linux/`）并要求 `CONFIG_PLATFORM=linux`。MCU 移植保持
+`MYBOT_BUILD_LINUX_PLATFORM=OFF`。宿主可预定义名为 `agora-rtc-sdk` 的导入目标。本 RC 支持
+`add_subdirectory()` 源码集成，也支持通过 `find_package(mybot)` 消费已安装包。
 
 ## 第 6 步：启动与停止
 

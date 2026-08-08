@@ -17,6 +17,9 @@ between release candidates.
   header values and request targets.
 - Reject conversation-start responses without a valid conversation ID before entering the active
   conversation state.
+- Reject `MYBOT_BUILD_LINUX_PLATFORM=ON` with a non-Linux `CONFIG_PLATFORM` at configure time, and
+  document the two independent platform-selection variables (`CONFIG_PLATFORM` selects the AOSL
+  HAL port; `MYBOT_BUILD_LINUX_PLATFORM` builds the Linux reference backends).
 
 ### Added
 

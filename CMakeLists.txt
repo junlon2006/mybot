@@ -38,7 +38,11 @@ else()
     set(MYBOT_LINUX_DEFAULT OFF)
 endif()
 
-option(MYBOT_BUILD_LINUX_PLATFORM "Build the bundled Linux platform backend" ${MYBOT_LINUX_DEFAULT})
+# MYBOT_BUILD_LINUX_PLATFORM selects the mybot reference backends under
+# platforms/linux/ (ALSA, stdin, file KV, console LCD, OpenSSL TLS). It is
+# independent from CONFIG_PLATFORM, which selects the AOSL HAL port consumed
+# by third_party/aosl (e.g. linux, esp32, bk725x).
+option(MYBOT_BUILD_LINUX_PLATFORM "Build the bundled Linux reference backends (requires CONFIG_PLATFORM=linux)" ${MYBOT_LINUX_DEFAULT})
 option(MYBOT_BUILD_EXAMPLES "Build mybot example applications" ${MYBOT_LINUX_DEFAULT})
 option(MYBOT_BUILD_TESTS "Build mybot tests" ${MYBOT_LINUX_DEFAULT})
 option(MYBOT_ENABLE_ASAN "Enable AddressSanitizer for mybot targets" OFF)
@@ -170,6 +174,16 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(mybot_sdk PUBLIC rt)
 endif()
 mybot_enable_sanitizers(mybot_sdk)
+
+# The Linux reference backends (ALSA) require the AOSL Linux HAL. CONFIG_PLATFORM
+# is set by third_party/aosl; reject a mismatch at configure time instead of
+# failing later with confusing compiler errors.
+if(MYBOT_BUILD_LINUX_PLATFORM AND NOT CONFIG_PLATFORM STREQUAL "linux")
+    message(FATAL_ERROR
+        "MYBOT_BUILD_LINUX_PLATFORM=ON requires CONFIG_PLATFORM=linux "
+        "(current: '${CONFIG_PLATFORM}'). CONFIG_PLATFORM selects the AOSL HAL port; "
+        "MYBOT_BUILD_LINUX_PLATFORM selects the mybot Linux reference backends.")
+endif()
 
 if(MYBOT_BUILD_LINUX_PLATFORM)
     add_subdirectory(platforms/linux)

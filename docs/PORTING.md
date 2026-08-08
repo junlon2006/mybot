@@ -165,8 +165,12 @@ target_link_libraries(my_mcu_platform PUBLIC mybot::sdk)
 target_link_libraries(device_firmware PRIVATE mybot::sdk my_mcu_platform)
 ```
 
-A host may predefine an imported target named `agora-rtc-sdk`. This RC supports source integration
-with `add_subdirectory()`; the installed archive is not yet a complete `find_package(mybot)` package.
+Two independent variables select platform code: `CONFIG_PLATFORM` chooses the AOSL HAL port
+consumed by `third_party/aosl` (e.g. `linux`, `esp32`); `MYBOT_BUILD_LINUX_PLATFORM` builds the
+bundled Linux reference backends (`platforms/linux/`) and requires `CONFIG_PLATFORM=linux`. An MCU
+port keeps `MYBOT_BUILD_LINUX_PLATFORM=OFF`. A host may predefine an imported target named
+`agora-rtc-sdk`. Both source integration with `add_subdirectory()` and installed-package
+consumption via `find_package(mybot)` are supported.
 
 ## Step 6: Start and stop
 

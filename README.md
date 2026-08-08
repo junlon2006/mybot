@@ -199,6 +199,12 @@ The following options can be set via the CMake command line or cache variables b
 | `MYBOT_ALLOW_INSECURE_HTTP` | `OFF` | Local development only: explicitly allow plaintext HTTP |
 | `MYBOT_ENABLE_ASAN` | `OFF` | GCC/Clang AddressSanitizer; recommended for host tests |
 
+Two independent variables select platform code: `CONFIG_PLATFORM` chooses the AOSL HAL port
+consumed by `third_party/aosl` (e.g. `linux`, `esp32`), while `MYBOT_BUILD_LINUX_PLATFORM` builds
+the bundled Linux reference backends (`platforms/linux/`: ALSA, stdin, file KV, console LCD,
+OpenSSL) and requires `CONFIG_PLATFORM=linux`. An MCU port sets `CONFIG_PLATFORM=my_mcu` and keeps
+`MYBOT_BUILD_LINUX_PLATFORM=OFF`.
+
 For example:
 
 ```bash
