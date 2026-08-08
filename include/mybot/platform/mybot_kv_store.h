@@ -4,6 +4,7 @@
 
 #include <stddef.h>
 #include <mybot/mybot_errors.h>
+#include <mybot/mybot_export.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -18,12 +19,12 @@ typedef struct {
     void (*destroy)(void *ctx);
 } mybot_kv_store_ops_t;
 
-int mybot_kv_store_register(const mybot_kv_store_ops_t *ops);
-int mybot_kv_store_init(void);
-void mybot_kv_store_deinit(void);
-int mybot_kv_store_get(const char *key, void *value, size_t capacity, size_t *out_len);
-int mybot_kv_store_set(const char *key, const void *value, size_t len);
-int mybot_kv_store_erase(const char *key);
+MYBOT_API int mybot_kv_store_register(const mybot_kv_store_ops_t *ops);
+MYBOT_API int mybot_kv_store_init(void);
+MYBOT_API void mybot_kv_store_deinit(void);
+MYBOT_API int mybot_kv_store_get(const char *key, void *value, size_t capacity, size_t *out_len);
+MYBOT_API int mybot_kv_store_set(const char *key, const void *value, size_t len);
+MYBOT_API int mybot_kv_store_erase(const char *key);
 
 #ifdef __cplusplus
 }

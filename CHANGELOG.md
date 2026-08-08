@@ -56,6 +56,9 @@ between release candidates.
 - CI matrix across GCC and Clang with ASan and UBSan, cppcheck and clang-tidy static analysis,
   gcov/lcov coverage collection with Codecov upload, and new `MYBOT_ENABLE_UBSAN` /
   `MYBOT_ENABLE_COVERAGE` CMake options.
+- Add a `MYBOT_API` symbol-visibility macro (`mybot_export.h`) to every public header, preparing
+  the SDK for shared-library and Windows DLL builds; the SDK target builds with
+  `-fvisibility=hidden` and defines `MYBOT_BUILDING_LIBRARY` while compiling.
 - Bilingual porting and release guides under `docs/` (PORTING / RELEASING).
 - SPDX license identifiers on all self-maintained C sources (Apache-2.0; MIT for the cJSON-derived
   `mybot_json` sources).

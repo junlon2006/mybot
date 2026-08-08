@@ -5,6 +5,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <mybot/mybot_export.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,10 +32,10 @@ typedef struct {
  * Register one platform TLS transport before mybot_app_start().
  * The ops table must remain valid for the process lifetime.
  */
-int mybot_https_register(const mybot_https_ops_t *ops);
+MYBOT_API int mybot_https_register(const mybot_https_ops_t *ops);
 
 /** Return whether a platform TLS transport has been registered. */
-bool mybot_https_is_registered(void);
+MYBOT_API bool mybot_https_is_registered(void);
 
 #ifdef __cplusplus
 }

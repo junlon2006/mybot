@@ -2,6 +2,8 @@
 #ifndef MYBOT_WIFI_H_
 #define MYBOT_WIFI_H_
 
+#include <mybot/mybot_export.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -36,20 +38,21 @@ typedef struct {
 } mybot_wifi_ops_t;
 
 /** Register the APSTA provisioning backend for the current platform. */
-int mybot_wifi_register(const mybot_wifi_ops_t *ops);
+MYBOT_API int mybot_wifi_register(const mybot_wifi_ops_t *ops);
 
 /**
  * Start APSTA provisioning without waiting for STA to connect.
  * A successful return means the backend started; subsequent connection results are reported
  * through handler and mybot_wifi_get_state().
  */
-int mybot_wifi_init(const char *device_id, mybot_wifi_state_handler_t handler, void *user_data);
+MYBOT_API int mybot_wifi_init(const char *device_id, mybot_wifi_state_handler_t handler,
+                              void *user_data);
 
 /** Return the current provisioning state. */
-mybot_wifi_state_t mybot_wifi_get_state(void);
+MYBOT_API mybot_wifi_state_t mybot_wifi_get_state(void);
 
 /** Stop APSTA provisioning and release its resources. Idempotent. */
-void mybot_wifi_deinit(void);
+MYBOT_API void mybot_wifi_deinit(void);
 
 #ifdef __cplusplus
 }

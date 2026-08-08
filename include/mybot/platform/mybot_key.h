@@ -2,6 +2,8 @@
 #ifndef MYBOT_KEY_H_
 #define MYBOT_KEY_H_
 
+#include <mybot/mybot_export.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -29,13 +31,13 @@ typedef struct {
 } mybot_key_ops_t;
 
 /** Register the key backend for the current platform. Call before service initialization. */
-int mybot_key_register(const mybot_key_ops_t *ops);
+MYBOT_API int mybot_key_register(const mybot_key_ops_t *ops);
 
 /** Initialize the registered backend and install the application event handler. */
-int mybot_key_init(mybot_key_event_handler_t handler, void *user_data);
+MYBOT_API int mybot_key_init(mybot_key_event_handler_t handler, void *user_data);
 
 /** Stop the backend and release its resources. No events are emitted after return. */
-void mybot_key_deinit(void);
+MYBOT_API void mybot_key_deinit(void);
 
 #ifdef __cplusplus
 }

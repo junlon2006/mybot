@@ -153,6 +153,14 @@ add_library(mybot_sdk STATIC
 add_library(mybot::sdk ALIAS mybot_sdk)
 set_target_properties(mybot_sdk PROPERTIES EXPORT_NAME sdk)
 
+# MYBOT_API expands to dllexport / default-visibility while the library is
+# being built; consumers see dllimport or nothing. -fvisibility=hidden keeps
+# internal symbols out of any future shared build.
+target_compile_definitions(mybot_sdk PRIVATE MYBOT_BUILDING_LIBRARY)
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(mybot_sdk PRIVATE -fvisibility=hidden)
+endif()
+
 target_include_directories(mybot_sdk
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>

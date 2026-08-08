@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <mybot/mybot_export.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -73,10 +74,10 @@ typedef struct {
  * ---------------------------------------------------------- */
 
 /** Register complete capture device ops once, before mybot_app_start(). */
-int mybot_audio_register_capture(const mybot_audio_capture_ops_t *ops);
+MYBOT_API int mybot_audio_register_capture(const mybot_audio_capture_ops_t *ops);
 
 /** Register complete playback device ops once, before mybot_app_start(). */
-int mybot_audio_register_playback(const mybot_audio_playback_ops_t *ops);
+MYBOT_API int mybot_audio_register_playback(const mybot_audio_playback_ops_t *ops);
 
 /** Shared volume range for both media volume and real device volume. */
 #define MYBOT_AUDIO_VOLUME_MIN 0
@@ -118,36 +119,36 @@ typedef struct {
 } mybot_audio_volume_ops_t;
 
 /** Register the real device volume backend once, before mybot_app_start(). */
-int mybot_audio_device_register_volume(const mybot_audio_volume_ops_t *ops);
+MYBOT_API int mybot_audio_device_register_volume(const mybot_audio_volume_ops_t *ops);
 
 /** Initialize the registered volume backend. Call from the app startup path. */
-int mybot_audio_device_volume_init(void);
+MYBOT_API int mybot_audio_device_volume_init(void);
 
 /** Release the volume backend. Idempotent. */
-void mybot_audio_device_volume_deinit(void);
+MYBOT_API void mybot_audio_device_volume_deinit(void);
 
 /* ----------------------------------------------------------
  * Unified access API — called by application code
  * ---------------------------------------------------------- */
 
 /** Get the registered capture ops, or NULL if none registered. */
-const mybot_audio_capture_ops_t *mybot_audio_get_capture(void);
+MYBOT_API const mybot_audio_capture_ops_t *mybot_audio_get_capture(void);
 
 /** Get the registered playback ops, or NULL if none registered. */
-const mybot_audio_playback_ops_t *mybot_audio_get_playback(void);
+MYBOT_API const mybot_audio_playback_ops_t *mybot_audio_get_playback(void);
 
 /** Return whether a real device volume backend is registered. */
-bool mybot_audio_device_volume_is_registered(void);
+MYBOT_API bool mybot_audio_device_volume_is_registered(void);
 
 /** Set the real device volume through the registered backend.
  *  @return 0 on success, -1 if the backend is unavailable or volume is invalid.
  */
-int mybot_audio_device_set_volume(int volume);
+MYBOT_API int mybot_audio_device_set_volume(int volume);
 
 /** Get the real device volume through the registered backend.
  *  @return 0 on success, -1 if the backend is unavailable.
  */
-int mybot_audio_device_get_volume(int *volume);
+MYBOT_API int mybot_audio_device_get_volume(int *volume);
 
 /* ----------------------------------------------------------
  * Media volume — SDK-managed digital software gain
@@ -160,10 +161,10 @@ int mybot_audio_device_get_volume(int *volume);
  *  Volume 100 is unity gain and skips processing entirely.
  *  @return 0 on success, -1 on invalid volume.
  */
-int mybot_audio_set_media_volume(int volume);
+MYBOT_API int mybot_audio_set_media_volume(int volume);
 
 /** Get the current media volume setting. */
-int mybot_audio_get_media_volume(void);
+MYBOT_API int mybot_audio_get_media_volume(void);
 
 /** Apply the current media volume to a signed 16-bit PCM buffer in place.
  *  The SDK playback pipeline calls this automatically before writing to the
@@ -171,7 +172,7 @@ int mybot_audio_get_media_volume(void);
  *  @param pcm     buffer of interleaved int16 samples
  *  @param samples total number of samples (frames * channels)
  */
-void mybot_audio_apply_media_volume(int16_t *pcm, int samples);
+MYBOT_API void mybot_audio_apply_media_volume(int16_t *pcm, int samples);
 
 #ifdef __cplusplus
 }

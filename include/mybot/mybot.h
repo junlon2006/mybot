@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <mybot/mybot_errors.h>
+#include <mybot/mybot_export.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,32 +40,32 @@ typedef enum {
  * @return 0 on success, -1 on error. On error, all partially initialized
  *         resources have already been released.
  */
-int mybot_app_start(const mybot_app_config_t *cfg);
+MYBOT_API int mybot_app_start(const mybot_app_config_t *cfg);
 
 /** @brief Check whether the application is still running. */
-bool mybot_app_is_running(void);
+MYBOT_API bool mybot_app_is_running(void);
 
 /** @brief Return the current application startup/runtime state. */
-mybot_app_state_t mybot_app_get_state(void);
+MYBOT_API mybot_app_state_t mybot_app_get_state(void);
 
 /** @brief Request a graceful exit (used by signal handlers / UI keys). */
-void mybot_app_request_exit(void);
+MYBOT_API void mybot_app_request_exit(void);
 
 /** @brief User requests to start a conversation (button / key). */
-void mybot_app_start_conversation(void);
+MYBOT_API void mybot_app_start_conversation(void);
 
 /** @brief User requests to stop the current conversation. */
-void mybot_app_stop_conversation(void);
+MYBOT_API void mybot_app_stop_conversation(void);
 
 /** @brief User requests to (re-)pair the device. */
-void mybot_app_pair(void);
+MYBOT_API void mybot_app_pair(void);
 
 /**
  * @brief Stop the application and release all resources.
  *
  * Blocks until all worker threads have exited. Idempotent.
  */
-void mybot_app_stop(void);
+MYBOT_API void mybot_app_stop(void);
 
 #ifdef __cplusplus
 }
