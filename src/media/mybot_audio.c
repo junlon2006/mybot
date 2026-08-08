@@ -15,7 +15,7 @@ static bool g_volume_active = false;
 /* Media volume is SDK-managed digital gain. Defaults to unity (no scaling). */
 static aosl_atomic_t g_media_volume = MYBOT_AUDIO_VOLUME_DEFAULT;
 
-int mybot_audio_device_register_capture(const mybot_audio_capture_ops_t *ops) {
+int mybot_audio_register_capture(const mybot_audio_capture_ops_t *ops) {
     if (!ops || !ops->init || !ops->start || !ops->read || !ops->stop || !ops->destroy ||
         g_capture_ops) {
         return -1;
@@ -24,7 +24,7 @@ int mybot_audio_device_register_capture(const mybot_audio_capture_ops_t *ops) {
     return 0;
 }
 
-int mybot_audio_device_register_playback(const mybot_audio_playback_ops_t *ops) {
+int mybot_audio_register_playback(const mybot_audio_playback_ops_t *ops) {
     if (!ops || !ops->init || !ops->start || !ops->write || !ops->stop || !ops->destroy ||
         g_playback_ops) {
         return -1;
@@ -33,11 +33,11 @@ int mybot_audio_device_register_playback(const mybot_audio_playback_ops_t *ops) 
     return 0;
 }
 
-const mybot_audio_capture_ops_t *mybot_audio_device_get_capture(void) {
+const mybot_audio_capture_ops_t *mybot_audio_get_capture(void) {
     return g_capture_ops;
 }
 
-const mybot_audio_playback_ops_t *mybot_audio_device_get_playback(void) {
+const mybot_audio_playback_ops_t *mybot_audio_get_playback(void) {
     return g_playback_ops;
 }
 

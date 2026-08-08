@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#ifndef MYBOT_HTTPS_TRANSPORT_H_
-#define MYBOT_HTTPS_TRANSPORT_H_
+#ifndef MYBOT_HTTPS_H_
+#define MYBOT_HTTPS_H_
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -25,19 +25,19 @@ typedef struct {
     int (*send)(void *connection, const void *data, size_t len, int timeout_ms);
     int (*recv)(void *connection, void *data, size_t capacity, int timeout_ms);
     void (*close)(void *connection);
-} mybot_https_transport_ops_t;
+} mybot_https_ops_t;
 
 /**
  * Register one platform TLS transport before mybot_app_start().
  * The ops table must remain valid for the process lifetime.
  */
-int mybot_https_transport_register(const mybot_https_transport_ops_t *ops);
+int mybot_https_register(const mybot_https_ops_t *ops);
 
 /** Return whether a platform TLS transport has been registered. */
-bool mybot_https_transport_is_registered(void);
+bool mybot_https_is_registered(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* MYBOT_HTTPS_TRANSPORT_H_ */
+#endif /* MYBOT_HTTPS_H_ */

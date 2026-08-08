@@ -110,7 +110,7 @@ int main(void) {
     mybot_kv_store_deinit();
     assert(mybot_kv_store_init() == 0);
     assert(mybot_kv_store_get("device_auth", value, sizeof(value), &value_len) ==
-           MYBOT_KV_STORE_NOT_FOUND);
+           MYBOT_ERR_NOT_FOUND);
     mybot_kv_store_deinit();
 
     assert(mkdir(real_store, 0700) == 0);

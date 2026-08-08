@@ -90,17 +90,17 @@ int main(void) {
         .destroy = volume_destroy,
     };
 
-    assert(mybot_audio_device_register_capture(NULL) < 0);
-    assert(mybot_audio_device_register_capture(&incomplete_capture) < 0);
-    assert(mybot_audio_device_register_capture(&capture) == 0);
-    assert(mybot_audio_device_register_capture(&capture) < 0);
-    assert(mybot_audio_device_get_capture() == &capture);
+    assert(mybot_audio_register_capture(NULL) < 0);
+    assert(mybot_audio_register_capture(&incomplete_capture) < 0);
+    assert(mybot_audio_register_capture(&capture) == 0);
+    assert(mybot_audio_register_capture(&capture) < 0);
+    assert(mybot_audio_get_capture() == &capture);
 
-    assert(mybot_audio_device_register_playback(NULL) < 0);
-    assert(mybot_audio_device_register_playback(&incomplete_playback) < 0);
-    assert(mybot_audio_device_register_playback(&playback) == 0);
-    assert(mybot_audio_device_register_playback(&playback) < 0);
-    assert(mybot_audio_device_get_playback() == &playback);
+    assert(mybot_audio_register_playback(NULL) < 0);
+    assert(mybot_audio_register_playback(&incomplete_playback) < 0);
+    assert(mybot_audio_register_playback(&playback) == 0);
+    assert(mybot_audio_register_playback(&playback) < 0);
+    assert(mybot_audio_get_playback() == &playback);
 
     /* Device volume backend registration and lifecycle. */
     assert(mybot_audio_device_register_volume(NULL) < 0);

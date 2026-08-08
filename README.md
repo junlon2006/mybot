@@ -162,7 +162,7 @@ target_link_libraries(device_firmware PRIVATE mybot::sdk)
 The platform must register the Wi-Fi, KV, button, audio capture, audio playback, and HTTPS transport
 backends before `mybot_app_start()`. LCD is optional; a local ASR backend is required only when
 `MYBOT_WAKE_WORDS=ON`. The Linux platform registers the OpenSSL backend automatically; other
-platforms must implement `mybot_https_transport_ops_t`. For the full implementation order, minimal
+platforms must implement `mybot_https_ops_t`. For the full implementation order, minimal
 code, threading constraints, and acceptance checklist, see
 [docs/PORTING.md](docs/PORTING.md).
 

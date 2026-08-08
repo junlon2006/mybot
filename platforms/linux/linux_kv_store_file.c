@@ -147,7 +147,7 @@ static int kv_store_file_get(void *opaque, const char *key, void *value, size_t 
 
     int fd = openat(ctx->dir_fd, key, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
     if (fd < 0) {
-        return errno == ENOENT ? MYBOT_KV_STORE_NOT_FOUND : -1;
+        return errno == ENOENT ? MYBOT_ERR_NOT_FOUND : -1;
     }
 
     struct stat st;

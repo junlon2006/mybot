@@ -24,6 +24,17 @@ between release candidates.
   relying on a later `mybot_app_stop()` call; service teardown is shared, idempotent, and safe to
   run twice after a failed startup.
 
+### Changed
+
+- Unify public API naming around `mybot_<module>_register / init / deinit`: drop redundant middle
+  words (`mybot_audio_register_capture()`, `mybot_audio_register_playback()`, `mybot_key_register()`,
+  `mybot_wifi_register()`, `mybot_https_register()`), rename the HTTPS transport header to
+  `mybot_https.h`, and keep the device-volume family (`mybot_audio_device_volume_*`) distinct from
+  media volume.
+- Unify result codes: add `mybot_errors.h` (0 success, positive payload, negative failure).
+  `mybot_kv_store_get()` now returns `MYBOT_ERR_NOT_FOUND` instead of the positive
+  `MYBOT_KV_STORE_NOT_FOUND`.
+
 ### Added
 
 - HTTPS-by-default device-service transport with a platform TLS contract and Linux OpenSSL backend.

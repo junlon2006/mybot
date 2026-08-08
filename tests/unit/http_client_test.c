@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <api/aosl.h>
-#include <mybot/platform/mybot_https_transport.h>
+#include <mybot/platform/mybot_https.h>
 
 #include <assert.h>
 #include <stdio.h>
@@ -55,7 +55,7 @@ static void fake_tls_close(void *connection) {
     s_tls_closed++;
 }
 
-static const mybot_https_transport_ops_t s_fake_tls_ops = {
+static const mybot_https_ops_t s_fake_tls_ops = {
     .name = "fake-tls",
     .connect = fake_tls_connect,
     .send = fake_tls_send,
@@ -84,7 +84,7 @@ int main(void) {
     mybot_http_client_response_t response;
     memset(&response, 0, sizeof(response));
 
-    assert(!mybot_https_transport_is_registered());
+    assert(!mybot_https_is_registered());
     assert(mybot_http_client_get("https://api.example.test/status", &response) < 0);
     assert(response.body == NULL);
 
@@ -135,12 +135,12 @@ int main(void) {
                    "5\r\nhell",
                    1);
 
-    mybot_https_transport_ops_t incomplete_ops = s_fake_tls_ops;
+    mybot_https_ops_t incomplete_ops = s_fake_tls_ops;
     incomplete_ops.recv = NULL;
-    assert(mybot_https_transport_register(NULL) < 0);
-    assert(mybot_https_transport_register(&incomplete_ops) < 0);
-    assert(mybot_https_transport_register(&s_fake_tls_ops) == 0);
-    assert(mybot_https_transport_register(&s_fake_tls_ops) < 0);
+    assert(mybot_https_register(NULL) < 0);
+    assert(mybot_https_register(&incomplete_ops) < 0);
+    assert(mybot_https_register(&s_fake_tls_ops) == 0);
+    assert(mybot_https_register(&s_fake_tls_ops) < 0);
 
     int connect_count = s_tls_connect_count;
     assert(mybot_http_client_get("https://good.example/path\r\nX-Injected: yes", &response) < 0);

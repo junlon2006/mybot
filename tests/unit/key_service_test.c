@@ -35,19 +35,19 @@ static void on_key(mybot_key_event_t event, void *user_data) {
 }
 
 int main(void) {
-    const mybot_key_service_ops_t incomplete_ops = {0};
-    const mybot_key_service_ops_t fake_ops = {
+    const mybot_key_ops_t incomplete_ops = {0};
+    const mybot_key_ops_t fake_ops = {
         .name = "fake",
         .init = fake_init,
         .destroy = fake_destroy,
     };
 
-    assert(mybot_key_service_register(NULL) < 0);
-    assert(mybot_key_service_register(&incomplete_ops) < 0);
-    assert(mybot_key_service_register(&fake_ops) == 0);
-    assert(mybot_key_service_init(NULL, NULL) < 0);
-    assert(mybot_key_service_init(on_key, &s_handler_count) == 0);
-    assert(mybot_key_service_register(&fake_ops) < 0);
+    assert(mybot_key_register(NULL) < 0);
+    assert(mybot_key_register(&incomplete_ops) < 0);
+    assert(mybot_key_register(&fake_ops) == 0);
+    assert(mybot_key_init(NULL, NULL) < 0);
+    assert(mybot_key_init(on_key, &s_handler_count) == 0);
+    assert(mybot_key_register(&fake_ops) < 0);
     s_fake.emit(MYBOT_KEY_EVENT_PAIR, s_fake.user_data);
     assert(s_handler_count == 1);
     assert(s_last_event == MYBOT_KEY_EVENT_PAIR);
@@ -55,8 +55,8 @@ int main(void) {
     assert(s_handler_count == 2);
     assert(s_last_event == MYBOT_KEY_EVENT_VOLUME_UP);
 
-    mybot_key_service_deinit();
-    mybot_key_service_deinit();
+    mybot_key_deinit();
+    mybot_key_deinit();
     assert(s_destroy_count == 1);
     assert(s_fake.emit == NULL);
     return 0;

@@ -3,12 +3,11 @@
 #define MYBOT_KV_STORE_H_
 
 #include <stddef.h>
+#include <mybot/mybot_errors.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#define MYBOT_KV_STORE_NOT_FOUND 1
 
 typedef struct {
     const char *name;

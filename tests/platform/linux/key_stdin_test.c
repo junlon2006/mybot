@@ -43,7 +43,7 @@ int main(void) {
 
     aosl_ctor();
     assert(linux_key_platform_register_stdin() == 0);
-    assert(mybot_key_service_init(on_key, &s_event_count) == 0);
+    assert(mybot_key_init(on_key, &s_event_count) == 0);
 
     assert(write(pipe_fds[1], "p", 1) == 1);
     wait_for_event();
@@ -60,7 +60,7 @@ int main(void) {
     assert(aosl_atomic_read(&s_event_count) == 3);
     assert(aosl_atomic_read(&s_last_event) == MYBOT_KEY_EVENT_VOLUME_DOWN);
 
-    mybot_key_service_deinit();
+    mybot_key_deinit();
     assert(fcntl(STDIN_FILENO, F_GETFD) >= 0);
     assert(write(pipe_fds[1], "s", 1) == 1);
     aosl_hal_msleep(20);

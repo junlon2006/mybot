@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <mybot/mybot_errors.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,7 +32,7 @@ typedef enum {
  * @brief Initialize and start the application.
  *
  * Non-blocking: starts APSTA Wi-Fi provisioning and returns. The remaining services are
- * initialized asynchronously after Wi-Fi reaches MYBOT_WIFI_PROVISIONING_STATE_CONNECTED.
+ * initialized asynchronously after Wi-Fi reaches MYBOT_WIFI_STATE_CONNECTED.
  * The caller must call mybot_app_stop() before exiting.
  *
  * @param cfg application configuration.

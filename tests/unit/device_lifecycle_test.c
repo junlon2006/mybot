@@ -38,7 +38,7 @@ static int mock_kv_store_get(void *ctx, const char *key, void *value, size_t cap
     (void)ctx;
     (void)key;
     if (!s_kv_store_present) {
-        return MYBOT_KV_STORE_NOT_FOUND;
+        return MYBOT_ERR_NOT_FOUND;
     }
     if (s_kv_store_len > capacity) {
         return -1;

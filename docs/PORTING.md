@@ -53,8 +53,8 @@ Implement complete capture and playback tables from `mybot_audio.h`. The lifecyc
 - I/O runs on dedicated AOSL MPQ workers. Blocking must be bounded so shutdown can finish.
 - `stop` should unblock in-flight I/O; `destroy` releases the context after workers stop.
 
-Register with `mybot_audio_device_register_capture()` and
-`mybot_audio_device_register_playback()`.
+Register with `mybot_audio_register_capture()` and
+`mybot_audio_register_playback()`.
 
 #### Device volume (optional)
 
@@ -72,13 +72,13 @@ Volume control has two independent layers:
 
 ### Wi-Fi provisioning
 
-Implement `mybot_wifi_provisioning_ops_t`. `init` starts APSTA without waiting for the user.
+Implement `mybot_wifi_ops_t`. `init` starts APSTA without waiting for the user.
 Emit connected, disconnected and failed events as state changes. Events may come from a platform
 thread, but none may run after `destroy` returns. Destroy must stop the transport and wait for
 in-flight callbacks. The backend must keep monitoring the STA link after the first successful
 connection and report runtime disconnect and reconnect events; the SDK pauses device-service
 traffic while offline and resumes it after reconnect. Register with
-`mybot_wifi_provisioning_register()`.
+`mybot_wifi_register()`.
 
 The Linux backend reports connected immediately and is not a real APSTA reference.
 
@@ -86,7 +86,7 @@ The Linux backend reports connected immediately and is not a real APSTA referenc
 
 Implement all callbacks in `mybot_kv_store_ops_t`.
 
-- `get` returns 0 on success, `MYBOT_KV_STORE_NOT_FOUND` when absent, and negative on failure.
+- `get` returns 0 on success, `MYBOT_ERR_NOT_FOUND` when absent, and negative on failure.
   It must respect `capacity` and set `out_len` only on success.
 - `set` should survive power loss without exposing a partial replacement.
 - `erase` is idempotent.
@@ -97,7 +97,7 @@ Register with `mybot_kv_store_register()`.
 ### HTTPS transport
 
 Production builds keep `MYBOT_ENABLE_HTTPS=ON` and register one
-`mybot_https_transport_ops_t` before `mybot_app_start()`. Wrap mbedTLS, BearSSL, or the chipset TLS
+`mybot_https_ops_t` before `mybot_app_start()`. Wrap mbedTLS, BearSSL, or the chipset TLS
 socket API; the SDK core does not link OpenSSL. The backend must:
 
 - establish TCP and TLS within the supplied timeout;
@@ -107,7 +107,7 @@ socket API; the SDK core does not link OpenSSL. The backend must:
   peer close, and -1 on error or timeout;
 - release the entire TLS connection from `close`.
 
-Register with `mybot_https_transport_register()`. Do not disable certificate or hostname
+Register with `mybot_https_register()`. Do not disable certificate or hostname
 verification for development certificates; install the required CA in the device trust store.
 The Linux reference backend uses OpenSSL and the system CA store. Plain HTTP exists only for an
 isolated development build configured with
@@ -115,10 +115,10 @@ isolated development build configured with
 
 ### Keys
 
-Implement `mybot_key_service_ops_t` and translate hardware input into conversation start, stop,
+Implement `mybot_key_ops_t` and translate hardware input into conversation start, stop,
 pair, exit, volume-up and volume-down events. The SDK adjusts media volume by 10 on volume
 events; emitting them is optional. Events may be asynchronous. Destroy must stop the source and
-wait for all handlers. Register with `mybot_key_service_register()`.
+wait for all handlers. Register with `mybot_key_register()`.
 
 ### LCD (optional)
 

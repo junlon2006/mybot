@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <mybot/mybot_build_config.h>
-#include <mybot/platform/mybot_https_transport.h>
+#include <mybot/platform/mybot_https.h>
 
 #include "linux_backends.h"
 
@@ -195,7 +195,7 @@ static void https_close(void *opaque) {
     free(connection);
 }
 
-static const mybot_https_transport_ops_t s_https_ops = {
+static const mybot_https_ops_t s_https_ops = {
     .name = "openssl",
     .connect = https_connect,
     .send = https_send,
@@ -204,7 +204,7 @@ static const mybot_https_transport_ops_t s_https_ops = {
 };
 
 int linux_https_platform_register_openssl(void) {
-    int ret = mybot_https_transport_register(&s_https_ops);
+    int ret = mybot_https_register(&s_https_ops);
     if (ret < 0) {
         AOSL_LOG_ERR("HTTPS transport registration failed");
     }

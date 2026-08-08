@@ -30,7 +30,7 @@ target_link_libraries(mybot_device_client_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_
 
 mybot_add_test(mybot_http_client_test
     unit/http_client_test.c
-    ../src/platform/mybot_https_transport.c
+    ../src/platform/mybot_https.c
 )
 target_link_libraries(mybot_http_client_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
@@ -42,11 +42,11 @@ mybot_add_test(mybot_key_service_test unit/key_service_test.c ../src/platform/my
 mybot_add_test(mybot_lcd_test unit/lcd_test.c ../src/platform/mybot_lcd.c)
 target_link_libraries(mybot_lcd_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
-mybot_add_test(mybot_wifi_provisioning_test
+mybot_add_test(mybot_wifi_test
     unit/wifi_provisioning_test.c
     ../src/platform/mybot_wifi.c
 )
-target_link_libraries(mybot_wifi_provisioning_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
+target_link_libraries(mybot_wifi_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
 mybot_add_test(mybot_wake_words_test unit/wake_words_test.c ../src/media/mybot_wake_words.c)
 

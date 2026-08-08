@@ -141,7 +141,7 @@ target_link_libraries(device_firmware PRIVATE mybot::sdk)
 
 平台必须在 `mybot_app_start()` 之前注册 Wi-Fi、KV、按键、音频采集、音频播放和
 HTTPS 传输后端。LCD 可选；只有 `MYBOT_WAKE_WORDS=ON` 时才必须注册本地 ASR 后端。
-Linux 平台自动注册 OpenSSL 后端；其他平台需实现 `mybot_https_transport_ops_t`。
+Linux 平台自动注册 OpenSSL 后端；其他平台需实现 `mybot_https_ops_t`。
 完整实现顺序、最小代码、线程约束和验收清单见 [docs/PORTING.md](docs/PORTING.md)。
 
 最小应用生命周期：

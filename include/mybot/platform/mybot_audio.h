@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#ifndef MYBOT_AUDIO_DEVICE_H_
-#define MYBOT_AUDIO_DEVICE_H_
+#ifndef MYBOT_AUDIO_H_
+#define MYBOT_AUDIO_H_
 
 #include <stdint.h>
 #include <stddef.h>
@@ -15,7 +15,7 @@ extern "C" {
  *
  * Each platform provides one capture ops and one playback ops.
  * The framework registers them at startup and uses the
- * unified audio_device_* API everywhere.
+ * unified mybot_audio_* API everywhere.
  * ---------------------------------------------------------- */
 
 /** Capture device operations */
@@ -73,10 +73,10 @@ typedef struct {
  * ---------------------------------------------------------- */
 
 /** Register complete capture device ops once, before mybot_app_start(). */
-int mybot_audio_device_register_capture(const mybot_audio_capture_ops_t *ops);
+int mybot_audio_register_capture(const mybot_audio_capture_ops_t *ops);
 
 /** Register complete playback device ops once, before mybot_app_start(). */
-int mybot_audio_device_register_playback(const mybot_audio_playback_ops_t *ops);
+int mybot_audio_register_playback(const mybot_audio_playback_ops_t *ops);
 
 /** Shared volume range for both media volume and real device volume. */
 #define MYBOT_AUDIO_VOLUME_MIN 0
@@ -131,10 +131,10 @@ void mybot_audio_device_volume_deinit(void);
  * ---------------------------------------------------------- */
 
 /** Get the registered capture ops, or NULL if none registered. */
-const mybot_audio_capture_ops_t *mybot_audio_device_get_capture(void);
+const mybot_audio_capture_ops_t *mybot_audio_get_capture(void);
 
 /** Get the registered playback ops, or NULL if none registered. */
-const mybot_audio_playback_ops_t *mybot_audio_device_get_playback(void);
+const mybot_audio_playback_ops_t *mybot_audio_get_playback(void);
 
 /** Return whether a real device volume backend is registered. */
 bool mybot_audio_device_volume_is_registered(void);
@@ -177,4 +177,4 @@ void mybot_audio_apply_media_volume(int16_t *pcm, int samples);
 }
 #endif
 
-#endif /* MYBOT_AUDIO_DEVICE_H_ */
+#endif /* MYBOT_AUDIO_H_ */

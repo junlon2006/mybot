@@ -1,13 +1,13 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#include <mybot/platform/mybot_https_transport.h>
+#include <mybot/platform/mybot_https.h>
 
 #include "mybot_https_transport.h"
 
 #include <stddef.h>
 
-static const mybot_https_transport_ops_t *s_ops;
+static const mybot_https_ops_t *s_ops;
 
-int mybot_https_transport_register(const mybot_https_transport_ops_t *ops) {
+int mybot_https_register(const mybot_https_ops_t *ops) {
     if (!ops || !ops->name || !ops->name[0] || !ops->connect || !ops->send || !ops->recv ||
         !ops->close || s_ops) {
         return -1;
@@ -16,7 +16,7 @@ int mybot_https_transport_register(const mybot_https_transport_ops_t *ops) {
     return 0;
 }
 
-bool mybot_https_transport_is_registered(void) {
+bool mybot_https_is_registered(void) {
     return s_ops != NULL;
 }
 

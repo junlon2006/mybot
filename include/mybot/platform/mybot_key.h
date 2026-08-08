@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#ifndef MYBOT_KEY_SERVICE_H_
-#define MYBOT_KEY_SERVICE_H_
+#ifndef MYBOT_KEY_H_
+#define MYBOT_KEY_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,19 +26,19 @@ typedef struct {
     const char *name;
     int (*init)(void **ctx, mybot_key_event_handler_t emit, void *user_data);
     void (*destroy)(void *ctx);
-} mybot_key_service_ops_t;
+} mybot_key_ops_t;
 
 /** Register the key backend for the current platform. Call before service initialization. */
-int mybot_key_service_register(const mybot_key_service_ops_t *ops);
+int mybot_key_register(const mybot_key_ops_t *ops);
 
 /** Initialize the registered backend and install the application event handler. */
-int mybot_key_service_init(mybot_key_event_handler_t handler, void *user_data);
+int mybot_key_init(mybot_key_event_handler_t handler, void *user_data);
 
 /** Stop the backend and release its resources. No events are emitted after return. */
-void mybot_key_service_deinit(void);
+void mybot_key_deinit(void);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* MYBOT_KEY_SERVICE_H_ */
+#endif /* MYBOT_KEY_H_ */
