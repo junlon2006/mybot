@@ -20,6 +20,9 @@ between release candidates.
 - Reject `MYBOT_BUILD_LINUX_PLATFORM=ON` with a non-Linux `CONFIG_PLATFORM` at configure time, and
   document the two independent platform-selection variables (`CONFIG_PLATFORM` selects the AOSL
   HAL port; `MYBOT_BUILD_LINUX_PLATFORM` builds the Linux reference backends).
+- Release partially initialized services immediately when `start_services()` fails, instead of
+  relying on a later `mybot_app_stop()` call; service teardown is shared, idempotent, and safe to
+  run twice after a failed startup.
 
 ### Added
 
