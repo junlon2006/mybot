@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <mybot/platform/mybot_lcd.h>
 
+#include "mybot_lcd_internal.h"
+
 #include "linux_backends.h"
 
 #include "api/aosl.h"

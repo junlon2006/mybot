@@ -58,17 +58,20 @@ Register with `mybot_audio_register_capture()` and
 
 #### Device volume (optional)
 
-Volume control has two independent layers:
+The SDK owns volume control and exposes no application-facing volume API; volume changes (for
+example from volume key events) take one of two paths:
 
-- **Media volume** is managed entirely by the SDK. `mybot_audio_set_media_volume()` stores a
-  0..100 software gain that the playback pipeline applies digitally to downlink PCM before it
+- **Device volume** is the primary path. Implement `mybot_audio_volume_ops_t` and call
+  `mybot_audio_device_register_volume()` to route the SDK's volume changes to real hardware
+  (codec register, amplifier, or mixer). `init`, `set_volume`, and `destroy` are required;
+  `get_volume` is optional and used only to sync the SDK's volume state. The SDK initializes
+  the backend during startup and releases it on shutdown.
+- **Media volume** is the fallback used when no device volume backend is active. The SDK keeps a
+  0..100 software gain and the playback pipeline applies it digitally to downlink PCM before it
   reaches the device (linear amplitude, 100 = unity gain). No platform code is required.
-- **Device volume** is an optional platform hook. Implement `mybot_audio_volume_ops_t` and call
-  `mybot_audio_device_register_volume()` to route `mybot_audio_device_set_volume()` /
-  `mybot_audio_device_get_volume()` to real hardware (codec register, amplifier, or mixer).
-  `init`, `set_volume`, and `destroy` are required; `get_volume` is optional. The SDK
-  initializes the backend during startup and releases it on shutdown; an init failure only
-  disables device volume control — playback and media volume keep working.
+
+An init failure only disables device volume control; the SDK falls back to the software gain and
+playback keeps working.
 
 ### Wi-Fi provisioning
 
@@ -116,9 +119,10 @@ isolated development build configured with
 ### Keys
 
 Implement `mybot_key_ops_t` and translate hardware input into conversation start, stop,
-pair, exit, volume-up and volume-down events. The SDK adjusts media volume by 10 on volume
-events; emitting them is optional. Events may be asynchronous. Destroy must stop the source and
-wait for all handlers. Register with `mybot_key_register()`.
+pair, exit, volume-up and volume-down events. The SDK adjusts volume by 10 on volume events —
+real hardware volume when a device volume backend is active, otherwise the media-volume software
+gain; emitting volume events is optional. Events may be asynchronous. Destroy must stop the
+source and wait for all handlers. Register with `mybot_key_register()`.
 
 ### LCD (optional)
 

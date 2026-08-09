@@ -9,56 +9,106 @@
 extern "C" {
 #endif
 
+/** Maximum length of the pairing code buffer, including the NUL terminator. */
 #define MYBOT_LCD_PAIR_CODE_CAPACITY 16
 
+/**
+ * Workflow screens rendered by the SDK.
+ *
+ * The LCD backend receives these as semantic content and decides the concrete
+ * layout, fonts, icons or QR-code presentation itself.
+ */
 typedef enum {
+    /** The device is powering up. */
     MYBOT_LCD_SCREEN_STARTING = 0,
+    /** APSTA Wi-Fi provisioning is in progress. */
     MYBOT_LCD_SCREEN_WIFI_PROVISIONING,
+    /** The Wi-Fi link was lost at runtime. */
     MYBOT_LCD_SCREEN_WIFI_DISCONNECTED,
+    /** Wi-Fi is up and the remaining services are starting. */
     MYBOT_LCD_SCREEN_STARTING_SERVICES,
+    /** The device is waiting for the pairing flow to complete. */
     MYBOT_LCD_SCREEN_PAIRING,
+    /** The pairing screen with a server-provided pairing code. */
     MYBOT_LCD_SCREEN_PAIR_CODE,
+    /** All services are up; the device is ready. */
     MYBOT_LCD_SCREEN_READY,
+    /** A conversation is active. */
     MYBOT_LCD_SCREEN_IN_CONVERSATION,
+    /** Startup failed unrecoverably. */
     MYBOT_LCD_SCREEN_FAILED,
+    /** The application is shutting down. */
     MYBOT_LCD_SCREEN_STOPPING,
+    /** Sentinel; not a valid screen value. */
     MYBOT_LCD_SCREEN_COUNT,
 } mybot_lcd_screen_t;
 
+/**
+ * Semantic content passed to the LCD render() callback.
+ */
 typedef struct {
+    /** The screen to render. */
     mybot_lcd_screen_t screen;
+    /**
+     * Pairing code; valid and NUL-terminated only when
+     * screen == MYBOT_LCD_SCREEN_PAIR_CODE.
+     */
     char pair_code[MYBOT_LCD_PAIR_CODE_CAPACITY];
 } mybot_lcd_content_t;
 
 /**
- * Platform LCD operations. render() receives semantic content so each platform can choose its own
- * layout, fonts, icons, or QR-code presentation. The content pointer is valid only for the duration
- * of the call and must not be retained by the backend.
+ * Platform LCD operations.
+ *
+ * render() receives semantic content so each platform can choose its own
+ * layout, fonts, icons, or QR-code presentation. The content pointer is valid
+ * only for the duration of the call and must not be retained by the backend.
+ *
+ * @note render() may be called from different SDK threads; the SDK serializes
+ *       all calls.
  */
 typedef struct {
+    /** Backend name for logging and diagnostics. */
     const char *name;
+
+    /**
+     * Allocate and open the display.
+     *
+     * @param ctx [out] LCD backend context handle
+     * @return 0 on success, -1 on error
+     */
     int (*init)(void **ctx);
+
+    /**
+     * Render one workflow screen.
+     *
+     * @param ctx     LCD backend context from init()
+     * @param content semantic screen content; borrowed for the duration of
+     *                 the call
+     * @return 0 on success, -1 on error
+     */
     int (*render)(void *ctx, const mybot_lcd_content_t *content);
+
+    /**
+     * Release the display.
+     *
+     * Called only after all render callers have stopped.
+     *
+     * @param ctx LCD backend context from init()
+     */
     void (*destroy)(void *ctx);
 } mybot_lcd_ops_t;
 
-/** Register the LCD backend for the current platform. Call before mybot_start(). */
+/**
+ * Register the LCD backend for the current platform.
+ *
+ * @param ops LCD operations table; must remain valid for the process
+ *            lifetime
+ * @return 0 on success, -1 if ops is invalid or already registered
+ *
+ * @note Call exactly once, before mybot_start(). Required only when the LCD
+ *       feature is enabled.
+ */
 MYBOT_API int mybot_lcd_register(const mybot_lcd_ops_t *ops);
-
-/** Return whether the current platform registered an LCD backend. */
-MYBOT_API bool mybot_lcd_is_registered(void);
-
-/** Initialize the registered LCD backend. */
-MYBOT_API int mybot_lcd_init(void);
-
-/** Render a workflow screen that does not require additional content. */
-MYBOT_API int mybot_lcd_show_screen(mybot_lcd_screen_t screen);
-
-/** Render the pairing screen with a server-provided pairing code. */
-MYBOT_API int mybot_lcd_show_pair_code(const char *pair_code);
-
-/** Release the LCD backend. Call only after all render callers have stopped. Idempotent. */
-MYBOT_API void mybot_lcd_deinit(void);
 
 #ifdef __cplusplus
 }

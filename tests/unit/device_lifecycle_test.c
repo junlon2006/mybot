@@ -2,6 +2,8 @@
 #include "mybot_device_lifecycle.h"
 #include <mybot/platform/mybot_kv_store.h>
 
+#include "mybot_kv_store_internal.h"
+
 #include <api/aosl.h>
 
 #include <assert.h>

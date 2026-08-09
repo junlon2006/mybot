@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <mybot/platform/mybot_wifi.h>
 
+#include "mybot_wifi_internal.h"
+
 #include "api/aosl_atomic.h"
 
 #include <stddef.h>

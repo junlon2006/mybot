@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <mybot/platform/mybot_key.h>
 
+#include "mybot_key_internal.h"
+
 #include "linux_backends.h"
 
 #include "api/aosl.h"

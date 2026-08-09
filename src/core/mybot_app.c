@@ -9,6 +9,14 @@
 #include <mybot/platform/mybot_wifi.h>
 #include <mybot/platform/mybot_https.h>
 
+#include "mybot_audio_internal.h"
+#include "mybot_https_internal.h"
+#include "mybot_key_internal.h"
+#include "mybot_kv_store_internal.h"
+#include "mybot_lcd_internal.h"
+#include "mybot_wake_words_internal.h"
+#include "mybot_wifi_internal.h"
+
 #include "mybot_app.h"
 #include "mybot_device_lifecycle.h"
 #include "mybot_ringbuf.h"
@@ -39,7 +47,7 @@
 #define AUDIO_RINGBUF_SIZE                                                                         \
     (SAMPLE_RATE * AUDIO_RINGBUF_DURATION_MS / 1000 * CHANNELS * BYTES_PER_SAMPLE)
 /* Volume change per VOLUME_UP / VOLUME_DOWN key event. */
-#define MEDIA_VOLUME_KEY_STEP 10
+#define VOLUME_KEY_STEP 10
 /* Device state machine poll interval. Must match the 100 ms/tick assumption
  * in mybot_device_lifecycle_tick() (poll_after_seconds * 10 ticks). */
 #define STATE_TICK_MS 100
@@ -232,10 +240,14 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
         s_app.pb_pending_offset = 0;
         s_app.pb_pending_frames = AUDIO_FRAME_SAMPLES;
 
-        /* Software media volume: scale before the platform write and before
-         * the AEC reference is published, so the reference matches the actual
-         * signal reaching the speaker. */
-        mybot_audio_apply_media_volume(s_app.pb_pending, AUDIO_FRAME_SAMPLES * CHANNELS);
+        /* Volume: a registered device volume backend is the primary control
+         * path, so the software gain is applied only as a fallback. Scale
+         * before the platform write and before the AEC reference is
+         * published, so the reference matches the signal reaching the
+         * speaker. */
+        if (!mybot_audio_device_volume_is_active()) {
+            mybot_audio_apply_media_volume(s_app.pb_pending, AUDIO_FRAME_SAMPLES * CHANNELS);
+        }
 
 #if MYBOT_CLOUD_AEC
         /* Preserve the existing AEC reference timing: publish once when the
@@ -479,8 +491,26 @@ static void dev_on_state_changed(mybot_device_state_t state) {
     }
 }
 
-static void key_adjust_media_volume(int delta) {
-    int volume = mybot_audio_get_media_volume() + delta;
+static void key_adjust_volume(int delta) {
+    int volume;
+    if (mybot_audio_device_volume_is_active()) {
+        /* Primary path: drive the real hardware volume. */
+        if (mybot_audio_device_get_volume(&volume) == 0) {
+            volume += delta;
+            if (volume < MYBOT_AUDIO_VOLUME_MIN) {
+                volume = MYBOT_AUDIO_VOLUME_MIN;
+            } else if (volume > MYBOT_AUDIO_VOLUME_MAX) {
+                volume = MYBOT_AUDIO_VOLUME_MAX;
+            }
+            if (mybot_audio_device_set_volume(volume) == 0) {
+                AOSL_LOG_INF("[KEY] device volume -> %d", volume);
+            }
+        }
+        return;
+    }
+
+    /* Fallback path: adjust the SDK software gain. */
+    volume = mybot_audio_get_media_volume() + delta;
     if (volume < MYBOT_AUDIO_VOLUME_MIN) {
         volume = MYBOT_AUDIO_VOLUME_MIN;
     } else if (volume > MYBOT_AUDIO_VOLUME_MAX) {
@@ -507,10 +537,10 @@ static void on_key_event(mybot_key_event_t event, void *user_data) {
         mybot_app_pair();
         break;
     case MYBOT_KEY_EVENT_VOLUME_UP:
-        key_adjust_media_volume(MEDIA_VOLUME_KEY_STEP);
+        key_adjust_volume(VOLUME_KEY_STEP);
         break;
     case MYBOT_KEY_EVENT_VOLUME_DOWN:
-        key_adjust_media_volume(-MEDIA_VOLUME_KEY_STEP);
+        key_adjust_volume(-VOLUME_KEY_STEP);
         break;
     case MYBOT_KEY_EVENT_EXIT:
         AOSL_LOG_INF("[KEY] exit");

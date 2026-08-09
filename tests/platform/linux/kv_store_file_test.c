@@ -3,6 +3,8 @@
 
 #include <mybot/platform/mybot_kv_store.h>
 
+#include "mybot_kv_store_internal.h"
+
 #include "linux_backends.h"
 
 #include <assert.h>

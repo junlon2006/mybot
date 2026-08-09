@@ -3,6 +3,8 @@
 #include "mybot_device_client.h"
 #include <mybot/platform/mybot_kv_store.h>
 
+#include "mybot_kv_store_internal.h"
+
 #include <api/aosl_log.h>
 #include <api/aosl_atomic.h>
 

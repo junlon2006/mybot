@@ -57,15 +57,17 @@ platforms/my_mcu/
 
 #### 设备音量（可选）
 
-音量控制分为两个相互独立的层次：
+音量由 SDK 统一管理，不对外提供音量控制 API；音量变化（例如音量按键事件）走以下两条
+路径之一：
 
-- **媒体音量**完全由 SDK 管理。`mybot_audio_set_media_volume()` 保存 0..100 的软件增益，
-  播放流水线在 PCM 到达设备前以数字方式应用（线性幅度，100 为原增益）。无需平台代码。
-- **设备音量**是可选的平台钩子。实现 `mybot_audio_volume_ops_t` 并调用
-  `mybot_audio_device_register_volume()`，即可让 `mybot_audio_device_set_volume()` /
-  `mybot_audio_device_get_volume()` 路由到真实硬件（Codec 寄存器、功放或混音器）。
-  `init`、`set_volume`、`destroy` 为必需；`get_volume` 可选。SDK 在启动时初始化该后端，
-  关闭时释放；初始化失败仅禁用设备音量控制——播放与媒体音量不受影响。
+- **设备音量**是首选路径。实现 `mybot_audio_volume_ops_t` 并调用
+  `mybot_audio_device_register_volume()`，即可让 SDK 的音量变化路由到真实硬件（Codec
+  寄存器、功放或混音器）。`init`、`set_volume`、`destroy` 为必需；`get_volume` 可选，
+  仅用于同步 SDK 的音量状态。SDK 在启动时初始化该后端，关闭时释放。
+- **媒体音量**是未注册设备音量后端时的兜底。SDK 保存 0..100 的软件增益，播放流水线在
+  PCM 到达设备前以数字方式应用（线性幅度，100 为原增益）。无需平台代码。
+
+初始化失败仅禁用设备音量控制；SDK 回退到软件增益，播放不受影响。
 
 ### Wi-Fi 配网
 
@@ -108,8 +110,9 @@ Linux 后端立即上报已连接，不是真正的 APSTA 参考实现。
 ### 按键
 
 实现 `mybot_key_ops_t`，将硬件输入转换为会话开始、停止、配对、退出、音量增大与
-音量减小事件。SDK 收到音量事件时将媒体音量步进 10；音量事件为可选。事件可以是异步的。
-Destroy 必须停止输入源并等待所有处理器。使用 `mybot_key_register()` 注册。
+音量减小事件。SDK 收到音量事件时将音量步进 10——设备音量后端激活时调整真实硬件音量，
+否则回退到媒体音量软件增益；音量事件为可选。事件可以是异步的。Destroy 必须停止输入源
+并等待所有处理器。使用 `mybot_key_register()` 注册。
 
 ### LCD（可选）
 

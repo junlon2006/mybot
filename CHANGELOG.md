@@ -34,6 +34,15 @@ between release candidates.
 
 ### Changed
 
+- Volume control is now fully SDK-internal: when a device volume backend is registered, volume
+  changes drive real hardware volume and the playback pipeline skips the software gain; otherwise
+  the SDK falls back to the media-volume software gain. The volume control functions moved from
+  `include/mybot/platform/mybot_audio.h` to the internal `src/internal/mybot_audio_internal.h`.
+- Reduce `include/mybot/platform/*.h` to the platform backend contract only (ops tables, enums
+  and the `mybot_*_register()` entry points, plus the audio volume scale constants): the SDK
+  internal lifecycle/query functions (`init` / `deinit` / `is_registered`, LCD rendering,
+  wake-word PCM feed, KV-store access, capture/playback accessors and volume control) moved to
+  `src/internal/mybot_*_internal.h` and are no longer part of the public API surface.
 - Move conversation-control requests (`mybot_app_start_conversation()`,
   `mybot_app_stop_conversation()`, `mybot_app_pair()`) out of the public header
   `include/mybot/mybot.h` into the internal `src/internal/mybot_app.h`: host applications now
