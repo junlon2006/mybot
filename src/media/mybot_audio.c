@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <mybot/platform/mybot_audio.h>
 
+#include "mybot_audio_internal.h"
+
 #include <api/aosl_atomic.h>
 
 #include <string.h>
@@ -14,6 +16,9 @@ static bool g_volume_active = false;
 
 /* Media volume is SDK-managed digital gain. Defaults to unity (no scaling). */
 static aosl_atomic_t g_media_volume = MYBOT_AUDIO_VOLUME_DEFAULT;
+/* SDK-tracked device volume, used to step volume when the backend has no
+ * get_volume() and to resume after a backend re-initialization. */
+static aosl_atomic_t g_device_volume = MYBOT_AUDIO_VOLUME_DEFAULT;
 
 int mybot_audio_register_capture(const mybot_audio_capture_ops_t *ops) {
     if (!ops || !ops->init || !ops->start || !ops->read || !ops->stop || !ops->destroy ||
@@ -53,6 +58,10 @@ bool mybot_audio_device_volume_is_registered(void) {
     return g_volume_ops != NULL;
 }
 
+bool mybot_audio_device_volume_is_active(void) {
+    return g_volume_active;
+}
+
 int mybot_audio_device_volume_init(void) {
     if (g_volume_active || !g_volume_ops) {
         return -1;
@@ -62,6 +71,13 @@ int mybot_audio_device_volume_init(void) {
         return -1;
     }
     g_volume_active = true;
+    /* Sync the SDK-tracked value with the backend when it can report one. */
+    if (g_volume_ops->get_volume) {
+        int volume = 0;
+        if (g_volume_ops->get_volume(g_volume_ctx, &volume) == 0) {
+            aosl_atomic_set(&g_device_volume, volume);
+        }
+    }
     return 0;
 }
 
@@ -79,14 +95,22 @@ int mybot_audio_device_set_volume(int volume) {
         !g_volume_ops || !g_volume_ops->set_volume) {
         return -1;
     }
-    return g_volume_ops->set_volume(g_volume_ctx, volume);
+    if (g_volume_ops->set_volume(g_volume_ctx, volume) < 0) {
+        return -1;
+    }
+    aosl_atomic_set(&g_device_volume, volume);
+    return 0;
 }
 
 int mybot_audio_device_get_volume(int *volume) {
-    if (!volume || !g_volume_active || !g_volume_ops || !g_volume_ops->get_volume) {
+    if (!volume || !g_volume_active || !g_volume_ops) {
         return -1;
     }
-    return g_volume_ops->get_volume(g_volume_ctx, volume);
+    if (g_volume_ops->get_volume) {
+        return g_volume_ops->get_volume(g_volume_ctx, volume);
+    }
+    *volume = (int)aosl_atomic_read(&g_device_volume);
+    return 0;
 }
 
 int mybot_audio_set_media_volume(int volume) {

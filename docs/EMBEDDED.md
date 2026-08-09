@@ -74,8 +74,9 @@ true, worker threads and timers keep running. The power levers belong to the int
   this releases workers, audio devices, TLS, and RTC resources.
 - **Radio**: the Wi-Fi provisioning backend owns the radio; implement the platform's low-power
   policy there.
-- **Audio path**: gate the codec/amplifier in the audio backends; the media-volume (software gain)
-  and device-volume (hardware hook) APIs give you the volume control surface.
+- **Audio path**: gate the codec/amplifier in the audio backends; the SDK owns volume control — a
+  registered device-volume backend (hardware hook) is the primary path, with a software media
+  gain as fallback.
 - **Polling**: intervals are server-driven (3 s minimum pairing, 30 s default runtime); agree on
   relaxed intervals with the server if idle power matters.
 

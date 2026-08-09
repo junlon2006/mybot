@@ -8,36 +8,76 @@
 extern "C" {
 #endif
 
+/**
+ * Semantic key events translated from hardware input by the platform backend.
+ */
 typedef enum {
+    /** Start a conversation. */
     MYBOT_KEY_EVENT_CONVERSATION_START = 0,
+    /** Stop the active conversation. */
     MYBOT_KEY_EVENT_CONVERSATION_STOP,
+    /** Re-pair the device with the service. */
     MYBOT_KEY_EVENT_PAIR,
+    /** Request a graceful application exit. */
     MYBOT_KEY_EVENT_EXIT,
-    /* Optional: adjust the SDK-managed media volume. */
+    /** Raise the SDK-managed media volume. Optional. */
     MYBOT_KEY_EVENT_VOLUME_UP,
+    /** Lower the SDK-managed media volume. Optional. */
     MYBOT_KEY_EVENT_VOLUME_DOWN,
 } mybot_key_event_t;
 
+/**
+ * Backend-to-SDK key event callback.
+ *
+ * @param event     the key event that occurred
+ * @param user_data opaque pointer supplied to the backend at init() time
+ *
+ * @note Called from platform context; keep it short and do not call
+ *       mybot_stop() from inside this callback.
+ */
 typedef void (*mybot_key_event_handler_t)(mybot_key_event_t event, void *user_data);
 
 /**
- * Platform key input operations. init() starts the backend event source; destroy() stops it
- * and waits for any in-flight event handler to return.
+ * Platform key input operations.
+ *
+ * init() starts the backend event source; destroy() stops it and waits for
+ * any in-flight event handler to return.
  */
 typedef struct {
+    /** Backend name for logging and diagnostics. */
     const char *name;
+
+    /**
+     * Allocate and start the key event source.
+     *
+     * @param ctx       [out] backend context handle
+     * @param emit      callback for reporting key events
+     * @param user_data opaque pointer forwarded to emit(); reserved, pass NULL
+     * @return 0 on success, -1 on error
+     */
     int (*init)(void **ctx, mybot_key_event_handler_t emit, void *user_data);
+
+    /**
+     * Stop the key event source and release all resources.
+     *
+     * Must stop the input source and wait for in-flight handlers. No event is
+     * emitted after this returns.
+     *
+     * @param ctx backend context from init()
+     */
     void (*destroy)(void *ctx);
 } mybot_key_ops_t;
 
-/** Register the key backend for the current platform. Call before service initialization. */
+/**
+ * Register the key backend for the current platform.
+ *
+ * @param ops key operations table; must remain valid for the process
+ *            lifetime
+ * @return 0 on success, -1 if ops is invalid or already registered
+ *
+ * @note Call exactly once, before mybot_start().
+ */
 MYBOT_API int mybot_key_register(const mybot_key_ops_t *ops);
-
-/** Initialize the registered backend and install the application event handler. */
-MYBOT_API int mybot_key_init(mybot_key_event_handler_t handler, void *user_data);
-
-/** Stop the backend and release its resources. No events are emitted after return. */
-MYBOT_API void mybot_key_deinit(void);
 
 #ifdef __cplusplus
 }

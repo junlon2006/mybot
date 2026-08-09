@@ -12,8 +12,8 @@
  *           MYBOT_ERR_FAIL is the generic failure any API may return.
  *
  * A negative code never represents a successful outcome: for example
- * MYBOT_ERR_NOT_FOUND from mybot_kv_store_get() means the key is absent,
- * which callers may treat as a benign first-boot state.
+ * MYBOT_ERR_NOT_FOUND from the platform KV-store get callback means the key is
+ * absent, which callers may treat as a benign first-boot state.
  */
 
 #define MYBOT_OK 0

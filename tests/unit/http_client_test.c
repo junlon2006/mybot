@@ -2,6 +2,8 @@
 #include <api/aosl.h>
 #include <mybot/platform/mybot_https.h>
 
+#include "mybot_https_internal.h"
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>

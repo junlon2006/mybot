@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <mybot/platform/mybot_key.h>
 
+#include "mybot_key_internal.h"
+
 #include <stddef.h>
 
 static const mybot_key_ops_t *s_ops;

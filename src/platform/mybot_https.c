@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <mybot/platform/mybot_https.h>
 
+#include "mybot_https_internal.h"
 #include "mybot_https_transport.h"
 
 #include <stddef.h>

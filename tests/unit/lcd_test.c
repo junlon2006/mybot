@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <mybot/platform/mybot_lcd.h>
 
+#include "mybot_lcd_internal.h"
+
 #include "api/aosl.h"
 #include "api/aosl_atomic.h"
 #include "hal/aosl_hal_time.h"

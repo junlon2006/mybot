@@ -9,40 +9,77 @@
 extern "C" {
 #endif
 
-/** wake_word is backend-owned and valid only for the duration of the callback. */
+/**
+ * Local ASR detection callback.
+ *
+ * @param wake_word detected wake word; owned by the backend and valid only
+ *                  for the duration of the callback
+ * @param user_data opaque pointer supplied to the backend at init() time
+ *
+ * @note Called from backend or SDK audio context; keep it short.
+ */
 typedef void (*mybot_wake_words_handler_t)(const char *wake_word, void *user_data);
 
 /**
  * Local ASR wake-word backend operations.
  *
- * process() receives interleaved PCM frames in the format passed to init(). The PCM pointer is
- * valid only for the duration of process(); an asynchronous backend must copy the data it needs.
- * A backend may emit detections from process() or its own worker thread. destroy() must stop the
- * backend and wait for all in-flight handlers to return.
+ * The backend receives captured PCM frames and reports local detections.
  */
 typedef struct {
+    /** Backend name for logging and diagnostics. */
     const char *name;
+
+    /**
+     * Allocate and start the local ASR engine.
+     *
+     * @param ctx             [out] backend context handle
+     * @param sample_rate     PCM sample rate in Hz (e.g. 16000)
+     * @param channels        number of PCM channels (e.g. 1)
+     * @param bits_per_sample bits per PCM sample (e.g. 16)
+     * @param handler         detection callback
+     * @param user_data       opaque pointer forwarded to handler()
+     * @return 0 on success, -1 on error
+     */
     int (*init)(void **ctx, int sample_rate, int channels, int bits_per_sample,
                 mybot_wake_words_handler_t handler, void *user_data);
+
+    /**
+     * Feed one block of captured interleaved PCM frames.
+     *
+     * @param ctx    backend context from init()
+     * @param pcm    interleaved PCM frames in the format passed to init();
+     *               borrowed for the duration of the call — an asynchronous
+     *               backend must copy the data it needs
+     * @param frames number of frames in pcm
+     * @return 0 on success, -1 on error
+     *
+     * @note A backend may emit detections from process() or from its own
+     *       worker thread.
+     */
     int (*process)(void *ctx, const void *pcm, int frames);
+
+    /**
+     * Stop local ASR and release all resources.
+     *
+     * Must stop the backend and wait for all in-flight detection handlers to
+     * return before returning.
+     *
+     * @param ctx backend context from init()
+     */
     void (*destroy)(void *ctx);
 } mybot_wake_words_ops_t;
 
-/** Register the local ASR backend for the current platform. Call before mybot_start(). */
+/**
+ * Register the local ASR backend for the current platform.
+ *
+ * @param ops wake-word operations table; must remain valid for the process
+ *            lifetime
+ * @return 0 on success, -1 if ops is invalid or already registered
+ *
+ * @note Call exactly once, before mybot_start(). Required only when
+ *       MYBOT_WAKE_WORDS=ON.
+ */
 MYBOT_API int mybot_wake_words_register(const mybot_wake_words_ops_t *ops);
-
-/** Return whether the current platform registered a local ASR backend. */
-MYBOT_API bool mybot_wake_words_is_registered(void);
-
-/** Initialize the registered backend for the capture PCM format. */
-MYBOT_API int mybot_wake_words_init(int sample_rate, int channels, int bits_per_sample,
-                                    mybot_wake_words_handler_t handler, void *user_data);
-
-/** Feed captured interleaved PCM frames to the local ASR backend. */
-MYBOT_API int mybot_wake_words_process(const void *pcm, int frames);
-
-/** Stop local ASR and release its resources. Idempotent. */
-MYBOT_API void mybot_wake_words_deinit(void);
 
 #ifdef __cplusplus
 }

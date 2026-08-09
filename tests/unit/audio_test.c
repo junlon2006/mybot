@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <mybot/platform/mybot_audio.h>
 
+#include "mybot_audio_internal.h"
+
 #include <assert.h>
 #include <stddef.h>
 #include <string.h>
@@ -108,12 +110,14 @@ int main(void) {
     assert(mybot_audio_device_register_volume(&volume) == 0);
     assert(mybot_audio_device_register_volume(&volume) < 0);
     assert(mybot_audio_device_volume_is_registered());
+    assert(!mybot_audio_device_volume_is_active());
 
     int v = -1;
     assert(mybot_audio_device_set_volume(50) < 0); /* backend not initialized yet */
     assert(mybot_audio_device_get_volume(&v) < 0);
 
     assert(mybot_audio_device_volume_init() == 0);
+    assert(mybot_audio_device_volume_is_active());
     assert(mybot_audio_device_volume_init() < 0); /* double init */
     assert(mybot_audio_device_set_volume(60) == 0);
     assert(mybot_audio_device_get_volume(&v) == 0);
@@ -124,12 +128,15 @@ int main(void) {
 
     mybot_audio_device_volume_deinit();
     mybot_audio_device_volume_deinit(); /* idempotent */
+    assert(!mybot_audio_device_volume_is_active());
     assert(mybot_audio_device_set_volume(70) < 0);
     assert(mybot_audio_device_get_volume(&v) < 0);
     assert(mybot_audio_device_volume_init() == 0); /* re-init after deinit */
+    assert(mybot_audio_device_volume_is_active());
     assert(mybot_audio_device_get_volume(&v) == 0);
     assert(v == 60); /* backend state survives deinit in this fake backend */
     mybot_audio_device_volume_deinit();
+    assert(!mybot_audio_device_volume_is_active());
 
     /* Media volume defaults to unity and skips processing. */
     assert(mybot_audio_get_media_volume() == MYBOT_AUDIO_VOLUME_DEFAULT);

@@ -50,9 +50,10 @@ RTOS, or a bare-metal MCU.
   responds to new input.
 - **Full-duplex voice interaction · Agora AI capabilities**: Built on Agora RTSA, with cloud AEC, AI
   QoS, and optional real-time transcription.
-- **Volume control**: Two independent layers — an SDK-managed media volume (digital software gain
-  applied to playback PCM, works on every platform) and an optional real-device volume backend
-  (codec / amplifier / mixer) registered by the platform.
+- **Volume control**: The SDK owns volume. When the platform registers a real-device volume
+  backend (codec / amplifier / mixer), volume changes drive hardware volume directly; otherwise
+  the SDK falls back to a digital software gain applied to playback PCM. There is no
+  application-facing volume API.
 - **Optional local wake words**: Off by default; wake behavior is identical to starting a
   conversation with a physical button.
 - **Button and LCD workflows**: Semantic screen states (provisioning / pair code / ready / in
@@ -126,7 +127,7 @@ Run the example:
 ```
 
 Once ready, press `s` to start a conversation, `q` to stop it, `p` to re-pair, `u` / `d` to raise /
-lower the media volume, `e` to exit.
+lower the volume, `e` to exit.
 
 The Linux backend is a **development stand-in**: it reuses the host network and reports STA as
 connected immediately; it does not implement real APSTA provisioning. Audio uses the ALSA `default`

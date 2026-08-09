@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <mybot/platform/mybot_wake_words.h>
 
+#include "mybot_wake_words_internal.h"
+
 #include <assert.h>
 #include <stdbool.h>
 #include <stddef.h>
