@@ -67,10 +67,10 @@ additional internal threads whose stacks are vendor-managed.
 
 ## Power management
 
-Current status: the SDK has **no standby / low-power mode**. While `mybot_app_is_running()` is
+Current status: the SDK has **no standby / low-power mode**. While `mybot_is_running()` is
 true, worker threads and timers keep running. The power levers belong to the integrator:
 
-- **Sleep**: call `mybot_app_stop()` before entering low power and `mybot_app_start()` on wake;
+- **Sleep**: call `mybot_stop()` before entering low power and `mybot_start()` on wake;
   this releases workers, audio devices, TLS, and RTC resources.
 - **Radio**: the Wi-Fi provisioning backend owns the radio; implement the platform's low-power
   policy there.

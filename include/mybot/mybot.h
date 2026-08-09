@@ -11,61 +11,155 @@
 extern "C" {
 #endif
 
-/** SDK configuration supplied by the host application. */
+/**
+ * @brief SDK configuration supplied by the host application.
+ *
+ * All string fields must be NUL-terminated within their fixed-size buffers;
+ * mybot_start() validates this and rejects the configuration otherwise.
+ * Empty (zero-length) strings are allowed only where noted.
+ */
 typedef struct {
-    char server_base[128]; /* HTTPS service base URL */
-    char device_id[64];    /* unique device identifier */
-    char firmware_ver[32]; /* firmware version (optional) */
-    char hw_model[32];     /* hardware model (optional) */
-} mybot_app_config_t;
+    /** Device-service base URL. Must be a non-empty "https://" URL (or
+     *  "http://" in an explicitly insecure development build). */
+    char server_base[128];
+    /** Unique device identifier reported to the device service, e.g.
+     *  "AG-A1B2C3". Must be non-empty. */
+    char device_id[64];
+    /** Firmware version string reported to the device service. Optional;
+     *  may be empty. */
+    char firmware_ver[32];
+    /** Hardware model string reported to the device service. Optional;
+     *  may be empty. */
+    char hw_model[32];
+} mybot_config_t;
 
+/**
+ * Application-level lifecycle state, returned by mybot_get_state().
+ *
+ * Describes the startup / runtime state of the whole SDK application instance
+ * (Wi-Fi provisioning, service bring-up, connectivity, shutdown). It does not
+ * describe device business state: pairing and conversation activity are
+ * tracked by the internal device-lifecycle state machine (e.g.
+ * MYBOT_DEVICE_STATE_IN_CONVERSATION) and are not exposed here.
+ */
 typedef enum {
-    MYBOT_APP_STATE_STOPPED = 0,
-    MYBOT_APP_STATE_WIFI_PROVISIONING,
-    MYBOT_APP_STATE_STARTING_SERVICES,
-    MYBOT_APP_STATE_READY,
-    MYBOT_APP_STATE_WIFI_DISCONNECTED,
-    MYBOT_APP_STATE_FAILED,
-    MYBOT_APP_STATE_STOPPING,
-} mybot_app_state_t;
+    /** Not started, or fully stopped. Entered at the end of mybot_stop()
+     *  after all worker threads and devices are released; also the value
+     *  reported before mybot_start(). */
+    MYBOT_STATE_STOPPED = 0,
+    /** APSTA Wi-Fi provisioning is in progress. mybot_start() is
+     *  non-blocking and returns after starting provisioning; this state
+     *  lasts until the STA link reaches MYBOT_WIFI_STATE_CONNECTED. */
+    MYBOT_STATE_WIFI_PROVISIONING,
+    /** Wi-Fi is connected and the remaining services (KV storage, keys,
+     *  audio capture/playback, device service, RTC) are being initialized
+     *  asynchronously. A failure here transitions to MYBOT_STATE_FAILED. */
+    MYBOT_STATE_STARTING_SERVICES,
+    /** All services are up and the device can start/stop conversations or
+     *  re-pair. Note that this state is retained while a conversation is
+     *  active; conversation activity is tracked internally and is not
+     *  reflected in this enum. */
+    MYBOT_STATE_READY,
+    /** Runtime Wi-Fi link was lost (or failed after provisioning);
+     *  device-service traffic is paused and any active RTC conversation is
+     *  ended locally. Returns to MYBOT_STATE_READY on reconnect. */
+    MYBOT_STATE_WIFI_DISCONNECTED,
+    /** Unrecoverable failure: Wi-Fi provisioning, service bring-up, or a
+     *  runtime event queue failure. The application should report the error
+     *  and call mybot_stop(). */
+    MYBOT_STATE_FAILED,
+    /** mybot_stop() is in progress: worker threads, audio devices, TLS and
+     *  RTC resources are being torn down. Ends in MYBOT_STATE_STOPPED. */
+    MYBOT_STATE_STOPPING,
+} mybot_state_t;
 
 /**
  * @brief Initialize and start the application.
  *
- * Non-blocking: starts APSTA Wi-Fi provisioning and returns. The remaining services are
- * initialized asynchronously after Wi-Fi reaches MYBOT_WIFI_STATE_CONNECTED.
- * The caller must call mybot_app_stop() before exiting.
+ * Non-blocking: starts APSTA Wi-Fi provisioning and returns immediately. The
+ * remaining services (KV storage, keys, audio, device service, RTC) are
+ * initialized asynchronously on the startup worker once the STA link reaches
+ * MYBOT_WIFI_STATE_CONNECTED.
  *
- * @param cfg application configuration.
+ * Preconditions:
+ * - Every required platform backend must be registered first (Wi-Fi, KV,
+ *   key, audio capture and playback, HTTPS transport). LCD and wake-word
+ *   backends are required only when the corresponding features are enabled.
+ * - With MYBOT_ENABLE_HTTPS=ON, a "https://" server requires a registered
+ *   TLS transport (mybot_https_register()); plain "http://" is rejected
+ *   unless MYBOT_ALLOW_INSECURE_HTTP=ON is set for development builds.
+ *
+ * The configuration is validated (non-NULL cfg, NUL-terminated strings,
+ * non-empty server_base / device_id, supported URL scheme). Calling
+ * mybot_start() while the application is already active returns -1.
+ *
+ * @param cfg application configuration; must stay valid only for the duration
+ *            of the call (it is copied).
  * @return 0 on success, -1 on error. On error, all partially initialized
- *         resources have already been released.
+ *         resources have already been released and the application is stopped.
+ *
+ * @note The caller must call mybot_stop() before exiting the process, and
+ *       may call mybot_start() again after mybot_stop() returns.
+ * @note Call from the main application thread, not from a platform event
+ *       callback.
  */
-MYBOT_API int mybot_app_start(const mybot_app_config_t *cfg);
+MYBOT_API int mybot_start(const mybot_config_t *cfg);
 
-/** @brief Check whether the application is still running. */
-MYBOT_API bool mybot_app_is_running(void);
+/**
+ * @brief Check whether the application instance is still running.
+ *
+ * @return true from a successful mybot_start() until mybot_request_exit() or
+ *         mybot_stop() clears the running flag; false otherwise (also when
+ *         not started, after a failed start, or after stopping).
+ *
+ * @note Thread-safe (atomic read). The main loop should poll this and call
+ *       mybot_stop() once it returns false.
+ */
+MYBOT_API bool mybot_is_running(void);
 
-/** @brief Return the current application startup/runtime state. */
-MYBOT_API mybot_app_state_t mybot_app_get_state(void);
+/**
+ * @brief Return the current application lifecycle state.
+ *
+ * @return One of the mybot_state_t values. The state reflects the
+ *         startup / runtime / shutdown phase of the application instance, not
+ *         device business state: during an active conversation it stays
+ *         MYBOT_STATE_READY.
+ *
+ * @note Thread-safe (atomic read).
+ * @see mybot_state_t
+ */
+MYBOT_API mybot_state_t mybot_get_state(void);
 
-/** @brief Request a graceful exit (used by signal handlers / UI keys). */
-MYBOT_API void mybot_app_request_exit(void);
-
-/** @brief User requests to start a conversation (button / key). */
-MYBOT_API void mybot_app_start_conversation(void);
-
-/** @brief User requests to stop the current conversation. */
-MYBOT_API void mybot_app_stop_conversation(void);
-
-/** @brief User requests to (re-)pair the device. */
-MYBOT_API void mybot_app_pair(void);
+/**
+ * @brief Request a graceful application exit.
+ *
+ * Non-blocking: only clears the running flag so mybot_is_running() starts
+ * returning false; no worker thread or resource is torn down here. The host
+ * main loop observes the flag change and should then call mybot_stop() to
+ * release threads and devices.
+ *
+ * Safe to call from any thread or event callback (key EXIT events, signal
+ * handlers, UI commands) and idempotent — repeated calls are harmless.
+ *
+ * @note This is a request, not teardown: use mybot_stop() for actual cleanup.
+ */
+MYBOT_API void mybot_request_exit(void);
 
 /**
  * @brief Stop the application and release all resources.
  *
- * Blocks until all worker threads have exited. Idempotent.
+ * Signals every worker to stop, waits for all worker threads to exit, and
+ * releases audio devices, TLS, Wi-Fi, LCD and RTC resources.
+ *
+ * Idempotent: safe to call when the application is not running, after a
+ * failed mybot_start(), or repeatedly. After it returns, the application
+ * returns to MYBOT_STATE_STOPPED and may be started again.
+ *
+ * @warning Blocks until shutdown completes, so it must be called from the
+ *          main application thread — never from inside a platform event
+ *          callback, an SDK worker thread, or a signal handler.
  */
-MYBOT_API void mybot_app_stop(void);
+MYBOT_API void mybot_stop(void);
 
 #ifdef __cplusplus
 }

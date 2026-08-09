@@ -28,7 +28,7 @@ typedef struct {
     void (*destroy)(void *ctx);
 } mybot_wake_words_ops_t;
 
-/** Register the local ASR backend for the current platform. Call before mybot_app_start(). */
+/** Register the local ASR backend for the current platform. Call before mybot_start(). */
 MYBOT_API int mybot_wake_words_register(const mybot_wake_words_ops_t *ops);
 
 /** Return whether the current platform registered a local ASR backend. */

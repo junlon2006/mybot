@@ -9,6 +9,7 @@
 #include <mybot/platform/mybot_wifi.h>
 #include <mybot/platform/mybot_https.h>
 
+#include "mybot_app.h"
 #include "mybot_device_lifecycle.h"
 #include "mybot_ringbuf.h"
 #include "mybot_rtc_session.h"
@@ -58,7 +59,7 @@ static struct {
 #if MYBOT_WAKE_WORDS
     bool wake_words_active;
 #endif
-    mybot_app_config_t config;
+    mybot_config_t config;
     aosl_mpq_t startup_mpq;
 
     /* Audio capture */
@@ -151,7 +152,7 @@ static void capture_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc,
     }
 
 #if MYBOT_WAKE_WORDS
-    if (s_app.wake_words_active && mybot_app_get_state() == MYBOT_APP_STATE_READY &&
+    if (s_app.wake_words_active && mybot_get_state() == MYBOT_STATE_READY &&
         mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_RUNTIME) {
         static unsigned int process_error_count;
         if (mybot_wake_words_process(s_app.cap_frame, frames) < 0) {
@@ -380,9 +381,9 @@ static void dev_on_pair_code(const char *code) {
     AOSL_LOG_INF("==== PAIR CODE ====");
     AOSL_LOG_INF("*** PAIR CODE: %s ***", code);
     AOSL_LOG_INF("*** Enter this code in the web UI to claim the device ***");
-    mybot_app_state_t app_state = mybot_app_get_state();
-    if (app_state == MYBOT_APP_STATE_STOPPING || app_state == MYBOT_APP_STATE_FAILED ||
-        app_state == MYBOT_APP_STATE_WIFI_DISCONNECTED) {
+    mybot_state_t app_state = mybot_get_state();
+    if (app_state == MYBOT_STATE_STOPPING || app_state == MYBOT_STATE_FAILED ||
+        app_state == MYBOT_STATE_WIFI_DISCONNECTED) {
         return;
     }
     lcd_show_pair_code(code);
@@ -455,9 +456,9 @@ static void dev_on_conversation_stop(void) {
 }
 
 static void dev_on_state_changed(mybot_device_state_t state) {
-    mybot_app_state_t app_state = mybot_app_get_state();
-    if (app_state == MYBOT_APP_STATE_STOPPING || app_state == MYBOT_APP_STATE_FAILED ||
-        app_state == MYBOT_APP_STATE_WIFI_DISCONNECTED) {
+    mybot_state_t app_state = mybot_get_state();
+    if (app_state == MYBOT_STATE_STOPPING || app_state == MYBOT_STATE_FAILED ||
+        app_state == MYBOT_STATE_WIFI_DISCONNECTED) {
         return;
     }
 
@@ -513,7 +514,7 @@ static void on_key_event(mybot_key_event_t event, void *user_data) {
         break;
     case MYBOT_KEY_EVENT_EXIT:
         AOSL_LOG_INF("[KEY] exit");
-        mybot_app_request_exit();
+        mybot_request_exit();
         break;
     }
 }
@@ -594,7 +595,7 @@ static void mpq_fini(void *arg) {
  * cleanup_services() releases everything start_services() may have
  * initialized. It is idempotent and is called both from the
  * start_services() failure path (so partial startup leaks nothing even if
- * the host never calls mybot_app_stop()) and from mybot_app_stop().
+ * the host never calls mybot_stop()) and from mybot_stop().
  *
  * Ring buffers are intentionally NOT destroyed here: on_remote_audio() (an
  * RTC SDK callback thread) writes pb_ringbuf, and only mybot_rtc_session_fini()
@@ -696,7 +697,7 @@ static void destroy_audio_ringbufs(void) {
 }
 
 static int start_services(void) {
-    const mybot_app_config_t *cfg = &s_app.config;
+    const mybot_config_t *cfg = &s_app.config;
 
     /* ---- 1. Initialize local storage and key input services. ---- */
     if (mybot_kv_store_init() < 0) {
@@ -713,7 +714,7 @@ static int start_services(void) {
 
     /* ---- 2. Initialize audio devices via the registered platform ops ----
      * The platform backend (e.g. ALSA on Linux) must have registered itself
-     * through mybot_audio_register_*() before mybot_app_start() is called. */
+     * through mybot_audio_register_*() before mybot_start() is called. */
     const mybot_audio_capture_ops_t *cap_ops = mybot_audio_get_capture();
     const mybot_audio_playback_ops_t *pb_ops = mybot_audio_get_playback();
     if (!cap_ops || !pb_ops) {
@@ -854,15 +855,15 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
         return;
     }
 
-    mybot_app_state_t app_state = mybot_app_get_state();
-    if (app_state == MYBOT_APP_STATE_STOPPING || app_state == MYBOT_APP_STATE_FAILED) {
+    mybot_state_t app_state = mybot_get_state();
+    if (app_state == MYBOT_STATE_STOPPING || app_state == MYBOT_STATE_FAILED) {
         return;
     }
 
     mybot_wifi_state_t wifi_state = (mybot_wifi_state_t)argv[0];
-    if (wifi_state == MYBOT_WIFI_STATE_FAILED && app_state == MYBOT_APP_STATE_WIFI_PROVISIONING) {
-        if (aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING,
-                                MYBOT_APP_STATE_FAILED) == MYBOT_APP_STATE_WIFI_PROVISIONING) {
+    if (wifi_state == MYBOT_WIFI_STATE_FAILED && app_state == MYBOT_STATE_WIFI_PROVISIONING) {
+        if (aosl_atomic_cmpxchg(&s_app.state, MYBOT_STATE_WIFI_PROVISIONING, MYBOT_STATE_FAILED) ==
+            MYBOT_STATE_WIFI_PROVISIONING) {
             lcd_show_screen(MYBOT_LCD_SCREEN_FAILED);
             AOSL_LOG_ERR("wifi provisioning failed");
             aosl_atomic_set(&s_app.running, false);
@@ -871,69 +872,67 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
     }
 
     if (wifi_state == MYBOT_WIFI_STATE_DISCONNECTED) {
-        if (app_state == MYBOT_APP_STATE_READY) {
+        if (app_state == MYBOT_STATE_READY) {
             mybot_device_lifecycle_set_network_available(false);
-            aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_WIFI_DISCONNECTED);
+            aosl_atomic_set(&s_app.state, MYBOT_STATE_WIFI_DISCONNECTED);
             AOSL_LOG_WRN("Wi-Fi disconnected; pausing device-service activity");
-        } else if (app_state == MYBOT_APP_STATE_WIFI_DISCONNECTED) {
+        } else if (app_state == MYBOT_STATE_WIFI_DISCONNECTED) {
             return;
         }
         lcd_show_screen(MYBOT_LCD_SCREEN_WIFI_DISCONNECTED);
         return;
     }
 
-    if (wifi_state == MYBOT_WIFI_STATE_FAILED && app_state != MYBOT_APP_STATE_WIFI_PROVISIONING) {
+    if (wifi_state == MYBOT_WIFI_STATE_FAILED && app_state != MYBOT_STATE_WIFI_PROVISIONING) {
         mybot_device_lifecycle_set_network_available(false);
-        aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_WIFI_DISCONNECTED);
+        aosl_atomic_set(&s_app.state, MYBOT_STATE_WIFI_DISCONNECTED);
         lcd_show_screen(MYBOT_LCD_SCREEN_WIFI_DISCONNECTED);
         AOSL_LOG_WRN("Wi-Fi failed at runtime; pausing device-service activity");
         return;
     }
 
-    if (wifi_state == MYBOT_WIFI_STATE_CONNECTED &&
-        app_state == MYBOT_APP_STATE_WIFI_DISCONNECTED) {
+    if (wifi_state == MYBOT_WIFI_STATE_CONNECTED && app_state == MYBOT_STATE_WIFI_DISCONNECTED) {
         mybot_device_lifecycle_set_network_available(true);
-        aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_READY);
+        aosl_atomic_set(&s_app.state, MYBOT_STATE_READY);
         AOSL_LOG_INF("Wi-Fi reconnected; resuming device-service activity");
         dev_on_state_changed(mybot_device_lifecycle_get_state());
         return;
     }
 
     if (wifi_state != MYBOT_WIFI_STATE_CONNECTED ||
-        aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING,
-                            MYBOT_APP_STATE_STARTING_SERVICES) !=
-            MYBOT_APP_STATE_WIFI_PROVISIONING) {
+        aosl_atomic_cmpxchg(&s_app.state, MYBOT_STATE_WIFI_PROVISIONING,
+                            MYBOT_STATE_STARTING_SERVICES) != MYBOT_STATE_WIFI_PROVISIONING) {
         return;
     }
 
     lcd_show_screen(MYBOT_LCD_SCREEN_STARTING_SERVICES);
     if (start_services() < 0) {
-        if (aosl_atomic_read(&s_app.state) != MYBOT_APP_STATE_STOPPING) {
+        if (aosl_atomic_read(&s_app.state) != MYBOT_STATE_STOPPING) {
             lcd_show_screen(MYBOT_LCD_SCREEN_FAILED);
-            aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_FAILED);
+            aosl_atomic_set(&s_app.state, MYBOT_STATE_FAILED);
             aosl_atomic_set(&s_app.running, false);
         }
         return;
     }
 
-    if (aosl_atomic_cmpxchg(&s_app.state, MYBOT_APP_STATE_STARTING_SERVICES,
-                            MYBOT_APP_STATE_READY) == MYBOT_APP_STATE_STARTING_SERVICES) {
+    if (aosl_atomic_cmpxchg(&s_app.state, MYBOT_STATE_STARTING_SERVICES, MYBOT_STATE_READY) ==
+        MYBOT_STATE_STARTING_SERVICES) {
         dev_on_state_changed(mybot_device_lifecycle_get_state());
     }
 }
 
 static void on_wifi_state_changed(mybot_wifi_state_t state, void *user_data) {
     (void)user_data;
-    mybot_app_state_t app_state = mybot_app_get_state();
-    if (app_state == MYBOT_APP_STATE_STOPPING || app_state == MYBOT_APP_STATE_FAILED ||
-        app_state == MYBOT_APP_STATE_STOPPED) {
+    mybot_state_t app_state = mybot_get_state();
+    if (app_state == MYBOT_STATE_STOPPING || app_state == MYBOT_STATE_FAILED ||
+        app_state == MYBOT_STATE_STOPPED) {
         return;
     }
 
     if (aosl_mpq_queue(s_app.startup_mpq, AOSL_MPQ_INVALID, AOSL_REF_INVALID, "handle_wifi_state",
                        handle_wifi_state, 1, (uintptr_t)state) < 0) {
         AOSL_LOG_ERR("failed to queue wifi state transition");
-        if (aosl_atomic_cmpxchg(&s_app.state, app_state, MYBOT_APP_STATE_FAILED) == app_state) {
+        if (aosl_atomic_cmpxchg(&s_app.state, app_state, MYBOT_STATE_FAILED) == app_state) {
             lcd_show_screen(MYBOT_LCD_SCREEN_FAILED);
             aosl_atomic_set(&s_app.running, false);
         }
@@ -944,7 +943,7 @@ static void on_wifi_state_changed(mybot_wifi_state_t state, void *user_data) {
  * Public API
  * ---------------------------------------------------------- */
 
-int mybot_app_start(const mybot_app_config_t *cfg) {
+int mybot_start(const mybot_config_t *cfg) {
     if (s_app.aosl_active || !cfg || !memchr(cfg->server_base, '\0', sizeof(cfg->server_base)) ||
         !memchr(cfg->device_id, '\0', sizeof(cfg->device_id)) ||
         !memchr(cfg->firmware_ver, '\0', sizeof(cfg->firmware_ver)) ||
@@ -976,7 +975,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
     memset(&s_app, 0, sizeof(s_app));
     memcpy(&s_app.config, cfg, sizeof(s_app.config));
     aosl_atomic_set(&s_app.running, true);
-    aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_STOPPED);
+    aosl_atomic_set(&s_app.state, MYBOT_STATE_STOPPED);
     s_app.startup_mpq = AOSL_MPQ_INVALID;
     s_app.mpq = AOSL_MPQ_INVALID;
     s_app.send_timer = AOSL_MPQ_TIMER_INVALID;
@@ -1006,7 +1005,7 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
         goto fail;
     }
 
-    aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_WIFI_PROVISIONING);
+    aosl_atomic_set(&s_app.state, MYBOT_STATE_WIFI_PROVISIONING);
     lcd_show_screen(MYBOT_LCD_SCREEN_WIFI_PROVISIONING);
     if (mybot_wifi_init(s_app.config.device_id, on_wifi_state_changed, NULL) < 0) {
         AOSL_LOG_ERR("wifi provisioning init failed");
@@ -1018,45 +1017,45 @@ int mybot_app_start(const mybot_app_config_t *cfg) {
 
 fail:
     lcd_show_screen(MYBOT_LCD_SCREEN_FAILED);
-    aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_FAILED);
-    mybot_app_stop();
+    aosl_atomic_set(&s_app.state, MYBOT_STATE_FAILED);
+    mybot_stop();
     return -1;
 }
 
-bool mybot_app_is_running(void) {
+bool mybot_is_running(void) {
     return aosl_atomic_read(&s_app.running) != 0;
 }
 
-mybot_app_state_t mybot_app_get_state(void) {
-    return (mybot_app_state_t)aosl_atomic_read(&s_app.state);
+mybot_state_t mybot_get_state(void) {
+    return (mybot_state_t)aosl_atomic_read(&s_app.state);
 }
 
-void mybot_app_request_exit(void) {
+void mybot_request_exit(void) {
     aosl_atomic_set(&s_app.running, false);
 }
 
 void mybot_app_start_conversation(void) {
-    if (mybot_app_get_state() != MYBOT_APP_STATE_READY) {
+    if (mybot_get_state() != MYBOT_STATE_READY) {
         return;
     }
     mybot_device_lifecycle_request_start();
 }
 
 void mybot_app_stop_conversation(void) {
-    if (mybot_app_get_state() != MYBOT_APP_STATE_READY) {
+    if (mybot_get_state() != MYBOT_STATE_READY) {
         return;
     }
     mybot_device_lifecycle_request_stop();
 }
 
 void mybot_app_pair(void) {
-    if (mybot_app_get_state() != MYBOT_APP_STATE_READY) {
+    if (mybot_get_state() != MYBOT_STATE_READY) {
         return;
     }
     mybot_device_lifecycle_request_pair();
 }
 
-void mybot_app_stop(void) {
+void mybot_stop(void) {
     /* Keep stop idempotent without touching AOSL after a previous stop. */
     if (!s_app.aosl_active) {
         return;
@@ -1068,10 +1067,10 @@ void mybot_app_stop(void) {
      * Set BEFORE any AOSL/audio teardown so the MPQ timer callbacks return
      * early. The ALSA read/write paths are poll-with-timeout, so each worker
      * exits within a bounded time even when the device yields no data. */
-    mybot_app_state_t previous_state = mybot_app_get_state();
-    aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_STOPPING);
+    mybot_state_t previous_state = mybot_get_state();
+    aosl_atomic_set(&s_app.state, MYBOT_STATE_STOPPING);
     aosl_atomic_set(&s_app.running, false);
-    if (previous_state != MYBOT_APP_STATE_FAILED) {
+    if (previous_state != MYBOT_STATE_FAILED) {
         lcd_show_screen(MYBOT_LCD_SCREEN_STOPPING);
     }
 
@@ -1089,8 +1088,8 @@ void mybot_app_stop(void) {
     cleanup_services();
 
     /* Reassert the terminal screen after all device workflow callbacks have drained. */
-    lcd_show_screen(previous_state == MYBOT_APP_STATE_FAILED ? MYBOT_LCD_SCREEN_FAILED
-                                                             : MYBOT_LCD_SCREEN_STOPPING);
+    lcd_show_screen(previous_state == MYBOT_STATE_FAILED ? MYBOT_LCD_SCREEN_FAILED
+                                                         : MYBOT_LCD_SCREEN_STOPPING);
 
     /* ---- 4. Stop Wi-Fi after all network users have exited. ---- */
     if (s_app.wifi_active) {
@@ -1120,5 +1119,5 @@ void mybot_app_stop(void) {
         aosl_dtor();
     }
 
-    aosl_atomic_set(&s_app.state, MYBOT_APP_STATE_STOPPED);
+    aosl_atomic_set(&s_app.state, MYBOT_STATE_STOPPED);
 }

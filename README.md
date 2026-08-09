@@ -160,7 +160,7 @@ target_link_libraries(device_firmware PRIVATE mybot::sdk)
 ```
 
 The platform must register the Wi-Fi, KV, button, audio capture, audio playback, and HTTPS transport
-backends before `mybot_app_start()`. LCD is optional; a local ASR backend is required only when
+backends before `mybot_start()`. LCD is optional; a local ASR backend is required only when
 `MYBOT_WAKE_WORDS=ON`. The Linux platform registers the OpenSSL backend automatically; other
 platforms must implement `mybot_https_ops_t`. For the full implementation order, minimal
 code, threading constraints, and acceptance checklist, see
@@ -170,16 +170,16 @@ Minimal application lifecycle:
 
 ```c
 platform_register_all();
-mybot_app_start(&config);
-while (mybot_app_is_running()) {
+mybot_start(&config);
+while (mybot_is_running()) {
     platform_sleep_ms(100);
 }
-mybot_app_stop();
+mybot_stop();
 ```
 
-`mybot_app_start()` is non-blocking: it starts provisioning first, then initializes storage,
+`mybot_start()` is non-blocking: it starts provisioning first, then initializes storage,
 buttons, audio, the device service, and RTC asynchronously once the STA-connected event arrives.
-`mybot_app_stop()` waits for all worker threads to exit and must not be called from inside a
+`mybot_stop()` waits for all worker threads to exit and must not be called from inside a
 platform event callback.
 
 ## Build configuration
@@ -238,7 +238,7 @@ flowchart TB
     end
 
     subgraph api["Public API · include/mybot"]
-        api_h["mybot_app_start / stop<br/>conversation · pair · state"]
+        api_h["mybot_start / mybot_is_running / mybot_stop<br/>mybot_get_state · mybot_request_exit"]
     end
 
     subgraph core["SDK core · src/"]
@@ -287,8 +287,10 @@ flowchart TB
 
 Layer notes:
 
-- **Public API** ([include/mybot/mybot.h](include/mybot/mybot.h)): application lifecycle,
-  conversation control, and state queries; non-blocking startup.
+- **Public API** ([include/mybot/mybot.h](include/mybot/mybot.h)): application lifecycle and
+  state queries (`mybot_start` / `mybot_is_running` / `mybot_get_state` / `mybot_request_exit` /
+  `mybot_stop`); non-blocking startup. Conversation and pairing actions are triggered by platform
+  key / wake-word events and handled inside the SDK core.
 - **SDK core** ([src/](src/)): startup orchestration, the device state machine, the device-service
   HTTP client, the Agora RTSA session wrapper, audio ring buffers, and the optional local
   wake-word engine. Core code never touches any OS or peripheral API directly.
@@ -303,7 +305,7 @@ Layer notes:
 
 ### Threading model
 
-`mybot_app_start()` creates five worker threads (AOSL MPQ queues) with strictly separated
+`mybot_start()` creates five worker threads (AOSL MPQ queues) with strictly separated
 responsibilities:
 
 | Thread (MPQ) | Driven by | Responsibility |

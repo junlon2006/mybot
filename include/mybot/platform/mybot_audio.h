@@ -73,10 +73,10 @@ typedef struct {
  * Registration API — called by platform implementations
  * ---------------------------------------------------------- */
 
-/** Register complete capture device ops once, before mybot_app_start(). */
+/** Register complete capture device ops once, before mybot_start(). */
 MYBOT_API int mybot_audio_register_capture(const mybot_audio_capture_ops_t *ops);
 
-/** Register complete playback device ops once, before mybot_app_start(). */
+/** Register complete playback device ops once, before mybot_start(). */
 MYBOT_API int mybot_audio_register_playback(const mybot_audio_playback_ops_t *ops);
 
 /** Shared volume range for both media volume and real device volume. */
@@ -118,7 +118,7 @@ typedef struct {
     void (*destroy)(void *ctx);
 } mybot_audio_volume_ops_t;
 
-/** Register the real device volume backend once, before mybot_app_start(). */
+/** Register the real device volume backend once, before mybot_start(). */
 MYBOT_API int mybot_audio_device_register_volume(const mybot_audio_volume_ops_t *ops);
 
 /** Initialize the registered volume backend. Call from the app startup path. */

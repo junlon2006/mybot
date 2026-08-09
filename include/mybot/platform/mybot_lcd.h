@@ -42,7 +42,7 @@ typedef struct {
     void (*destroy)(void *ctx);
 } mybot_lcd_ops_t;
 
-/** Register the LCD backend for the current platform. Call before mybot_app_start(). */
+/** Register the LCD backend for the current platform. Call before mybot_start(). */
 MYBOT_API int mybot_lcd_register(const mybot_lcd_ops_t *ops);
 
 /** Return whether the current platform registered an LCD backend. */

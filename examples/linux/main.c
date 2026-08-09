@@ -42,7 +42,7 @@ static void print_usage(const char *prog) {
 }
 
 int main(int argc, char **argv) {
-    mybot_app_config_t cfg;
+    mybot_config_t cfg;
     memset(&cfg, 0, sizeof(cfg));
 
     aosl_set_log_level(AOSL_LOG_INFO);
@@ -94,14 +94,14 @@ int main(int argc, char **argv) {
     signal(SIGTERM, signal_handler);
 
     /* ---- Start the application (non-blocking) ---- */
-    if (mybot_app_start(&cfg) < 0) {
+    if (mybot_start(&cfg) < 0) {
         return 1;
     }
 
     /* ---- Main loop: wait for a key event or process signal to request exit. ---- */
     bool interactive_help_printed = false;
-    while (mybot_app_is_running()) {
-        if (!interactive_help_printed && mybot_app_get_state() == MYBOT_APP_STATE_READY) {
+    while (mybot_is_running()) {
+        if (!interactive_help_printed && mybot_get_state() == MYBOT_STATE_READY) {
             AOSL_LOG_INF("=== mybot ready ===\n"
                          "  s - start conversation\n"
                          "  q - stop conversation\n"
@@ -114,7 +114,7 @@ int main(int argc, char **argv) {
         }
 
         if (s_exit_requested) {
-            mybot_app_request_exit();
+            mybot_request_exit();
             continue;
         }
 
@@ -122,6 +122,6 @@ int main(int argc, char **argv) {
     }
 
     /* ---- Stop the application and release all resources ---- */
-    mybot_app_stop();
+    mybot_stop();
     return 0;
 }

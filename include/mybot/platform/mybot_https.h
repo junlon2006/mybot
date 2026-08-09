@@ -29,7 +29,7 @@ typedef struct {
 } mybot_https_ops_t;
 
 /**
- * Register one platform TLS transport before mybot_app_start().
+ * Register one platform TLS transport before mybot_start().
  * The ops table must remain valid for the process lifetime.
  */
 MYBOT_API int mybot_https_register(const mybot_https_ops_t *ops);

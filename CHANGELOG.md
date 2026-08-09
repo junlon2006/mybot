@@ -29,11 +29,21 @@ between release candidates.
 - Guard `mybot_rtc_session_join()` and `mybot_rtc_session_send_audio()` against calls before
   initialization, which previously dereferenced a NULL mutex (found by the new RTC session test).
 - Release partially initialized services immediately when `start_services()` fails, instead of
-  relying on a later `mybot_app_stop()` call; service teardown is shared, idempotent, and safe to
+  relying on a later `mybot_stop()` call; service teardown is shared, idempotent, and safe to
   run twice after a failed startup.
 
 ### Changed
 
+- Move conversation-control requests (`mybot_app_start_conversation()`,
+  `mybot_app_stop_conversation()`, `mybot_app_pair()`) out of the public header
+  `include/mybot/mybot.h` into the internal `src/internal/mybot_app.h`: host applications now
+  trigger them only through platform key / wake-word events, and the symbols are no longer
+  exported from the library.
+- Rename the public application entry points from the `mybot_app_*` prefix to the root
+  `mybot_*` namespace (`mybot_start()`, `mybot_stop()`, `mybot_is_running()`,
+  `mybot_get_state()`, `mybot_request_exit()`; types `mybot_config_t` / `mybot_state_t`; state
+  enumerators `MYBOT_STATE_*`). `mybot_app_*` is now reserved for internal app-shell control in
+  `src/`.
 - Unify public API naming around `mybot_<module>_register / init / deinit`: drop redundant middle
   words (`mybot_audio_register_capture()`, `mybot_audio_register_playback()`, `mybot_key_register()`,
   `mybot_wifi_register()`, `mybot_https_register()`), rename the HTTPS transport header to
