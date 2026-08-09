@@ -38,7 +38,7 @@ An out-of-tree firmware project may use the same layout without changing this re
 
 ## Step 3: Implement required backends
 
-Register every required backend exactly once before `mybot_app_start()`.
+Register every required backend exactly once before `mybot_start()`.
 
 ### Audio
 
@@ -97,7 +97,7 @@ Register with `mybot_kv_store_register()`.
 ### HTTPS transport
 
 Production builds keep `MYBOT_ENABLE_HTTPS=ON` and register one
-`mybot_https_ops_t` before `mybot_app_start()`. Wrap mbedTLS, BearSSL, or the chipset TLS
+`mybot_https_ops_t` before `mybot_start()`. Wrap mbedTLS, BearSSL, or the chipset TLS
 socket API; the SDK core does not link OpenSSL. The backend must:
 
 - establish TCP and TLS within the supplied timeout;
@@ -177,13 +177,13 @@ consumption via `find_package(mybot)` are supported.
 ```c
 if (my_mcu_platform_register() < 0) fail_startup();
 
-mybot_app_config_t config = {0};
+mybot_config_t config = {0};
 copy_checked(config.server_base, sizeof(config.server_base), server_url);
 copy_checked(config.device_id, sizeof(config.device_id), device_id);
-if (mybot_app_start(&config) < 0) fail_startup();
+if (mybot_start(&config) < 0) fail_startup();
 
-while (mybot_app_is_running()) platform_sleep_ms(100);
-mybot_app_stop();
+while (mybot_is_running()) platform_sleep_ms(100);
+mybot_stop();
 ```
 
 `server_base` must be an HTTPS URL and both fields must be non-empty NUL-terminated strings. Start

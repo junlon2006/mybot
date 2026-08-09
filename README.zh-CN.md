@@ -139,7 +139,7 @@ add_subdirectory(third_party/mybot)
 target_link_libraries(device_firmware PRIVATE mybot::sdk)
 ```
 
-平台必须在 `mybot_app_start()` 之前注册 Wi-Fi、KV、按键、音频采集、音频播放和
+平台必须在 `mybot_start()` 之前注册 Wi-Fi、KV、按键、音频采集、音频播放和
 HTTPS 传输后端。LCD 可选；只有 `MYBOT_WAKE_WORDS=ON` 时才必须注册本地 ASR 后端。
 Linux 平台自动注册 OpenSSL 后端；其他平台需实现 `mybot_https_ops_t`。
 完整实现顺序、最小代码、线程约束和验收清单见 [docs/PORTING.md](docs/PORTING.md)。
@@ -148,15 +148,15 @@ Linux 平台自动注册 OpenSSL 后端；其他平台需实现 `mybot_https_ops
 
 ```c
 platform_register_all();
-mybot_app_start(&config);
-while (mybot_app_is_running()) {
+mybot_start(&config);
+while (mybot_is_running()) {
     platform_sleep_ms(100);
 }
-mybot_app_stop();
+mybot_stop();
 ```
 
-`mybot_app_start()` 非阻塞：先启动配网，收到 STA connected 事件后才异步初始化存储、
-按键、音频、设备服务和 RTC。`mybot_app_stop()` 会等待全部工作线程退出，因此不应从
+`mybot_start()` 非阻塞：先启动配网，收到 STA connected 事件后才异步初始化存储、
+按键、音频、设备服务和 RTC。`mybot_stop()` 会等待全部工作线程退出，因此不应从
 平台事件回调内部调用。
 
 ## 构建配置
@@ -212,7 +212,7 @@ flowchart TB
     end
 
     subgraph api["公共 API · include/mybot"]
-        api_h["mybot_app_start / stop<br/>conversation · pair · state"]
+        api_h["mybot_start / mybot_is_running / mybot_stop<br/>mybot_get_state · mybot_request_exit"]
     end
 
     subgraph core["SDK 核心 · src/"]
@@ -261,8 +261,10 @@ flowchart TB
 
 分层说明：
 
-- **公共 API**（[include/mybot/mybot.h](include/mybot/mybot.h)）：应用生命周期、会话
-  控制与状态查询，非阻塞启动。
+- **公共 API**（[include/mybot/mybot.h](include/mybot/mybot.h)）：应用生命周期与状态
+  查询（`mybot_start` / `mybot_is_running` / `mybot_get_state` / `mybot_request_exit` /
+  `mybot_stop`），非阻塞启动。会话与配对动作由平台按键 / 唤醒词事件触发，由 SDK 核心
+  内部处理。
 - **SDK 核心**（[src/](src/)）：启动编排、设备状态机、设备服务 HTTP 客户端、Agora
   RTSA 会话封装、音频环形缓冲与可选本地唤醒词。核心代码不直接触碰任何 OS 或外设 API。
 - **基础服务层**：AOSL 提供线程 / MPQ / 定时器 / 日志等可移植能力；平台 `ops` 契约
@@ -273,7 +275,7 @@ flowchart TB
 
 ### 线程模型
 
-`mybot_app_start()` 在 AOSL 上创建 5 个工作线程（MPQ），职责严格隔离：
+`mybot_start()` 在 AOSL 上创建 5 个工作线程（MPQ），职责严格隔离：
 
 | 线程 (MPQ) | 驱动 | 职责 |
 | --- | --- | --- |

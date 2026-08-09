@@ -38,7 +38,7 @@ platforms/my_mcu/
 
 ## 第 3 步：实现必需后端
 
-在 `mybot_app_start()` 之前，每个必需后端恰好注册一次。
+在 `mybot_start()` 之前，每个必需后端恰好注册一次。
 
 ### 音频
 
@@ -91,7 +91,7 @@ Linux 后端立即上报已连接，不是真正的 APSTA 参考实现。
 
 ### HTTPS 传输
 
-生产构建保持 `MYBOT_ENABLE_HTTPS=ON`，并在 `mybot_app_start()` 之前注册一个
+生产构建保持 `MYBOT_ENABLE_HTTPS=ON`，并在 `mybot_start()` 之前注册一个
 `mybot_https_ops_t`。封装 mbedTLS、BearSSL 或芯片厂商 TLS socket API；SDK 核心
 不链接 OpenSSL。后端必须：
 
@@ -165,13 +165,13 @@ target_link_libraries(device_firmware PRIVATE mybot::sdk my_mcu_platform)
 ```c
 if (my_mcu_platform_register() < 0) fail_startup();
 
-mybot_app_config_t config = {0};
+mybot_config_t config = {0};
 copy_checked(config.server_base, sizeof(config.server_base), server_url);
 copy_checked(config.device_id, sizeof(config.device_id), device_id);
-if (mybot_app_start(&config) < 0) fail_startup();
+if (mybot_start(&config) < 0) fail_startup();
 
-while (mybot_app_is_running()) platform_sleep_ms(100);
-mybot_app_stop();
+while (mybot_is_running()) platform_sleep_ms(100);
+mybot_stop();
 ```
 
 `server_base` 必须是 HTTPS URL，且两个字段都必须是非空、以 NUL 结尾的字符串。未注册 TLS
