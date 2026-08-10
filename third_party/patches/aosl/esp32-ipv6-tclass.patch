@@ -1,0 +1,16 @@
+--- a/platform/src/esp32/aosl_hal_socket.c
++++ b/platform/src/esp32/aosl_hal_socket.c
+@@ -169,13 +169,7 @@ int aosl_hal_sk_set_dscp(aosl_fd_t sockfd, enum aosl_socket_domain domain, uint8_t dscp)
+ 		optname = IP_TOS;
+ 		break;
+ 	case AOSL_AF_INET6:
++#if LWIP_IPV6
++		level = IPPROTO_IPV6;
++		optname = IPV6_TCLASS;
++		break;
++#else
+ 		return AOSL_HAL_RET_EHAL;
++#endif
+ 	default:
+ 		return AOSL_HAL_RET_EHAL;
+ 	}
