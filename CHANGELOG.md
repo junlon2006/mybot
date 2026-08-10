@@ -34,9 +34,8 @@ between release candidates.
 
 ### Changed
 
-- AOSL is now a pinned git submodule at `third_party/aosl` (upstream commit `39c3fb7b`) instead of
-  a vendored copy. The only local AOSL change (ESP-IDF IPv6 TCLASS in `aosl_hal_sk_set_dscp`) is
-  preserved as `third_party/patches/aosl/esp32-ipv6-tclass.patch` and is not applied by default.
+- AOSL is now a git submodule at `third_party/aosl` tracking the latest upstream master commit
+  `39c3fb7b` instead of a vendored copy; no local AOSL changes are carried.
 - Volume control is now fully SDK-internal: when a device volume backend is registered, volume
   changes drive real hardware volume and the playback pipeline skips the software gain; otherwise
   the SDK falls back to the media-volume software gain. The volume control functions moved from

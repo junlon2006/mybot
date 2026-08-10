@@ -12,11 +12,6 @@ AOSL includes `third_party/aosl/LICENSE`, which is based on Apache-2.0 and adds 
 conditions. Read that file before using, modifying, deploying, or redistributing AOSL. Do not label
 the combined repository or binary as uniformly Apache-2.0.
 
-The previous vendored tree carried one local change (ESP-IDF IPv6 traffic-class support in
-`aosl_hal_sk_set_dscp`). It is preserved as `third_party/patches/aosl/esp32-ipv6-tclass.patch` and
-is **not** applied to the pristine submodule by default; see
-`third_party/patches/aosl/README.md` before applying it to a build.
-
 ## Agora RTSA SDK
 
 Location: `third_party/agora_rtsa_sdk`. The bundled package identifies itself as Agora RTSA Lite
