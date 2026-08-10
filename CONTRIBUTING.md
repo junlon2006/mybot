@@ -14,8 +14,9 @@ Contributions are welcome for the 0.1 release-candidate series. Public APIs may 
    sources use `MIT`). After mechanical renames or bulk edits, run
    `find include src platforms examples tests -type f \( -name '*.c' -o -name '*.h' \) -exec
    clang-format -i {} +` before committing.
-5. Build and test before opening a pull request:
+5. Build and test before opening a pull request (initialize the AOSL submodule first):
 
+       git submodule update --init --recursive
        cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=ON
        cmake --build build -j
        ctest --test-dir build --output-on-failure

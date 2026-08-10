@@ -11,6 +11,8 @@
 - [ ] 审查所有第三方变更与 `THIRD_PARTY_NOTICES.md`。
 - [ ] 取得随附 Agora 制品可再分发的书面确认，或将其从发布制品中移除并说明用户如何自行
       提供。
+- [ ] 确保源码制品包含 AOSL submodule 内容，或说明用户需执行
+      `git submodule update --init --recursive`（GitHub 源码归档不包含 submodule）。
 - [ ] 确认没有跟踪任何密钥、token、私有端点、客户数据或生成的 KV 数据。
 
 ## 验证
