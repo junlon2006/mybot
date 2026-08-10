@@ -5,6 +5,14 @@ between release candidates.
 
 ## [Unreleased]
 
+### Added
+
+- Pairing-code voice announcement: when a pair code is obtained the SDK plays
+  the fixed prompt then each code digit as short local sounds, once per pair
+  code, through the normal playback path. The platform supplies raw 16 kHz
+  mono s16 PCM assets per locale (Linux reference: `./assets/locales/<locale>/prompt.pcm`
+  and `0.pcm`..`9.pcm`); the SDK core contains no audio decoder.
+
 ### Fixed
 
 - Continue binding-status polling during active conversations and end RTC locally when the device

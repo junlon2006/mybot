@@ -32,6 +32,10 @@ target-architecture package (the bundled archive is x86_64 Linux only).
   (960 samples at 60 ms ptime); the AEC interleave buffer is ~3.8 KB.
 - **Ring buffers**: each holds 2 s of audio = 64 KB. Capture and playback always exist; a third
   (AEC reference) is created with `MYBOT_CLOUD_AEC=ON`, totaling 192 KB.
+- **Pairing announcement (optional)**: when a pair code is obtained, the platform streams raw
+  16 kHz mono s16 PCM into the playback ring buffer (the SDK contains no decoder) and the prompt
+  plays once through the normal speaker path. On the Linux reference the prompt (~150 KB) and
+  each digit (~30 KB) are loaded into RAM while playing.
 - **Heap**: HTTP responses allocate 4 KB initially and grow to at most 32 KB per request (freed
   after use); JSON parsing and platform backends (ALSA, OpenSSL, file KV) allocate transiently.
   All core allocations go through `aosl_hal_malloc`, which each platform can re-point.

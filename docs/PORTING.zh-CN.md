@@ -125,6 +125,25 @@ Linux 后端立即上报已连接，不是真正的 APSTA 参考实现。
 仅在 `MYBOT_WAKE_WORDS=ON` 时必需。Process 接收借用的 PCM。异步后端必须复制需要保留的
 数据，destroy 必须等待所有检测处理器。使用 `mybot_wake_words_register()` 注册。
 
+### 配对码语音播报（可选）
+
+实现 `mybot_announce_ops_t` 在扬声器播报配对码提示（“请在WEB中输入配对码xxx”）。SDK 与
+平台交换的 PCM 一律为原始 16 kHz 单声道有符号 16-bit——SDK 核心不含音频解码器，平台需
+自行把资源解码/重采样到该格式。
+
+拿到配对码后，SDK 将固定提示音与逐位数字音依次入队，通过正常播放链路**只播报一次**；
+设备离开 `awaiting_claim` 状态（认领成功、重新配对或离线）时立即停止。提示音缺失则跳过
+整段播报，某个数字音缺失则只跳过该位——配对流程不会被音频阻塞。
+
+契约：`init` 初始化后端；`open` 打开一个逻辑声音（`MYBOT_ANNOUNCE_SOUND_PROMPT`、
+`MYBOT_ANNOUNCE_SOUND_DIGIT_0`..`9`），可做 I/O；`read` 最多拷贝 `max_frames` 帧，必须
+轻量（运行在实时播放线程上）；`close` / `destroy` 释放句柄与后端。在 `mybot_start()` 之前
+用 `mybot_announce_register()` 注册。该后端可选：未注册时 SDK 跳过本地播报，仅记日志。
+
+Linux 参考实现按语言从 `./assets/locales/<locale>/` 读取原始 PCM 文件（`prompt.pcm`、
+`0.pcm`~`9.pcm`）；可用环境变量 `MYBOT_ASSETS_DIR` 覆盖目录（默认 `./assets`），
+`MYBOT_LOCALE` 选择语言（默认 `zh-CN`）。
+
 ## 第 4 步：添加一个注册入口
 
 ```c
