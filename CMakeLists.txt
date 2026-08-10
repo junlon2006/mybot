@@ -139,6 +139,7 @@ add_library(mybot_sdk STATIC
     src/core/mybot_version.c
     src/media/mybot_audio.c
     src/media/mybot_wake_words.c
+    src/platform/mybot_announce.c
     src/platform/mybot_key.c
     src/platform/mybot_https.c
     src/platform/mybot_kv_store.c

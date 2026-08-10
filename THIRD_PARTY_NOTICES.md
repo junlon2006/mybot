@@ -33,6 +33,14 @@ also remain in force.
 `src/support/mybot_json.c` and `src/internal/mybot_json.h` are namespaced derivatives of cJSON.
 They retain the MIT license and Dave Gamble copyright notice in the source.
 
+## xiaozhi-esp32 announcement assets
+
+`assets/locales/` contains raw 16 kHz mono s16 PCM files decoded from the xiaozhi-esp32 project
+(https://github.com/78/xiaozhi-esp32), which is distributed under the MIT License
+(c) 2025 Shenzhen Xinzhi Future Technology Co., Ltd. and Project Contributors. The pairing-code
+prompt and digit sounds are derived from that project's `main/assets/locales/<locale>/*.ogg`
+assets; retain the MIT copyright notice when redistributing them.
+
 ## Release blocker
 
 Do not publish a release artifact containing the bundled Agora binary until its license and

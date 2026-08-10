@@ -60,6 +60,9 @@ target_link_libraries(mybot_audio_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 mybot_add_test(mybot_ringbuf_test unit/ringbuf_test.c ../src/support/mybot_ringbuf.c)
 target_link_libraries(mybot_ringbuf_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
+mybot_add_test(mybot_announce_test unit/announce_test.c ../src/platform/mybot_announce.c)
+target_link_libraries(mybot_announce_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
+
 mybot_add_test(mybot_rtc_session_test unit/rtc_session_test.c ../src/rtc/mybot_agora_rtc.c)
 target_include_directories(mybot_rtc_session_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/agora_rtsa_sdk/agora_sdk/include)
@@ -112,4 +115,12 @@ if(MYBOT_BUILD_LINUX_PLATFORM)
     )
     target_include_directories(mybot_lcd_console_test PRIVATE ../platforms/linux)
     target_link_libraries(mybot_lcd_console_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
+
+    mybot_add_test(mybot_announce_file_test
+        platform/linux/announce_file_test.c
+        ../src/platform/mybot_announce.c
+        ../platforms/linux/linux_announce_file.c
+    )
+    target_include_directories(mybot_announce_file_test PRIVATE ../platforms/linux)
+    target_link_libraries(mybot_announce_file_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 endif()

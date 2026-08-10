@@ -9,6 +9,7 @@
 #include <mybot/platform/mybot_wifi.h>
 #include <mybot/platform/mybot_https.h>
 
+#include "mybot_announce_internal.h"
 #include "mybot_audio_internal.h"
 #include "mybot_https_internal.h"
 #include "mybot_key_internal.h"
@@ -46,6 +47,11 @@
 #define AUDIO_RINGBUF_DURATION_MS 2000
 #define AUDIO_RINGBUF_SIZE                                                                         \
     (SAMPLE_RATE * AUDIO_RINGBUF_DURATION_MS / 1000 * CHANNELS * BYTES_PER_SAMPLE)
+/* Announcement pre-buffer: keep this much announcement PCM queued in the
+ * playback ring buffer so device-write jitter never causes an underrun. */
+#define MYBOT_ANNOUNCE_BUFFER_MS 500
+#define MYBOT_ANNOUNCE_TARGET_BYTES                                                                \
+    (SAMPLE_RATE * MYBOT_ANNOUNCE_BUFFER_MS / 1000 * CHANNELS * BYTES_PER_SAMPLE)
 /* Volume change per VOLUME_UP / VOLUME_DOWN key event. */
 #define VOLUME_KEY_STEP 10
 /* Device state machine poll interval. Must match the 100 ms/tick assumption
@@ -84,9 +90,11 @@ static struct {
     aosl_mpq_t pb_mpq;     /* playback worker thread (aosl_mpq_create) */
     aosl_timer_t pb_timer; /* drives the playback write loop */
     mybot_ringbuf_t pb_ringbuf;
+    aosl_atomic_t announce_clear_pb; /* playback thread: drop buffered announcement tail */
     int16_t pb_pending[AUDIO_FRAME_SAMPLES * CHANNELS];
-    int pb_pending_offset; /* frames already written */
-    int pb_pending_frames; /* frames still to write */
+    int pb_pending_offset;                       /* frames already written */
+    int pb_pending_frames;                       /* frames still to write */
+    int16_t announce_frame[AUDIO_FRAME_SAMPLES]; /* pairing-code prompt chunk */
 
 #if MYBOT_CLOUD_AEC
     /* AEC reference ringbuf: holds downlink PCM fed to the speaker */
@@ -227,7 +235,35 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
         return;
     }
 
+    /* Drop any buffered announcement tail when the device leaves pairing.
+     * Processed on this (playback) thread so the ring buffer keeps its
+     * single-writer/single-reader discipline (no lock). */
+    if (aosl_atomic_cmpxchg(&s_app.announce_clear_pb, true, false)) {
+        mybot_ringbuf_clear(s_app.pb_ringbuf);
+        s_app.pb_pending_offset = 0;
+        s_app.pb_pending_frames = 0;
+    }
+
     const mybot_audio_playback_ops_t *ops = mybot_audio_get_playback();
+
+    /* Feed the pairing-code announcement into the playback ring buffer before
+     * pulling a frame, so the prompt plays without an RTC session. Top the
+     * buffer up to a target level instead of writing one frame per tick:
+     * the device write then always has buffered PCM ahead of it and timer
+     * jitter cannot cause an underrun. Pairing completes before any RTC
+     * session starts, so no cross-thread writer can overlap this feed. */
+    while (mybot_announce_is_active() &&
+           mybot_ringbuf_get_data_size(s_app.pb_ringbuf) < MYBOT_ANNOUNCE_TARGET_BYTES &&
+           mybot_ringbuf_get_free_size(s_app.pb_ringbuf) >= AUDIO_FRAME_BYTES) {
+        int frames = mybot_announce_read_pcm(s_app.announce_frame, AUDIO_FRAME_SAMPLES);
+        if (frames <= 0) {
+            break;
+        }
+        if (mybot_ringbuf_write(s_app.pb_ringbuf, (const char *)s_app.announce_frame,
+                                frames * CHANNELS * BYTES_PER_SAMPLE) < 0) {
+            AOSL_LOG_WRN("pb ringbuf full while feeding announcement");
+        }
+    }
 
     if (s_app.pb_pending_frames == 0) {
         if (mybot_ringbuf_get_data_size(s_app.pb_ringbuf) < AUDIO_FRAME_BYTES) {
@@ -399,6 +435,7 @@ static void dev_on_pair_code(const char *code) {
         return;
     }
     lcd_show_pair_code(code);
+    mybot_announce_play_pair_code(code);
 }
 
 static void dev_on_conversation_start(const mybot_conversation_params_t *params) {
@@ -472,6 +509,15 @@ static void dev_on_state_changed(mybot_device_state_t state) {
     if (app_state == MYBOT_STATE_STOPPING || app_state == MYBOT_STATE_FAILED ||
         app_state == MYBOT_STATE_WIFI_DISCONNECTED) {
         return;
+    }
+
+    /* Stop the pairing-code voice announcement once the device leaves
+     * awaiting_claim (claimed, re-pairing, or offline transitions). The
+     * playback thread drops any still-buffered announcement tail so a
+     * claim/conversation does not start with stale audio. */
+    if (state != MYBOT_DEVICE_STATE_AWAITING_CLAIM) {
+        mybot_announce_stop();
+        aosl_atomic_set(&s_app.announce_clear_pb, true);
     }
 
     switch (state) {
@@ -668,6 +714,9 @@ static void cleanup_services(void) {
         s_app.pb_mpq = AOSL_MPQ_INVALID;
     }
 
+    /* The playback worker has exited, so no announcement feed can be in flight. */
+    mybot_announce_deinit();
+
 #if MYBOT_WAKE_WORDS
     /* The capture MPQ has exited, so process() cannot race with destroy(). */
     if (s_app.wake_words_active) {
@@ -741,6 +790,12 @@ static int start_services(void) {
         goto fail;
     }
     s_app.key_active = true;
+
+    /* Optional pairing-code voice announcement. A failure here only disables
+     * the prompt; the device keeps working. */
+    if (mybot_announce_init() < 0) {
+        AOSL_LOG_WRN("announce init failed, pairing voice prompt disabled");
+    }
 
     /* ---- 2. Initialize audio devices via the registered platform ops ----
      * The platform backend (e.g. ALSA on Linux) must have registered itself

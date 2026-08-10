@@ -1,5 +1,6 @@
 add_library(mybot_platform_linux STATIC
     linux_platform.c
+    linux_announce_file.c
     linux_audio_capture_alsa.c
     linux_audio_playback_alsa.c
     linux_audio_volume_alsa_mixer.c

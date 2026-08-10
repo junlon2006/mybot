@@ -137,6 +137,30 @@ Required only with `MYBOT_WAKE_WORDS=ON`. Process receives borrowed PCM. An asyn
 must copy retained data, and destroy must wait for all detection handlers. Register with
 `mybot_wake_words_register()`.
 
+### Pairing-code voice announcement (optional)
+
+Implement `mybot_announce_ops_t` to play the pairing-code prompt on the speaker ("请在WEB中输入
+配对码 xxx"). All PCM exchanged with the SDK is raw 16 kHz mono signed 16-bit — the SDK contains
+no audio decoder, so the platform must decode/resample its own assets to that format.
+
+When a pair code is obtained, the SDK queues the fixed prompt sound followed by one sound per
+digit and plays the queue **once** through the normal playback path. The announcement stops when
+the device leaves `awaiting_claim` (claimed, re-pairing, or offline). A missing prompt sound
+skips the whole announcement; a missing digit sound skips just that digit — pairing never blocks
+on the audio.
+
+Ops contract: `init` allocates the backend; `open` opens one logical sound
+(`MYBOT_ANNOUNCE_SOUND_PROMPT`, `MYBOT_ANNOUNCE_SOUND_DIGIT_0`..`9`) and may do I/O; `read`
+copies up to `max_frames` frames and must stay cheap (it runs on the real-time playback worker);
+`close` / `destroy` release handles and the backend. Register with `mybot_announce_register()`
+before `mybot_start()`. The backend is optional: without one the SDK skips local announcements
+and only logs.
+
+The Linux reference backend reads raw PCM files per locale from
+`./assets/locales/<locale>/` (`prompt.pcm`, `0.pcm`..`9.pcm`); override the directory with the
+`MYBOT_ASSETS_DIR` environment variable (default `./assets`) and the locale with `MYBOT_LOCALE`
+(default `zh-CN`).
+
 ## Step 4: Add one registration entry point
 
 ```c

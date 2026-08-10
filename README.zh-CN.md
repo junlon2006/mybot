@@ -48,6 +48,9 @@
 - **可选的本地唤醒词**：默认关闭；唤醒行为与物理按键启动会话一致。
 - **按键与 LCD 工作流**：语义化屏幕状态（配网 / 配对码 / 就绪 / 会话中），显示方式由
   平台决定。
+- **配对码语音播报**：每个配对码只播报一次，先播固定提示句（“请在WEB中输入配对码”），
+  再逐位播报数字，走正常扬声器链路。音频资源为 `./assets/locales/<locale>/` 下的原始 16 kHz
+  单声道 16-bit PCM 文件（`prompt.pcm`、`0.pcm`~`9.pcm`），由平台持有，SDK 核心不含解码器。
 - **HTTPS 安全传输**：设备服务默认仅接受 HTTPS；Linux 使用 OpenSSL，MCU 可接入
   mbedTLS 或芯片厂商 TLS，并校验证书链与主机名。
 
@@ -109,6 +112,10 @@ ctest --test-dir build --output-on-failure
   --fw-ver 0.1.0-rc.1 \
   --hw-model linux-reference
 ```
+
+示例程序还会在拿到配对码时可选地播报语音提示（“请在WEB中输入配对码…”），音频来自
+`./assets/locales/<locale>/`（原始 16 kHz 单声道 16-bit PCM：`prompt.pcm`、`0.pcm`~`9.pcm`）。
+默认语言为 `zh-CN`，可用 `MYBOT_LOCALE` 与 `MYBOT_ASSETS_DIR` 覆盖。
 
 就绪后输入 `s` 开始会话、`q` 停止会话、`p` 重新配对、`u` / `d` 增大 / 减小媒体音量、
 `e` 退出。
