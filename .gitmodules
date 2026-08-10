@@ -1,0 +1,3 @@
+[submodule "third_party/aosl"]
+	path = third_party/aosl
+	url = https://github.com/AgoraIO-Community/aosl.git
