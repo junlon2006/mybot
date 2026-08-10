@@ -47,6 +47,14 @@ int main(int argc, char **argv) {
 
     aosl_set_log_level(AOSL_LOG_INFO);
 
+#if defined(MYBOT_EXAMPLE_ASSETS_DIR)
+    /* Point the announcement backend at the PCM assets CMake copied into the
+     * build tree, unless the caller explicitly set MYBOT_ASSETS_DIR. */
+    if (!getenv("MYBOT_ASSETS_DIR")) {
+        setenv("MYBOT_ASSETS_DIR", MYBOT_EXAMPLE_ASSETS_DIR, 0);
+    }
+#endif
+
     /* ---- Parse command line ---- */
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--server") == 0 && i + 1 < argc) {
