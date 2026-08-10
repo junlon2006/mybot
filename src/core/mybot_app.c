@@ -1034,11 +1034,17 @@ static void on_wifi_state_changed(mybot_wifi_state_t state, void *user_data) {
  * ---------------------------------------------------------- */
 
 int mybot_start(const mybot_config_t *cfg) {
-    if (s_app.aosl_active || !cfg || !memchr(cfg->server_base, '\0', sizeof(cfg->server_base)) ||
+    if (s_app.aosl_active) {
+        AOSL_LOG_ERR("mybot_start: application is already active");
+        return -1;
+    }
+    if (!cfg || !memchr(cfg->server_base, '\0', sizeof(cfg->server_base)) ||
         !memchr(cfg->device_id, '\0', sizeof(cfg->device_id)) ||
         !memchr(cfg->firmware_ver, '\0', sizeof(cfg->firmware_ver)) ||
         !memchr(cfg->hw_model, '\0', sizeof(cfg->hw_model)) || !cfg->server_base[0] ||
         !cfg->device_id[0]) {
+        AOSL_LOG_ERR("mybot_start: invalid configuration (NULL or unterminated string fields; "
+                     "server_base and device_id must be non-empty)");
         return -1;
     }
 
@@ -1046,19 +1052,26 @@ int mybot_start(const mybot_config_t *cfg) {
     bool use_http = strncmp(cfg->server_base, "http://", 7) == 0;
 #if MYBOT_ENABLE_HTTPS
     if (use_https && !mybot_https_is_registered()) {
+        AOSL_LOG_ERR("mybot_start: https:// requires a registered TLS transport "
+                     "(call mybot_https_register before mybot_start)");
         return -1;
     }
 #else
     if (use_https) {
+        AOSL_LOG_ERR("mybot_start: https:// unsupported in this build (MYBOT_ENABLE_HTTPS=OFF)");
         return -1;
     }
 #endif
 #if !MYBOT_ALLOW_INSECURE_HTTP
     if (use_http) {
+        AOSL_LOG_ERR("mybot_start: http:// rejected (build with MYBOT_ALLOW_INSECURE_HTTP=ON "
+                     "for isolated development only)");
         return -1;
     }
 #endif
     if (!use_https && !use_http) {
+        AOSL_LOG_ERR("mybot_start: unsupported URL scheme in server_base "
+                     "(expected https:// or http://)");
         return -1;
     }
 
