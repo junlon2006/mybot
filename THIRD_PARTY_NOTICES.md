@@ -5,7 +5,8 @@ not replace third-party terms. This file is informational, not legal advice.
 
 ## AOSL
 
-Location: `third_party/aosl`.
+Location: `third_party/aosl` — a git submodule pinned to upstream commit
+`39c3fb7b331b52b706f4f1bc9a803913bc0d82ff` of https://github.com/AgoraIO-Community/aosl.
 
 AOSL includes `third_party/aosl/LICENSE`, which is based on Apache-2.0 and adds restrictive
 conditions. Read that file before using, modifying, deploying, or redistributing AOSL. Do not label

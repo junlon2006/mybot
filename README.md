@@ -106,9 +106,11 @@ For the device-side audio pipeline and state machine, see [Architecture](#archit
 
 The Linux reference platform lets you run the full workflow on a development machine. Requirements:
 Linux x86_64, CMake 3.16+, a C99 compiler, and ALSA and OpenSSL development packages. The bundled
-Agora RTSA static library is also the x86_64 Linux build.
+Agora RTSA static library is also the x86_64 Linux build. AOSL is pulled in as a pinned git
+submodule: initialize it before the first build (or clone with `--recurse-submodules`).
 
 ```bash
+git submodule update --init --recursive
 sudo apt-get update
 sudo apt-get install -y build-essential cmake libasound2-dev libssl-dev
 cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=OFF

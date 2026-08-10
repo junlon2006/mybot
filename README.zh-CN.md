@@ -88,8 +88,11 @@ flowchart LR
 
 Linux 参考平台用于在开发机上快速跑通完整工作流。环境要求：Linux x86_64、CMake 3.16+、
 C99 编译器、ALSA 与 OpenSSL 开发包。仓库附带的 Agora RTSA 静态库为 x86_64 Linux 版本。
+AOSL 以固定 commit 的 git submodule 引入：首次构建前需初始化（或克隆时加
+`--recurse-submodules`）。
 
 ```bash
+git submodule update --init --recursive
 sudo apt-get update
 sudo apt-get install -y build-essential cmake libasound2-dev libssl-dev
 cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=OFF
