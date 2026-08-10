@@ -6,6 +6,6 @@ reproduction. Use GitHub Discussions when enabled for integration questions.
 
 > [English](SUPPORT.md) | [简体中文](SUPPORT.zh-CN.md)
 
-The 0.1 release-candidate series has no support SLA. Commercial Agora SDK or service questions
+The mybot 1.0 release has no support SLA. Commercial Agora SDK or service questions
 belong in the applicable Agora support channel.
 

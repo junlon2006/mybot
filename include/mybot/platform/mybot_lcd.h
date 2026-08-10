@@ -15,7 +15,7 @@ extern "C" {
 /**
  * Workflow screens rendered by the SDK.
  *
- * The LCD backend receives these as semantic content and decides the concrete
+ * The LCD implementation receives these as semantic content and decides the concrete
  * layout, fonts, icons or QR-code presentation itself.
  */
 typedef enum {
@@ -61,19 +61,19 @@ typedef struct {
  *
  * render() receives semantic content so each platform can choose its own
  * layout, fonts, icons, or QR-code presentation. The content pointer is valid
- * only for the duration of the call and must not be retained by the backend.
+ * only for the duration of the call and must not be retained by the implementation.
  *
  * @note render() may be called from different SDK threads; the SDK serializes
  *       all calls.
  */
 typedef struct {
-    /** Backend name for logging and diagnostics. */
+    /** Implementation name for logging and diagnostics. */
     const char *name;
 
     /**
      * Allocate and open the display.
      *
-     * @param ctx [out] LCD backend context handle
+     * @param ctx [out] LCD implementation context handle
      * @return 0 on success, -1 on error
      */
     int (*init)(void **ctx);
@@ -81,7 +81,7 @@ typedef struct {
     /**
      * Render one workflow screen.
      *
-     * @param ctx     LCD backend context from init()
+     * @param ctx     LCD implementation context from init()
      * @param content semantic screen content; borrowed for the duration of
      *                 the call
      * @return 0 on success, -1 on error
@@ -93,13 +93,13 @@ typedef struct {
      *
      * Called only after all render callers have stopped.
      *
-     * @param ctx LCD backend context from init()
+     * @param ctx LCD implementation context from init()
      */
     void (*destroy)(void *ctx);
 } mybot_lcd_ops_t;
 
 /**
- * Register the LCD backend for the current platform.
+ * Register the LCD implementation for the current platform.
  *
  * @param ops LCD operations table; must remain valid for the process
  *            lifetime

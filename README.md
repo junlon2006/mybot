@@ -51,7 +51,7 @@ RTOS, or a bare-metal MCU.
 - **Full-duplex voice interaction · Agora AI capabilities**: Built on Agora RTSA, with cloud AEC, AI
   QoS, and optional real-time transcription.
 - **Volume control**: The SDK owns volume. When the platform registers a real-device volume
-  backend (codec / amplifier / mixer), volume changes drive hardware volume directly; otherwise
+  implementation (codec / amplifier / mixer), volume changes drive hardware volume directly; otherwise
   the SDK falls back to a digital software gain applied to playback PCM. There is no
   application-facing volume API.
 - **Optional local wake words**: Off by default; wake behavior is identical to starting a
@@ -71,8 +71,8 @@ RTOS, or a bare-metal MCU.
 - Audio is fixed at 16 kHz, mono, 16-bit PCM; `ptime` is configurable to 20/40/60 ms (default
   60 ms).
 - The RTC implementation is specific to Agora RTSA; no other RTC protocol adapter is provided.
-- Local ASR wake words are an optional platform backend, off by default; enabling them requires the
-  platform to register a backend.
+- Local ASR wake words are an optional platform implementation, off by default; enabling them
+  requires the platform to register an implementation.
 - The Wi-Fi interface targets APSTA provisioning scenarios.
 - The device server is not part of this repository; running the examples requires a compatible
   server endpoint.
@@ -139,10 +139,10 @@ The default locale is `zh-CN`; set `MYBOT_LOCALE` and `MYBOT_ASSETS_DIR` to over
 Once ready, press `s` to start a conversation, `q` to stop it, `p` to re-pair, `u` / `d` to raise /
 lower the volume, `e` to exit.
 
-The Linux backend is a **development stand-in**: it reuses the host network and reports STA as
-connected immediately; it does not implement real APSTA provisioning. Audio uses the ALSA `default`
-device. KV data is written to `.mybot-kv-store/` in the current directory by default; override the
-location with the `MYBOT_KV_STORE_DIR` environment variable.
+The Linux reference implementation is a **development stand-in**: it reuses the host network and
+reports STA as connected immediately; it does not implement real APSTA provisioning. Audio uses the
+ALSA `default` device. KV data is written to `.mybot-kv-store/` in the current directory by default;
+override the location with the `MYBOT_KV_STORE_DIR` environment variable.
 
 ## Integrating into a host project
 
@@ -172,12 +172,12 @@ add_subdirectory(third_party/mybot)
 target_link_libraries(device_firmware PRIVATE mybot::sdk)
 ```
 
-The platform must register the Wi-Fi, KV, button, audio capture, audio playback, and HTTPS transport
-backends before `mybot_start()`. LCD is optional; a local ASR backend is required only when
-`MYBOT_WAKE_WORDS=ON`. The Linux platform registers the OpenSSL backend automatically; other
-platforms must implement `mybot_https_ops_t`. For the full implementation order, minimal
-code, threading constraints, and acceptance checklist, see
-[docs/PORTING.md](docs/PORTING.md).
+The platform must register the Wi-Fi, KV, key, audio capture, audio playback, and HTTPS transport
+implementations before `mybot_start()`. The LCD and pairing-code announcement implementations are
+optional; the local ASR implementation is required only when `MYBOT_WAKE_WORDS=ON`. The Linux
+platform registers the OpenSSL implementation automatically; other platforms must implement
+`mybot_https_ops_t`. For the full implementation order, minimal code, threading constraints, and
+acceptance checklist, see [docs/PORTING.md](docs/PORTING.md).
 
 Minimal application lifecycle:
 
@@ -204,7 +204,7 @@ The following options can be set via the CMake command line or cache variables b
 | --- | --- | --- |
 | `MYBOT_AUDIO_PTIME_MS` | `60` | Audio packet duration; accepts only 20, 40, 60 ms |
 | `MYBOT_CLOUD_AEC` | `ON` | Server-side AEC; the uplink carries mic and reference channels |
-| `MYBOT_WAKE_WORDS` | `OFF` | Enable the platform local-ASR wake-word backend |
+| `MYBOT_WAKE_WORDS` | `OFF` | Enable the platform local-ASR wake-word implementation |
 | `MYBOT_AI_QOS` | `ON` | Agora AI QoS |
 | `MYBOT_FAST_SEND_MULTIPLIER` | `3` | Fast-send multiplier; accepts only 1–5 |
 | `MYBOT_SHOW_TRANSCRIPT` | `OFF` | Request the real-time transcription data stream |
@@ -216,7 +216,7 @@ The following options can be set via the CMake command line or cache variables b
 
 Two independent variables select platform code: `CONFIG_PLATFORM` chooses the AOSL HAL port
 consumed by `third_party/aosl` (e.g. `linux`, `esp32`), while `MYBOT_BUILD_LINUX_PLATFORM` builds
-the bundled Linux reference backends (`platforms/linux/`: ALSA, stdin, file KV, console LCD,
+the bundled Linux reference implementations (`platforms/linux/`: ALSA, stdin, file KV, console LCD,
 OpenSSL) and requires `CONFIG_PLATFORM=linux`. An MCU port sets `CONFIG_PLATFORM=my_mcu` and keeps
 `MYBOT_BUILD_LINUX_PLATFORM=OFF`.
 
@@ -229,8 +229,9 @@ cmake -S . -B build-wake \
   -DMYBOT_WAKE_WORDS=ON
 ```
 
-The Linux reference platform has no local ASR backend, so enabling `MYBOT_WAKE_WORDS` requires the
-host to register an additional backend; otherwise the app fails to start with a clear error.
+The Linux reference platform has no local ASR implementation, so enabling `MYBOT_WAKE_WORDS`
+requires the host to register an additional implementation; otherwise the app fails to start with a
+clear error.
 
 Plaintext HTTP never falls back automatically. Only in an isolated local development environment may
 you configure `-DMYBOT_ENABLE_HTTPS=OFF -DMYBOT_ALLOW_INSECURE_HTTP=ON`. This combination transmits
@@ -241,7 +242,7 @@ networks, or release builds.
 
 The SDK uses a layered architecture: the host application drives the core through the public API,
 the core modules sit on top of the AOSL portability layer and the platform `ops` contract, and all
-platform differences are absorbed by the platform backends. The device server, the Agora RTC cloud,
+platform differences are absorbed by the platform implementations. The device server, the Agora RTC cloud,
 and the cloud AI agent are runtime external dependencies and are not part of this repository.
 
 ```mermaid
@@ -264,12 +265,12 @@ flowchart TB
 
     subgraph infra["Foundation layer"]
         aosl["AOSL<br/>MPQ threads · timers · atomics · logging"]
-        ops["Platform ops contract<br/>wifi · kv_store · key · lcd<br/>audio · https · asr"]
+        ops["Platform ops contract<br/>wifi · kv_store · key · lcd<br/>audio · https · announce · asr"]
     end
 
-    subgraph plat["Platform backends"]
+    subgraph plat["Platform implementations"]
         linux_b["Linux reference<br/>ALSA · stdin · file · console · OpenSSL"]
-        mcu_b["MCU backend · host-provided"]
+        mcu_b["MCU implementation · host-provided"]
     end
 
     subgraph ext["External services · cloud"]
@@ -310,8 +311,8 @@ Layer notes:
 - **Foundation layer**: AOSL provides portable threads / MPQ queues / timers / logging; the
   platform `ops` contract defines the device capabilities the SDK requires. Both are implementable
   per platform.
-- **Platform backends**: the Linux reference implementation and each MCU platform register against
-  the same contract.
+- **Platform implementations**: the Linux reference implementation and each MCU platform register
+  against the same contract.
 - **External services**: the device server (pairing / claim / session scheduling, HTTPS only), the
   Agora RTC cloud (real-time audio transport), and the cloud AI agent (speech recognition /
   understanding / synthesis).
@@ -329,9 +330,9 @@ responsibilities:
 | `cap_mpq` | ptime timer | Mic capture → capture ring buffer → (optional) wake words |
 | `pb_mpq` | ptime timer | Playback ring buffer → speaker; also feeds the AEC reference channel |
 
-The real-time audio timers (cap / pb / send) are independent, so a single blocking backend cannot
-stall the whole audio path; the state machine and startup flow run on dedicated threads and never
-contend with the audio cadence.
+The real-time audio timers (cap / pb / send) are independent, so a single blocking
+implementation cannot stall the whole audio path; the state machine and startup flow run on
+dedicated threads and never contend with the audio cadence.
 
 ### Workflows
 
@@ -377,9 +378,9 @@ lets the cloud agent support user interruption.
 
 ```text
 mybot/
-├── include/mybot/          # public headers and platform contracts
+├── include/mybot/          # public headers and platform interface specifications
 ├── src/                    # cross-platform implementation; internal/ is not public API
-├── platforms/linux/        # Linux reference backends (ALSA/stdin/file/console)
+├── platforms/linux/        # Linux reference implementations (ALSA/stdin/file/console)
 ├── examples/linux/         # Linux example application entry
 ├── tests/                  # unit, platform, and host integration tests
 ├── docs/                   # porting and release guides
@@ -390,19 +391,17 @@ mybot/
 Key CMake targets:
 
 - `mybot::sdk` — the cross-platform SDK core (AOSL + Agora RTSA).
-- `mybot::platform_linux` — the Linux reference backend; not part of the cross-platform core.
+- `mybot::platform_linux` — the Linux reference implementation; not part of the cross-platform core.
 - `mybot::linux_example` — the Linux CLI example application.
 
 ## Documentation
 
 - [docs/PORTING.md](docs/PORTING.md) ([简体中文](docs/PORTING.zh-CN.md)) — porting guide and
-  acceptance contract
+  acceptance checklist
 - [docs/EMBEDDED.md](docs/EMBEDDED.md) ([简体中文](docs/EMBEDDED.zh-CN.md)) — footprint, memory,
   thread/stack, timing, power and logging guidance for MCU integrators
 - [docs/RELEASING.md](docs/RELEASING.md) ([简体中文](docs/RELEASING.zh-CN.md)) — release process
 - [CHANGELOG.md](CHANGELOG.md) — version history
-- API reference — generated by Doxygen from the public headers with
-  `doxygen build/docs/Doxyfile`; CI builds it on every push / PR and publishes it as an artifact
 - API reference — generated by Doxygen from the public headers with
   `doxygen build/docs/Doxyfile`; CI builds it on every push / PR and publishes it as an artifact
 

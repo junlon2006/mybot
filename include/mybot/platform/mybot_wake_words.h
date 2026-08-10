@@ -12,27 +12,27 @@ extern "C" {
 /**
  * Local ASR detection callback.
  *
- * @param wake_word detected wake word; owned by the backend and valid only
+ * @param wake_word detected wake word; owned by the implementation and valid only
  *                  for the duration of the callback
- * @param user_data opaque pointer supplied to the backend at init() time
+ * @param user_data opaque pointer supplied to the implementation at init() time
  *
- * @note Called from backend or SDK audio context; keep it short.
+ * @note Called from implementation or SDK audio context; keep it short.
  */
 typedef void (*mybot_wake_words_handler_t)(const char *wake_word, void *user_data);
 
 /**
- * Local ASR wake-word backend operations.
+ * Local ASR wake-word implementation operations.
  *
- * The backend receives captured PCM frames and reports local detections.
+ * The implementation receives captured PCM frames and reports local detections.
  */
 typedef struct {
-    /** Backend name for logging and diagnostics. */
+    /** Implementation name for logging and diagnostics. */
     const char *name;
 
     /**
      * Allocate and start the local ASR engine.
      *
-     * @param ctx             [out] backend context handle
+     * @param ctx             [out] implementation context handle
      * @param sample_rate     PCM sample rate in Hz (e.g. 16000)
      * @param channels        number of PCM channels (e.g. 1)
      * @param bits_per_sample bits per PCM sample (e.g. 16)
@@ -46,14 +46,14 @@ typedef struct {
     /**
      * Feed one block of captured interleaved PCM frames.
      *
-     * @param ctx    backend context from init()
+     * @param ctx    implementation context from init()
      * @param pcm    interleaved PCM frames in the format passed to init();
      *               borrowed for the duration of the call — an asynchronous
-     *               backend must copy the data it needs
+     *               implementation must copy the data it needs
      * @param frames number of frames in pcm
      * @return 0 on success, -1 on error
      *
-     * @note A backend may emit detections from process() or from its own
+     * @note An implementation may emit detections from process() or from its own
      *       worker thread.
      */
     int (*process)(void *ctx, const void *pcm, int frames);
@@ -61,16 +61,16 @@ typedef struct {
     /**
      * Stop local ASR and release all resources.
      *
-     * Must stop the backend and wait for all in-flight detection handlers to
+     * Must stop the implementation and wait for all in-flight detection handlers to
      * return before returning.
      *
-     * @param ctx backend context from init()
+     * @param ctx implementation context from init()
      */
     void (*destroy)(void *ctx);
 } mybot_wake_words_ops_t;
 
 /**
- * Register the local ASR backend for the current platform.
+ * Register the local ASR implementation for the current platform.
  *
  * @param ops wake-word operations table; must remain valid for the process
  *            lifetime

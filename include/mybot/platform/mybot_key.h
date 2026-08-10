@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 /**
- * Semantic key events translated from hardware input by the platform backend.
+ * Semantic key events translated from hardware input by the platform implementation.
  */
 typedef enum {
     /** Start a conversation. */
@@ -27,10 +27,10 @@ typedef enum {
 } mybot_key_event_t;
 
 /**
- * Backend-to-SDK key event callback.
+ * Platform-to-SDK key event callback.
  *
  * @param event     the key event that occurred
- * @param user_data opaque pointer supplied to the backend at init() time
+ * @param user_data opaque pointer supplied to the implementation at init() time
  *
  * @note Called from platform context; keep it short and do not call
  *       mybot_stop() from inside this callback.
@@ -40,17 +40,17 @@ typedef void (*mybot_key_event_handler_t)(mybot_key_event_t event, void *user_da
 /**
  * Platform key input operations.
  *
- * init() starts the backend event source; destroy() stops it and waits for
+ * init() starts the implementation event source; destroy() stops it and waits for
  * any in-flight event handler to return.
  */
 typedef struct {
-    /** Backend name for logging and diagnostics. */
+    /** Implementation name for logging and diagnostics. */
     const char *name;
 
     /**
      * Allocate and start the key event source.
      *
-     * @param ctx       [out] backend context handle
+     * @param ctx       [out] implementation context handle
      * @param emit      callback for reporting key events
      * @param user_data opaque pointer forwarded to emit(); reserved, pass NULL
      * @return 0 on success, -1 on error
@@ -63,13 +63,13 @@ typedef struct {
      * Must stop the input source and wait for in-flight handlers. No event is
      * emitted after this returns.
      *
-     * @param ctx backend context from init()
+     * @param ctx implementation context from init()
      */
     void (*destroy)(void *ctx);
 } mybot_key_ops_t;
 
 /**
- * Register the key backend for the current platform.
+ * Register the key implementation for the current platform.
  *
  * @param ops key operations table; must remain valid for the process
  *            lifetime

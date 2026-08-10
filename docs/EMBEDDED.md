@@ -13,7 +13,7 @@ configuration (`-Os`, enabled feature flags), and the target-architecture Agora 
 | --- | --- |
 | `libmybot_sdk.a` | ~490 KB |
 | `libaosl.a` | ~545 KB |
-| Minimal consumer binary (SDK core + AOSL + Agora RTSA, no Linux backends) | text ~890 KB, data ~74 KB, bss ~19 KB |
+| Minimal consumer binary (SDK core + AOSL + Agora RTSA, no Linux reference implementations) | text ~890 KB, data ~74 KB, bss ~19 KB |
 
 How to measure on your target:
 
@@ -37,7 +37,7 @@ target-architecture package (the bundled archive is x86_64 Linux only).
   plays once through the normal speaker path. On the Linux reference the prompt (~150 KB) and
   each digit (~30 KB) are loaded into RAM while playing.
 - **Heap**: HTTP responses allocate 4 KB initially and grow to at most 32 KB per request (freed
-  after use); JSON parsing and platform backends (ALSA, OpenSSL, file KV) allocate transiently.
+  after use); JSON parsing and platform implementations (ALSA, OpenSSL, file KV) allocate transiently.
   All core allocations go through `aosl_hal_malloc`, which each platform can re-point.
 - Control-plane state (app, device lifecycle, RTC session) is statically allocated; there are no
   per-conversation heap allocations in the core besides the HTTP/JSON temporaries above.
@@ -55,16 +55,17 @@ target-architecture package (the bundled archive is x86_64 Linux only).
 
 Core stack budget is therefore 5 × 16 KB = 80 KB. Stack sizes are compile-time constants
 (`MPQ_STACK_SIZE` in `src/core/mybot_app.c`); profile on the target before tuning. The real-time
-audio timers live on separate MPQs so a single blocking backend cannot stall the whole audio path,
-and the state machine runs on its own thread because HTTP polling blocks. The Agora RTSA SDK owns
+audio timers live on separate MPQs so a single blocking implementation cannot
+stall the whole audio path, and the state machine runs on its own thread because HTTP polling
+blocks. The Agora RTSA SDK owns
 additional internal threads whose stacks are vendor-managed.
 
 ## Timing and real-time behavior
 
 - Audio format is fixed at 16 kHz, mono, signed 16-bit; ptime is 20 / 40 / 60 ms (default 60 ms,
   i.e. 960 samples / 1920 bytes per frame).
-- Platform `read` / `write` calls must bound their blocking (the Linux ALSA backend polls with a
-  50 ms timeout) so workers can observe shutdown and exit promptly.
+- Platform `read` / `write` calls must bound their blocking (the Linux ALSA implementation polls
+  with a 50 ms timeout) so workers can observe shutdown and exit promptly.
 - The state machine ticks every 100 ms; device-service polling is server-driven with a 3 s minimum
   during pairing and a 30 s default in runtime.
 - HTTP requests have a 5 s total deadline.
@@ -76,15 +77,15 @@ true, worker threads and timers keep running. The power levers belong to the int
 
 - **Sleep**: call `mybot_stop()` before entering low power and `mybot_start()` on wake;
   this releases workers, audio devices, TLS, and RTC resources.
-- **Radio**: the Wi-Fi provisioning backend owns the radio; implement the platform's low-power
+- **Radio**: the Wi-Fi provisioning implementation owns the radio; implement the platform's low-power
   policy there.
-- **Audio path**: gate the codec/amplifier in the audio backends; the SDK owns volume control — a
-  registered device-volume backend (hardware hook) is the primary path, with a software media
+- **Audio path**: gate the codec/amplifier in the audio implementations; the SDK owns volume control — a
+  registered device-volume implementation (hardware hook) is the primary path, with a software media
   gain as fallback.
 - **Polling**: intervals are server-driven (3 s minimum pairing, 30 s default runtime); agree on
   relaxed intervals with the server if idle power matters.
 
-When `MYBOT_WAKE_WORDS=ON`, the platform local-ASR backend runs on the capture MPQ and must be
+When `MYBOT_WAKE_WORDS=ON`, the platform local-ASR implementation runs on the capture MPQ and must be
 power-aware (it is the natural place to keep only the microphone path alive while idle).
 
 ## Logging
@@ -95,4 +96,5 @@ power-aware (it is the natural place to keep only the microphone path alive whil
 - Never log device tokens. The reference app logs the pairing code at INFO level; production
   builds should redact it.
 
-See [PORTING.md](PORTING.md) for the full platform contract and acceptance checklist.
+See [PORTING.md](PORTING.md) for the full platform integration specification and acceptance
+checklist.

@@ -82,9 +82,9 @@ typedef enum {
  * MYBOT_WIFI_STATE_CONNECTED.
  *
  * Preconditions:
- * - Every required platform backend must be registered first (Wi-Fi, KV,
+ * - Every required platform implementation must be registered first (Wi-Fi, KV,
  *   key, audio capture and playback, HTTPS transport). LCD and wake-word
- *   backends are required only when the corresponding features are enabled.
+ *   implementations are required only when the corresponding features are enabled.
  * - With MYBOT_ENABLE_HTTPS=ON, a "https://" server requires a registered
  *   TLS transport (mybot_https_register()); plain "http://" is rejected
  *   unless MYBOT_ALLOW_INSECURE_HTTP=ON is set for development builds.

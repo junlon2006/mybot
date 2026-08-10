@@ -2,20 +2,22 @@
 
 > [English](PORTING.md) | [简体中文](PORTING.zh-CN.md)
 
-This document defines the platform contract for mybot 1.0.0. Public APIs and ABI follow
+This document defines the cross-platform integration specification for mybot 1.0.0.
+Public APIs and ABI follow
 Semantic Versioning. Platform code must include only headers under `include/mybot` and link
 `mybot::sdk`.
 
 mybot is designed to be portable to virtually any platform — Linux, an RTOS, or bare metal — as
 long as AOSL has a `CONFIG_PLATFORM` port for it and an Agora RTSA library exists for the target
-ABI. The contract below is identical regardless of the host operating system or silicon vendor.
+ABI. The specification below is identical regardless of the host operating system or silicon vendor.
 
 ## Step 1: Verify prerequisites
 
 Provide a C99 compiler, CMake 3.16+, an AOSL `CONFIG_PLATFORM` port, and an Agora RTSA header and
 library built for the exact target ABI. When building from a git checkout, initialize the AOSL
-submodule first with `git submodule update --init --recursive`. The device also needs TLS-capable connectivity to the compatible
-device service, persistent credential storage, and 16 kHz mono signed 16-bit PCM I/O. The bundled
+submodule first with `git submodule update --init --recursive`. The device also needs
+TLS-capable connectivity to the compatible device service, persistent credential storage, and
+16 kHz mono signed 16-bit PCM I/O. The bundled
 Agora library is x86_64 Linux only and cannot be reused for another architecture.
 
 ## Step 2: Create the platform layout
@@ -33,14 +35,15 @@ platforms/my_mcu/
   my_mcu_kv_store.c
   my_mcu_key.c
   my_mcu_lcd.c          # optional
+  my_mcu_announce.c     # optional (pairing-code voice announcement)
   my_mcu_wake_words.c   # optional
 ```
 
 An out-of-tree firmware project may use the same layout without changing this repository.
 
-## Step 3: Implement required backends
+## Step 3: Implement the required platform capabilities
 
-Register every required backend exactly once before `mybot_start()`.
+Register every required implementation exactly once before `mybot_start()`.
 
 ### Audio
 
@@ -67,8 +70,8 @@ example from volume key events) take one of two paths:
   `mybot_audio_device_register_volume()` to route the SDK's volume changes to real hardware
   (codec register, amplifier, or mixer). `init`, `set_volume`, and `destroy` are required;
   `get_volume` is optional and used only to sync the SDK's volume state. The SDK initializes
-  the backend during startup and releases it on shutdown.
-- **Media volume** is the fallback used when no device volume backend is active. The SDK keeps a
+  the implementation during startup and releases it on shutdown.
+- **Media volume** is the fallback used when no device volume implementation is active. The SDK keeps a
   0..100 software gain and the playback pipeline applies it digitally to downlink PCM before it
   reaches the device (linear amplitude, 100 = unity gain). No platform code is required.
 
@@ -80,12 +83,12 @@ playback keeps working.
 Implement `mybot_wifi_ops_t`. `init` starts APSTA without waiting for the user.
 Emit connected, disconnected and failed events as state changes. Events may come from a platform
 thread, but none may run after `destroy` returns. Destroy must stop the transport and wait for
-in-flight callbacks. The backend must keep monitoring the STA link after the first successful
+in-flight callbacks. The implementation must keep monitoring the STA link after the first successful
 connection and report runtime disconnect and reconnect events; the SDK pauses device-service
 traffic while offline and resumes it after reconnect. Register with
 `mybot_wifi_register()`.
 
-The Linux backend reports connected immediately and is not a real APSTA reference.
+The Linux reference implementation reports connected immediately and is not a real APSTA reference.
 
 ### Persistent key-value storage
 
@@ -103,7 +106,7 @@ Register with `mybot_kv_store_register()`.
 
 Production builds keep `MYBOT_ENABLE_HTTPS=ON` and register one
 `mybot_https_ops_t` before `mybot_start()`. Wrap mbedTLS, BearSSL, or the chipset TLS
-socket API; the SDK core does not link OpenSSL. The backend must:
+socket API; the SDK core does not link OpenSSL. The implementation must:
 
 - establish TCP and TLS within the supplied timeout;
 - send DNS hosts as SNI, validate the certificate chain against a maintained trust store, and
@@ -114,7 +117,7 @@ socket API; the SDK core does not link OpenSSL. The backend must:
 
 Register with `mybot_https_register()`. Do not disable certificate or hostname
 verification for development certificates; install the required CA in the device trust store.
-The Linux reference backend uses OpenSSL and the system CA store. Plain HTTP exists only for an
+The Linux reference implementation uses OpenSSL and the system CA store. Plain HTTP exists only for an
 isolated development build configured with
 `MYBOT_ENABLE_HTTPS=OFF -DMYBOT_ALLOW_INSECURE_HTTP=ON`.
 
@@ -122,7 +125,7 @@ isolated development build configured with
 
 Implement `mybot_key_ops_t` and translate hardware input into conversation start, stop,
 pair, exit, volume-up and volume-down events. The SDK adjusts volume by 10 on volume events —
-real hardware volume when a device volume backend is active, otherwise the media-volume software
+real hardware volume when a device volume implementation is active, otherwise the media-volume software
 gain; emitting volume events is optional. Events may be asynchronous. Destroy must stop the
 source and wait for all handlers. Register with `mybot_key_register()`.
 
@@ -134,7 +137,7 @@ called from different SDK threads; the SDK serializes calls. Content is borrowed
 
 ### Wake words (optional)
 
-Required only with `MYBOT_WAKE_WORDS=ON`. Process receives borrowed PCM. An asynchronous backend
+Required only with `MYBOT_WAKE_WORDS=ON`. Process receives borrowed PCM. An asynchronous implementation
 must copy retained data, and destroy must wait for all detection handlers. Register with
 `mybot_wake_words_register()`.
 
@@ -150,14 +153,14 @@ the device leaves `awaiting_claim` (claimed, re-pairing, or offline). A missing 
 skips the whole announcement; a missing digit sound skips just that digit — pairing never blocks
 on the audio.
 
-Ops contract: `init` allocates the backend; `open` opens one logical sound
+Ops interface: `init` allocates the implementation; `open` opens one logical sound
 (`MYBOT_ANNOUNCE_SOUND_PROMPT`, `MYBOT_ANNOUNCE_SOUND_DIGIT_0`..`9`) and may do I/O; `read`
 copies up to `max_frames` frames and must stay cheap (it runs on the real-time playback worker);
-`close` / `destroy` release handles and the backend. Register with `mybot_announce_register()`
-before `mybot_start()`. The backend is optional: without one the SDK skips local announcements
+`close` / `destroy` release handles and the implementation. Register with `mybot_announce_register()`
+before `mybot_start()`. The implementation is optional: without one the SDK skips local announcements
 and only logs.
 
-The Linux reference backend reads raw PCM files per locale from
+The Linux reference implementation reads raw PCM files per locale from
 `./assets/locales/<locale>/` (`prompt.pcm`, `0.pcm`..`9.pcm`); override the directory with the
 `MYBOT_ASSETS_DIR` environment variable (default `./assets`) and the locale with `MYBOT_LOCALE`
 (default `zh-CN`).
@@ -176,7 +179,7 @@ int my_mcu_platform_register(void) {
 }
 ```
 
-Propagate every failure. Add LCD and wake-word registration when enabled.
+Propagate every failure. Add LCD, wake-word, and announcement registration when enabled.
 
 ## Step 5: Integrate with CMake
 
@@ -197,7 +200,7 @@ target_link_libraries(device_firmware PRIVATE mybot::sdk my_mcu_platform)
 
 Two independent variables select platform code: `CONFIG_PLATFORM` chooses the AOSL HAL port
 consumed by `third_party/aosl` (e.g. `linux`, `esp32`); `MYBOT_BUILD_LINUX_PLATFORM` builds the
-bundled Linux reference backends (`platforms/linux/`) and requires `CONFIG_PLATFORM=linux`. An MCU
+bundled Linux reference implementations (`platforms/linux/`) and requires `CONFIG_PLATFORM=linux`. An MCU
 port keeps `MYBOT_BUILD_LINUX_PLATFORM=OFF`. A host may predefine an imported target named
 `agora-rtc-sdk`. Both source integration with `add_subdirectory()` and installed-package
 consumption via `find_package(mybot)` are supported. Source integration must initialize mybot's
@@ -250,8 +253,8 @@ Verify endianness, pointer width, libc, compiler and floating-point ABI against 
 
 ## Known limitations
 
-- HTTPS requires a platform TLS backend and maintained CA trust store. Linux supplies an OpenSSL
+- HTTPS requires a platform TLS implementation and maintained CA trust store. Linux supplies an OpenSSL
   reference; MCU ports must integrate their TLS stack.
 - RTC is Agora-specific, registries are singleton, and one application instance is supported.
-- Linux backends are development references, not production provisioning or secure storage.
+- Linux reference implementations are development references, not production provisioning or secure storage.
 - Third-party redistribution rights must be verified separately; see `THIRD_PARTY_NOTICES.md`.

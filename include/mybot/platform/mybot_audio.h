@@ -22,13 +22,13 @@ extern "C" {
 /**
  * Capture device operations.
  *
- * The backend implements a blocking PCM capture device. The SDK drives it on
+ * The implementation provides a blocking PCM capture device. The SDK drives it on
  * a dedicated worker thread with the fixed format 16000 Hz, mono, 16 bits per
  * sample. Byte counts never appear in this interface: read()/write() counts
  * are PCM frames (one sample per channel).
  */
 typedef struct {
-    /** Backend name for logging and diagnostics. */
+    /** Implementation name for logging and diagnostics. */
     const char *name;
 
     /**
@@ -85,12 +85,12 @@ typedef struct {
 /**
  * Playback device operations.
  *
- * The backend implements a blocking PCM playback device with the same fixed
+ * The implementation provides a blocking PCM playback device with the same fixed
  * format as capture (16000 Hz, mono, 16 bits per sample) and the same
  * frame-count convention.
  */
 typedef struct {
-    /** Backend name for logging and diagnostics. */
+    /** Implementation name for logging and diagnostics. */
     const char *name;
 
     /**
@@ -148,9 +148,9 @@ typedef struct {
  * Device volume operations (optional hook interface)
  *
  * The SDK owns volume control; there is no application-facing volume API.
- * When a device volume backend is registered, the SDK drives real hardware
+ * When a device volume implementation is registered, the SDK drives real hardware
  * (codec / amplifier / mixer) through set_volume()/get_volume(). Without a
- * registered backend the SDK falls back to a software media gain applied to
+ * registered implementation the SDK falls back to a software media gain applied to
  * the playback PCM stream.
  * ---------------------------------------------------------- */
 
@@ -164,15 +164,15 @@ typedef struct {
 #define MYBOT_AUDIO_VOLUME_DEFAULT MYBOT_AUDIO_VOLUME_MAX
 
 /**
- * Real device volume operations (optional backend).
+ * Real device volume operations (optional implementation).
  *
- * The backend owns the hardware volume control (codec register, amplifier or
+ * The implementation owns the hardware volume control (codec register, amplifier or
  * mixer). init, set_volume and destroy are required; get_volume is optional
- * and may be NULL. When no backend is registered the SDK simply disables
+ * and may be NULL. When no implementation is registered the SDK simply disables
  * device volume control — playback and media volume keep working.
  */
 typedef struct {
-    /** Backend name for logging and diagnostics. */
+    /** Implementation name for logging and diagnostics. */
     const char *name;
 
     /**
@@ -236,14 +236,14 @@ MYBOT_API int mybot_audio_register_capture(const mybot_audio_capture_ops_t *ops)
 MYBOT_API int mybot_audio_register_playback(const mybot_audio_playback_ops_t *ops);
 
 /**
- * Register the real device volume backend.
+ * Register the real device volume implementation.
  *
  * @param ops volume operations table; must remain valid for the process
  *            lifetime
  * @return 0 on success, -1 if ops is invalid or already registered
  *
  * @note Call exactly once, before mybot_start(). The SDK initializes the
- *       backend during startup and drives it internally; no application code
+ *       implementation during startup and drives it internally; no application code
  *       calls the volume control functions.
  */
 MYBOT_API int mybot_audio_device_register_volume(const mybot_audio_volume_ops_t *ops);
