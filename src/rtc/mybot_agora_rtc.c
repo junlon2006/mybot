@@ -225,7 +225,10 @@ int mybot_rtc_session_join(const char *channel, const char *token, const char *u
     }
 
     /* BWE parameters (defaults) */
-    agora_rtc_set_bwe_param(s_rtc.conn_id, 16000, 256000, 64000);
+    int bwe_ret = agora_rtc_set_bwe_param(s_rtc.conn_id, 16000, 256000, 64000);
+    if (bwe_ret < 0) {
+        AOSL_LOG_WRN("[RTC] set_bwe_param failed: %s", agora_rtc_err_2_str(bwe_ret));
+    }
 
     /* Channel options: PCM input → SDK encodes to G.722 */
     rtc_channel_options_t ch_opt = {0};
