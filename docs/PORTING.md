@@ -2,8 +2,9 @@
 
 > [English](PORTING.md) | [简体中文](PORTING.zh-CN.md)
 
-This document defines the platform contract for mybot 0.1.0-rc.1. Public APIs may change before
-1.0. Platform code must include only headers under `include/mybot` and link `mybot::sdk`.
+This document defines the platform contract for mybot 1.0.0. Public APIs and ABI follow
+Semantic Versioning. Platform code must include only headers under `include/mybot` and link
+`mybot::sdk`.
 
 mybot is designed to be portable to virtually any platform — Linux, an RTOS, or bare metal — as
 long as AOSL has a `CONFIG_PLATFORM` port for it and an Agora RTSA library exists for the target
@@ -247,9 +248,8 @@ Verify endianness, pointer width, libc, compiler and floating-point ABI against 
 - A real device completes provisioning, pairing, RTC join, bidirectional audio, hangup and reboot.
 - Logs and storage do not expose tokens.
 
-## Current RC limitations
+## Known limitations
 
-- Public API and ABI may change before 1.0.
 - HTTPS requires a platform TLS backend and maintained CA trust store. Linux supplies an OpenSSL
   reference; MCU ports must integrate their TLS stack.
 - RTC is Agora-specific, registries are singleton, and one application instance is supported.

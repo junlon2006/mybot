@@ -11,7 +11,7 @@
 识别。平台相关能力通过一组小型 `ops` 接口注入，SDK 核心只依赖 C99 与 AOSL，理论上
 可移植到任意平台——Linux、RTOS 或裸机 MCU。
 
-> 当前版本为 **0.1.0-rc.1**，公开 API 尚未承诺稳定。仓库内置的 Agora RTSA 二进制与
+> 当前版本为 **1.0.0**。仓库内置的 Agora RTSA 二进制与
 > AOSL 有独立的许可及使用条件；用于产品前请阅读[许可证与第三方依赖](#许可证与第三方依赖)。
 
 ## 目录
@@ -109,7 +109,7 @@ ctest --test-dir build --output-on-failure
 ./build/examples/linux/mybot \
   --server https://api.example.com \
   --device-id AG-DEMO-001 \
-  --fw-ver 0.1.0-rc.1 \
+  --fw-ver 1.0.0 \
   --hw-model linux-reference
 ```
 

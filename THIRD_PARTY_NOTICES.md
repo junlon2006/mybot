@@ -21,7 +21,7 @@ Location: `third_party/agora_rtsa_sdk`. The bundled package identifies itself as
 v1.10.1 for x86_64 Linux.
 
 No standalone license or NOTICE for the bundled RTSA binary was found in the package during the
-0.1.0-rc.1 audit. Possession of the files is not evidence of redistribution rights. Before a public
+1.0.0 audit. Possession of the files is not evidence of redistribution rights. Before a public
 source archive, binary release, container image, firmware image, or mirror is published, the
 distributor must obtain and retain the applicable Agora terms and confirm redistribution rights.
 

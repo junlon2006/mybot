@@ -1,9 +1,8 @@
 # Changelog
 
-This project follows Semantic Versioning after 1.0. Before 1.0, public API and ABI may change
-between release candidates.
+This project follows Semantic Versioning.
 
-## [Unreleased]
+## [1.0.0] - 2026-08-10
 
 ### Added
 
@@ -122,7 +121,7 @@ between release candidates.
   Agora RTSA library is supplied by the consumer via `MYBOT_AGORA_SDK_DIR` /
   `MYBOT_AGORA_RTC_LIBRARY` and is covered by an install-and-consume integration test.
 
-## [0.1.0-rc.1] - Unreleased
+## [0.1.0-rc.1]
 
 ### Added
 

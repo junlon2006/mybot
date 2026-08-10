@@ -3,10 +3,10 @@ cmake_minimum_required(VERSION 3.16)
 # Single source of truth for the SDK version. include/mybot/mybot_version.h is
 # generated from mybot_version.h.in at configure time, so the code can never
 # drift from the version declared here.
-set(MYBOT_VERSION_MAJOR 0)
-set(MYBOT_VERSION_MINOR 1)
+set(MYBOT_VERSION_MAJOR 1)
+set(MYBOT_VERSION_MINOR 0)
 set(MYBOT_VERSION_PATCH 0)
-set(MYBOT_VERSION_PRERELEASE "rc.1")
+set(MYBOT_VERSION_PRERELEASE "")
 if(MYBOT_VERSION_PRERELEASE)
     set(MYBOT_VERSION_STRING
         "${MYBOT_VERSION_MAJOR}.${MYBOT_VERSION_MINOR}.${MYBOT_VERSION_PATCH}-${MYBOT_VERSION_PRERELEASE}")

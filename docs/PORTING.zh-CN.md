@@ -2,7 +2,7 @@
 
 > [English](PORTING.md) | 简体中文
 
-本文档定义 mybot 0.1.0-rc.1 的平台契约。1.0 之前公开 API 可能发生变化。平台代码必须只
+本文档定义 mybot 1.0.0 的平台契约。公开 API 与 ABI 遵循语义化版本。平台代码必须只
 包含 `include/mybot` 下的头文件，并链接 `mybot::sdk`。
 
 mybot 设计为可移植到几乎任意平台——Linux、RTOS 或裸机——只要 AOSL 有对应的
@@ -230,9 +230,8 @@ cmake --build build-target -j
 - 真实设备完成配网、配对、RTC 加入、双向音频、挂断与重启。
 - 日志与存储不暴露 token。
 
-## 当前 RC 限制
+## 已知限制
 
-- 1.0 之前公开 API 与 ABI 可能变化。
 - HTTPS 需要平台 TLS 后端与受维护的 CA 信任库。Linux 提供 OpenSSL 参考实现；MCU 移植必须
   集成其 TLS 栈。
 - RTC 是 Agora 专用，注册表是单例，且仅支持单应用实例。
