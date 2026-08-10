@@ -12,6 +12,9 @@ AOSL includes `third_party/aosl/LICENSE`, which is based on Apache-2.0 and adds 
 conditions. Read that file before using, modifying, deploying, or redistributing AOSL. Do not label
 the combined repository or binary as uniformly Apache-2.0.
 
+Because AOSL is a git submodule, source archives of this repository do not include it
+automatically; initialize submodules after cloning with `git submodule update --init --recursive`.
+
 ## Agora RTSA SDK
 
 Location: `third_party/agora_rtsa_sdk`. The bundled package identifies itself as Agora RTSA Lite

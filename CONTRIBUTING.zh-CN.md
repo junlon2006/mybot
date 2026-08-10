@@ -14,8 +14,9 @@
    机械重命名或批量编辑后，提交前先执行
    `find include src platforms examples tests -type f \( -name '*.c' -o -name '*.h' \) -exec
    clang-format -i {} +`。
-5. 提交 pull request 前先构建并测试：
+5. 提交 pull request 前先构建并测试（先初始化 AOSL submodule）：
 
+       git submodule update --init --recursive
        cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=ON
        cmake --build build -j
        ctest --test-dir build --output-on-failure

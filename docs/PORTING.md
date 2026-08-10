@@ -12,7 +12,8 @@ ABI. The contract below is identical regardless of the host operating system or 
 ## Step 1: Verify prerequisites
 
 Provide a C99 compiler, CMake 3.16+, an AOSL `CONFIG_PLATFORM` port, and an Agora RTSA header and
-library built for the exact target ABI. The device also needs TLS-capable connectivity to the compatible
+library built for the exact target ABI. When building from a git checkout, initialize the AOSL
+submodule first with `git submodule update --init --recursive`. The device also needs TLS-capable connectivity to the compatible
 device service, persistent credential storage, and 16 kHz mono signed 16-bit PCM I/O. The bundled
 Agora library is x86_64 Linux only and cannot be reused for another architecture.
 
@@ -174,7 +175,8 @@ consumed by `third_party/aosl` (e.g. `linux`, `esp32`); `MYBOT_BUILD_LINUX_PLATF
 bundled Linux reference backends (`platforms/linux/`) and requires `CONFIG_PLATFORM=linux`. An MCU
 port keeps `MYBOT_BUILD_LINUX_PLATFORM=OFF`. A host may predefine an imported target named
 `agora-rtc-sdk`. Both source integration with `add_subdirectory()` and installed-package
-consumption via `find_package(mybot)` are supported.
+consumption via `find_package(mybot)` are supported. Source integration must initialize mybot's
+nested AOSL submodule (`git submodule update --init --recursive` in the mybot checkout).
 
 ## Step 6: Start and stop
 

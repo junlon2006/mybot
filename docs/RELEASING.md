@@ -12,6 +12,8 @@
 - [ ] Review all third-party changes and `THIRD_PARTY_NOTICES.md`.
 - [ ] Obtain written confirmation that bundled Agora artifacts may be redistributed, or remove them
       from the release artifact and document how users supply them.
+- [ ] Ensure source artifacts include the AOSL submodule content or tell users to run
+      `git submodule update --init --recursive` (GitHub source archives do not include submodules).
 - [ ] Confirm no secret, token, private endpoint, customer data, or generated KV data is tracked.
 
 ## Verify

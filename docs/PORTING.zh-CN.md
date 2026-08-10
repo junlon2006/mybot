@@ -12,7 +12,8 @@ mybot 设计为可移植到几乎任意平台——Linux、RTOS 或裸机——�
 ## 第 1 步：核实前置条件
 
 提供 C99 编译器、CMake 3.16+、AOSL `CONFIG_PLATFORM` 移植，以及为目标精确 ABI 构建的
-Agora RTSA 头文件与库。设备还需要到兼容设备服务端的 TLS 连接能力、持久化凭据存储，以及
+Agora RTSA 头文件与库。从 git 检出构建时，先执行 `git submodule update --init --recursive`
+初始化 AOSL submodule。设备还需要到兼容设备服务端的 TLS 连接能力、持久化凭据存储，以及
 16 kHz 单声道有符号 16-bit PCM 输入输出。随仓库附带的 Agora 库仅用于 x86_64 Linux，不能
 复用于其他架构。
 
@@ -161,7 +162,9 @@ target_link_libraries(device_firmware PRIVATE mybot::sdk my_mcu_platform)
 端口（如 `linux`、`esp32`）；`MYBOT_BUILD_LINUX_PLATFORM` 构建随附的 Linux 参考后端
 （`platforms/linux/`）并要求 `CONFIG_PLATFORM=linux`。MCU 移植保持
 `MYBOT_BUILD_LINUX_PLATFORM=OFF`。宿主可预定义名为 `agora-rtc-sdk` 的导入目标。本 RC 支持
-`add_subdirectory()` 源码集成，也支持通过 `find_package(mybot)` 消费已安装包。
+`add_subdirectory()` 源码集成，也支持通过 `find_package(mybot)` 消费已安装包。源码集成需先
+初始化 mybot 的嵌套 AOSL submodule（在 mybot 检出目录执行
+`git submodule update --init --recursive`）。
 
 ## 第 6 步：启动与停止
 

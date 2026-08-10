@@ -138,9 +138,11 @@ location with the `MYBOT_KV_STORE_DIR` environment variable.
 
 ## Integrating into a host project
 
-We recommend vendoring the repository as a source submodule. The host must provide an Agora RTSA
-header and static library matching the target architecture and ensure AOSL supports the target
-platform.
+We recommend vendoring the repository as a source submodule, and mybot itself depends on AOSL
+through a nested submodule — initialize submodules after adding it with
+`git submodule update --init --recursive`.
+The host must provide an Agora RTSA header and static library matching the target architecture and
+ensure AOSL supports the target platform.
 
 An installed package is also supported: `cmake --install` exports `mybot::sdk` (and the bundled
 `mybot::aosl`), and a consumer project can use `find_package(mybot CONFIG REQUIRED)` after pointing
@@ -374,7 +376,7 @@ mybot/
 ├── tests/                  # unit, platform, and host integration tests
 ├── docs/                   # porting and release guides
 ├── cmake/                  # toolchain helpers
-└── third_party/            # AOSL and the Agora RTSA SDK
+└── third_party/            # AOSL submodule and the Agora RTSA SDK
 ```
 
 Key CMake targets:

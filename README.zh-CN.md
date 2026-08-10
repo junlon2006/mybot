@@ -119,8 +119,9 @@ APSTA 配网；音频使用 ALSA `default` 设备；KV 数据默认写入当前�
 
 ## 集成到宿主工程
 
-推荐将仓库作为源码子模块引入。宿主需要为目标架构准备匹配的 Agora RTSA 头文件/静态库，
-并确保 AOSL 已支持目标平台。
+推荐将仓库作为源码子模块引入。mybot 自身通过嵌套 submodule 依赖 AOSL，引入后先执行
+`git submodule update --init --recursive` 初始化。宿主需要为目标架构准备匹配的 Agora RTSA
+头文件/静态库，并确保 AOSL 已支持目标平台。
 
 也支持已安装包：`cmake --install` 会导出 `mybot::sdk`（及随附的 `mybot::aosl`），消费工程将
 `MYBOT_AGORA_SDK_DIR` / `MYBOT_AGORA_RTC_LIBRARY` 指向目标架构的 Agora RTSA 包后，即可用
@@ -340,7 +341,7 @@ mybot/
 ├── tests/                  # 单元、平台和宿主集成测试
 ├── docs/                   # 移植与发布指南
 ├── cmake/                  # 工具链辅助文件
-└── third_party/            # AOSL 与 Agora RTSA SDK
+└── third_party/            # AOSL submodule 与 Agora RTSA SDK
 ```
 
 主要 CMake 目标：
