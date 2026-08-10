@@ -441,7 +441,9 @@ change the licensing of third-party components:
 
 - AOSL carries additional conditions listed in `third_party/aosl/LICENSE`.
 - The Agora RTSA SDK binary is subject to its software license, trial period, and commercial
-  licensing requirements.
+  licensing requirements. The bundled x86_64 Linux binary is for development/demo use only;
+  commercial or production use and redistribution require authorization from Agora (声网) — contact
+  Agora's sales channel before shipping or redistributing it.
 - `mybot_json` is derived from cJSON and retains the MIT license notice.
 
 Verify these terms independently before shipping or redistributing a product. See

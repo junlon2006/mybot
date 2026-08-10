@@ -4,13 +4,14 @@
 
 ## 准备
 
-- [ ] 选择语义化预发布版本，并更新 `CMakeLists.txt` 顶部的版本变量——这是唯一来源。
+- [ ] 确定语义化版本号，并更新 `CMakeLists.txt` 顶部的版本变量——这是唯一来源。
       `mybot_version.h` 由 `mybot_version.h.in` 在配置阶段生成，请勿直接编辑；同步更新
       `CHANGELOG.md` 与示例输出。
 - [ ] 确认 README 与 `docs/PORTING.md` 与实际公开 API 和 CMake 选项一致。
 - [ ] 审查所有第三方变更与 `THIRD_PARTY_NOTICES.md`。
-- [ ] 取得随附 Agora 制品可再分发的书面确认，或将其从发布制品中移除并说明用户如何自行
-      提供。
+- [ ] 发布制品若包含内置 Agora RTSA 二进制，需先通过声网（Agora）销售/商务渠道取得书面
+      再分发授权；仓库内 x86_64 Linux 二进制保留用于 Linux 演示。若未取得授权，请从发布
+      制品中排除该二进制，并说明用户如何通过 `AGORA_SDK_DIR` / `AGORA_RTC_LIBRARY` 自行提供。
 - [ ] 确保源码制品包含 AOSL submodule 内容，或说明用户需执行
       `git submodule update --init --recursive`（GitHub 源码归档不包含 submodule）。
 - [ ] 确认没有跟踪任何密钥、token、私有端点、客户数据或生成的 KV 数据。
@@ -31,7 +32,7 @@
 
 ## 发布
 
-- [ ] 创建与 `MYBOT_VERSION_STRING` 匹配的带注释的预发布 tag。
+- [ ] 创建与 `MYBOT_VERSION_STRING` 匹配的带注释的发布 tag（例如 `v1.0.0`）。
 - [ ] 仅在第三方授权审查后附加源码与二进制制品。
 - [ ] 包含 `LICENSE`、`THIRD_PARTY_NOTICES.md`、changelog 与校验和。
-- [ ] 将 GitHub release 标记为预发布并列出已知限制。
+- [ ] 将 GitHub release 发布为正式版（不标记为预发布）并列出已知限制。

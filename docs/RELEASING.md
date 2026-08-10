@@ -4,14 +4,16 @@
 
 ## Prepare
 
-- [ ] Choose a semantic prerelease version and update the version variables at the top of
+- [ ] Choose the semantic version and update the version variables at the top of
       `CMakeLists.txt` — the single source of truth. `mybot_version.h` is generated from
       `mybot_version.h.in` at configure time; do not edit it directly. Update `CHANGELOG.md` and
       example output together.
 - [ ] Confirm README and `docs/PORTING.md` match the actual public APIs and CMake options.
 - [ ] Review all third-party changes and `THIRD_PARTY_NOTICES.md`.
-- [ ] Obtain written confirmation that bundled Agora artifacts may be redistributed, or remove them
-      from the release artifact and document how users supply them.
+- [ ] Obtain written redistribution authorization for the bundled Agora RTSA binary from Agora
+      (声网) sales/business before including it in a release artifact; the in-repo x86_64 Linux
+      binary stays for the Linux demo. If authorization is unavailable, exclude the binary and
+      document how users supply it via `AGORA_SDK_DIR` / `AGORA_RTC_LIBRARY`.
 - [ ] Ensure source artifacts include the AOSL submodule content or tell users to run
       `git submodule update --init --recursive` (GitHub source archives do not include submodules).
 - [ ] Confirm no secret, token, private endpoint, customer data, or generated KV data is tracked.
@@ -32,7 +34,8 @@
 
 ## Publish
 
-- [ ] Create an annotated prerelease tag matching `MYBOT_VERSION_STRING`.
+- [ ] Create an annotated release tag matching `MYBOT_VERSION_STRING` (e.g. `v1.0.0`).
 - [ ] Attach source and binary artifacts only after third-party authorization review.
 - [ ] Include `LICENSE`, `THIRD_PARTY_NOTICES.md`, changelog, and checksums.
-- [ ] Mark the GitHub release as a prerelease and list known limitations.
+- [ ] Publish the GitHub release as a stable release (not marked as a prerelease) and list
+      known limitations.

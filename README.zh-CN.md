@@ -400,7 +400,9 @@ find include src platforms examples tests -type f \
 组件的许可：
 
 - AOSL 带有其 `third_party/aosl/LICENSE` 中列出的附加条件。
-- Agora RTSA SDK 二进制受其软件许可、试用期和商业授权要求约束。
+- Agora RTSA SDK 二进制受其软件许可、试用期和商业授权要求约束。仓库内置的 x86_64 Linux
+  二进制仅用于开发/演示；商业或生产使用与再分发需通过声网（Agora）销售渠道获取授权，
+  发布或转售前请先联系声网商务。
 - `mybot_json` 派生自 cJSON，保留 MIT 许可声明。
 
 发布产品或重新分发前必须单独核实这些条款。详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
