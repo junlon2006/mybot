@@ -2,6 +2,7 @@
 #include <mybot/mybot.h>
 #include <mybot/mybot_build_config.h>
 #include <mybot/mybot_version.h>
+#include <mybot/platform/mybot_announce.h>
 #include <mybot/platform/mybot_audio.h>
 #include <mybot/platform/mybot_key.h>
 #include <mybot/platform/mybot_kv_store.h>
@@ -28,5 +29,5 @@ int main(void) {
     assert(mybot_start(&config) < 0);
 
     assert(strcmp(mybot_version_string(), MYBOT_VERSION_STRING) == 0);
-    return MYBOT_VERSION_MAJOR == 0 ? 0 : 1;
+    return 0;
 }

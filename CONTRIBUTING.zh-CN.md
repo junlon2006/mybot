@@ -1,6 +1,6 @@
 # 参与贡献
 
-欢迎对 0.1 release-candidate 系列贡献代码。公开 API 仍可能发生变化。
+欢迎为 1.0 版本系列贡献代码。公开 API 与 ABI 遵循语义化版本。
 
 > [English](CONTRIBUTING.md) | 简体中文
 

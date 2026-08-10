@@ -11,7 +11,7 @@
 识别。平台相关能力通过一组小型 `ops` 接口注入，SDK 核心只依赖 C99 与 AOSL，理论上
 可移植到任意平台——Linux、RTOS 或裸机 MCU。
 
-> 当前版本为 **0.1.0-rc.1**，公开 API 尚未承诺稳定。仓库内置的 Agora RTSA 二进制与
+> 当前版本为 **1.0.0**。仓库内置的 Agora RTSA 二进制与
 > AOSL 有独立的许可及使用条件；用于产品前请阅读[许可证与第三方依赖](#许可证与第三方依赖)。
 
 ## 目录
@@ -109,7 +109,7 @@ ctest --test-dir build --output-on-failure
 ./build/examples/linux/mybot \
   --server https://api.example.com \
   --device-id AG-DEMO-001 \
-  --fw-ver 0.1.0-rc.1 \
+  --fw-ver 1.0.0 \
   --hw-model linux-reference
 ```
 
@@ -400,7 +400,9 @@ find include src platforms examples tests -type f \
 组件的许可：
 
 - AOSL 带有其 `third_party/aosl/LICENSE` 中列出的附加条件。
-- Agora RTSA SDK 二进制受其软件许可、试用期和商业授权要求约束。
+- Agora RTSA SDK 二进制受其软件许可、试用期和商业授权要求约束。仓库内置的 x86_64 Linux
+  二进制仅用于开发/演示；商业或生产使用与再分发需通过声网（Agora）销售渠道获取授权，
+  发布或转售前请先联系声网商务。
 - `mybot_json` 派生自 cJSON，保留 MIT 许可声明。
 
 发布产品或重新分发前必须单独核实这些条款。详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

@@ -13,7 +13,7 @@ recognition. Platform-specific capabilities are injected through a small set of 
 the core depends only on C99 and AOSL and can be ported to virtually any platform — Linux, an
 RTOS, or a bare-metal MCU.
 
-> Current version: **0.1.0-rc.1** — the public API is not yet stable. The bundled Agora RTSA
+> Current version: **1.0.0**. The bundled Agora RTSA
 > binary and AOSL have separate licensing and usage terms; read
 > [License and third-party dependencies](#license-and-third-party-dependencies) before using the
 > SDK in a product.
@@ -128,7 +128,7 @@ Run the example:
 ./build/examples/linux/mybot \
   --server https://api.example.com \
   --device-id AG-DEMO-001 \
-  --fw-ver 0.1.0-rc.1 \
+  --fw-ver 1.0.0 \
   --hw-model linux-reference
 ```
 
@@ -441,7 +441,9 @@ change the licensing of third-party components:
 
 - AOSL carries additional conditions listed in `third_party/aosl/LICENSE`.
 - The Agora RTSA SDK binary is subject to its software license, trial period, and commercial
-  licensing requirements.
+  licensing requirements. The bundled x86_64 Linux binary is for development/demo use only;
+  commercial or production use and redistribution require authorization from Agora (声网) — contact
+  Agora's sales channel before shipping or redistributing it.
 - `mybot_json` is derived from cJSON and retains the MIT license notice.
 
 Verify these terms independently before shipping or redistributing a product. See

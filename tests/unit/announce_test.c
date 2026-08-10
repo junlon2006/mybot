@@ -205,6 +205,15 @@ static void test_missing_sounds(void) {
     s_digit_available[2] = true;
 }
 
+static void test_long_code_truncated(void) {
+    /* 17 digits exceed the 16-digit queue cap; trailing digits are dropped
+     * with a warning and the first 16 still play. */
+    assert(mybot_announce_play_pair_code("01234567890123456") == 0);
+    int16_t buf[512];
+    assert(read_all(buf, 512) == MOCK_PROMPT_FRAMES + 16 * MOCK_DIGIT_FRAMES);
+    expect_value(buf, MOCK_PROMPT_FRAMES + 15 * MOCK_DIGIT_FRAMES, MOCK_DIGIT_FRAMES, 1005);
+}
+
 int main(void) {
     setup_mock_sounds();
     aosl_ctor();
@@ -215,6 +224,7 @@ int main(void) {
     test_stop_midway();
     test_replay_replaces();
     test_missing_sounds();
+    test_long_code_truncated();
 
     mybot_announce_deinit();
     aosl_dtor();
