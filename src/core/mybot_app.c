@@ -286,9 +286,14 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
         }
 
 #if MYBOT_CLOUD_AEC
-        /* Preserve the existing AEC reference timing: publish once when the
-         * playback frame is first dequeued. */
-        mybot_ringbuf_write(s_app.ref_ringbuf, (const char *)s_app.pb_pending, AUDIO_FRAME_BYTES);
+        /* Publish the downlink PCM as the AEC reference only while an RTC
+         * session is connected. Local-only audio (e.g. the pairing-code
+         * announcement) must not fill the reference buffer with stale data
+         * for the cloud AEC when a conversation starts. */
+        if (aosl_atomic_read(&s_app.rtc_connected)) {
+            mybot_ringbuf_write(s_app.ref_ringbuf, (const char *)s_app.pb_pending,
+                                AUDIO_FRAME_BYTES);
+        }
 #endif
     }
 
