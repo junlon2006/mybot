@@ -104,12 +104,18 @@ int mybot_announce_play_pair_code(const char *code) {
     int n = 0;
 
     sounds[n++] = MYBOT_ANNOUNCE_SOUND_PROMPT;
-    for (const char *p = code; *p && n < MYBOT_ANNOUNCE_MAX_QUEUE; p++) {
-        if (*p >= '0' && *p <= '9') {
-            sounds[n++] = (mybot_announce_sound_t)(MYBOT_ANNOUNCE_SOUND_DIGIT_0 + (*p - '0'));
-        } else {
+    for (const char *p = code; *p; p++) {
+        if (*p < '0' || *p > '9') {
             AOSL_LOG_WRN("announce: ignoring non-digit '%c' in pair code", *p);
+            continue;
         }
+        if (n >= MYBOT_ANNOUNCE_MAX_QUEUE) {
+            AOSL_LOG_WRN("announce: pair code longer than %d digits, "
+                         "trailing digits not announced",
+                         MYBOT_ANNOUNCE_MAX_CODE_LEN);
+            break;
+        }
+        sounds[n++] = (mybot_announce_sound_t)(MYBOT_ANNOUNCE_SOUND_DIGIT_0 + (*p - '0'));
     }
 
     handles[0] = s_ann.ops->open(s_ann.ops_ctx, sounds[0]);
