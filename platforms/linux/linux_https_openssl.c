@@ -1,4 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
+/* getaddrinfo, poll, and socket options are POSIX-2001/2008 APIs that glibc
+ * hides under strict -std=c99 unless a feature-test macro is defined. */
+#define _POSIX_C_SOURCE 200112L
+
 #include <mybot/mybot_build_config.h>
 #include <mybot/platform/mybot_https.h>
 
