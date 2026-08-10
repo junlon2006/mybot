@@ -31,3 +31,11 @@ if(MYBOT_LINUX_HTTPS_OPENSSL)
     target_link_libraries(mybot_platform_linux PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 endif()
 mybot_enable_sanitizers(mybot_platform_linux)
+
+# Copy the pairing-code announcement PCM assets into the build tree so the
+# Linux example can use them directly, wherever it is invoked from.
+add_custom_command(TARGET mybot_platform_linux POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../assets/locales"
+            "${CMAKE_BINARY_DIR}/assets/locales"
+    COMMENT "Copy pairing-code announcement PCM assets into the build tree")
