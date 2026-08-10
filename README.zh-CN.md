@@ -44,7 +44,7 @@
 - **全双工语音交互 · Agora AI 能力**：基于 Agora RTSA，支持云端 AEC、AI QoS 与可选
   实时转写。
 - **音量控制**：两个相互独立的层次——SDK 管理的媒体音量（对播放 PCM 做数字软件增益，
-  所有平台可用）与可选的设备真实音量后端（Codec / 功放 / 混音器），由平台注册。
+  所有平台可用）与可选的设备真实音量实现（Codec / 功放 / 混音器），由平台注册。
 - **可选的本地唤醒词**：默认关闭；唤醒行为与物理按键启动会话一致。
 - **按键与 LCD 工作流**：语义化屏幕状态（配网 / 配对码 / 就绪 / 会话中），显示方式由
   平台决定。
@@ -59,7 +59,7 @@
 - 音频格式固定为 16 kHz、单声道、16-bit PCM；`ptime` 可配置为 20/40/60 ms，默认
   60 ms。
 - RTC 实现专用于 Agora RTSA，不提供其他 RTC 协议适配层。
-- 本地 ASR 唤醒词为可选平台后端，默认关闭；开启时必须由平台注册后端。
+- 本地 ASR 唤醒词为可选平台实现，默认关闭；开启时必须由平台注册实现。
 - Wi-Fi 接口面向 APSTA 配网场景。
 - 设备服务端不属于本仓库；运行示例与联调需要兼容的服务端地址。
 
@@ -120,7 +120,7 @@ ctest --test-dir build --output-on-failure
 就绪后输入 `s` 开始会话、`q` 停止会话、`p` 重新配对、`u` / `d` 增大 / 减小媒体音量、
 `e` 退出。
 
-Linux 后端是**开发替身**：它直接使用宿主机现有网络并立即报告 STA 已连接，不实现真实
+Linux 参考实现是**开发替身**：它直接使用宿主机现有网络并立即报告 STA 已连接，不实现真实
 APSTA 配网；音频使用 ALSA `default` 设备；KV 数据默认写入当前目录的 `.mybot-kv-store/`，
 可用环境变量 `MYBOT_KV_STORE_DIR` 修改。
 
@@ -151,8 +151,8 @@ target_link_libraries(device_firmware PRIVATE mybot::sdk)
 ```
 
 平台必须在 `mybot_start()` 之前注册 Wi-Fi、KV、按键、音频采集、音频播放和
-HTTPS 传输后端。LCD 可选；只有 `MYBOT_WAKE_WORDS=ON` 时才必须注册本地 ASR 后端。
-Linux 平台自动注册 OpenSSL 后端；其他平台需实现 `mybot_https_ops_t`。
+HTTPS 传输实现。LCD 可选；只有 `MYBOT_WAKE_WORDS=ON` 时才必须注册本地 ASR 实现。
+Linux 平台自动注册 OpenSSL 实现；其他平台需实现 `mybot_https_ops_t`。
 完整实现顺序、最小代码、线程约束和验收清单见 [docs/PORTING.md](docs/PORTING.md)。
 
 最小应用生命周期：
@@ -178,7 +178,7 @@ mybot_stop();
 | --- | --- | --- |
 | `MYBOT_AUDIO_PTIME_MS` | `60` | 音频包长，只接受 20、40、60 ms |
 | `MYBOT_CLOUD_AEC` | `ON` | 服务端 AEC；上行包含麦克风和参考声道 |
-| `MYBOT_WAKE_WORDS` | `OFF` | 启用本地 ASR 唤醒词平台后端 |
+| `MYBOT_WAKE_WORDS` | `OFF` | 启用本地 ASR 唤醒词平台实现 |
 | `MYBOT_AI_QOS` | `ON` | Agora AI QoS |
 | `MYBOT_FAST_SEND_MULTIPLIER` | `3` | 快发倍数，只接受 1 到 5 |
 | `MYBOT_SHOW_TRANSCRIPT` | `OFF` | 请求实时转写数据流 |
@@ -189,7 +189,7 @@ mybot_stop();
 | `MYBOT_ENABLE_COVERAGE` | `OFF` | 为 gcov 代码覆盖率插桩；CI 覆盖率任务使用 |
 
 两个相互独立的变量选择平台代码：`CONFIG_PLATFORM` 选择 `third_party/aosl` 消费的 AOSL HAL
-端口（如 `linux`、`esp32`）；`MYBOT_BUILD_LINUX_PLATFORM` 构建随附的 Linux 参考后端
+端口（如 `linux`、`esp32`）；`MYBOT_BUILD_LINUX_PLATFORM` 构建随附的 Linux 参考实现
 （`platforms/linux/`：ALSA、stdin、文件 KV、控制台 LCD、OpenSSL），并要求
 `CONFIG_PLATFORM=linux`。MCU 移植设置 `CONFIG_PLATFORM=my_mcu` 并保持
 `MYBOT_BUILD_LINUX_PLATFORM=OFF`。
@@ -203,7 +203,7 @@ cmake -S . -B build-wake \
   -DMYBOT_WAKE_WORDS=ON
 ```
 
-Linux 参考平台没有本地 ASR 后端，开启 `MYBOT_WAKE_WORDS` 后需要由宿主额外注册后端，
+Linux 参考平台没有本地 ASR 实现，开启 `MYBOT_WAKE_WORDS` 后需要由宿主额外注册实现，
 否则应用会明确启动失败。
 
 明文 HTTP 不会自动回退。仅在隔离的本地开发环境中，可显式配置
@@ -213,7 +213,7 @@ Linux 参考平台没有本地 ASR 后端，开启 `MYBOT_WAKE_WORDS` 后需要�
 ## 系统架构
 
 SDK 采用分层架构：宿主应用通过公共 API 驱动核心，核心模块建立在 AOSL 可移植运行层
-与平台 `ops` 契约之上，平台差异全部由各平台后端实现收敛。设备服务端、Agora RTC 云与
+与平台 `ops` 契约之上，平台差异全部由各平台实现收敛。设备服务端、Agora RTC 云与
 云端 AI Agent 是运行时依赖的外部服务，均不在本仓库内。
 
 ```mermaid
@@ -236,10 +236,10 @@ flowchart TB
 
     subgraph infra["基础服务层"]
         aosl["AOSL<br/>MPQ 线程 · 定时器 · 原子 · 日志"]
-        ops["平台 ops 契约<br/>wifi · kv_store · key · lcd<br/>audio · https · asr"]
+        ops["平台 ops 契约<br/>wifi · kv_store · key · lcd<br/>audio · https · announce · asr"]
     end
 
-    subgraph plat["平台后端"]
+    subgraph plat["平台实现"]
         linux_b["Linux 参考实现<br/>ALSA · stdin · file · console · OpenSSL"]
         mcu_b["MCU 平台实现 · 宿主提供"]
     end
@@ -280,7 +280,7 @@ flowchart TB
   RTSA 会话封装、音频环形缓冲与可选本地唤醒词。核心代码不直接触碰任何 OS 或外设 API。
 - **基础服务层**：AOSL 提供线程 / MPQ / 定时器 / 日志等可移植能力；平台 `ops` 契约
   定义 SDK 所需的设备能力接口，两者都可由具体平台实现。
-- **平台后端**：Linux 参考实现与各 MCU 平台按同一契约注册。
+- **平台实现**：Linux 参考实现与各 MCU 平台按同一契约注册。
 - **外部服务**：设备服务端（配对 / 认领 / 会话调度，仅 HTTPS）、Agora RTC 云（实时音频
   传输）与云端 AI Agent（语音识别 / 理解 / 合成）。
 
@@ -296,7 +296,7 @@ flowchart TB
 | `cap_mpq` | ptime 定时器 | 麦克风采集 → 采集环形缓冲 →（可选）唤醒词 |
 | `pb_mpq` | ptime 定时器 | 播放环形缓冲 → 扬声器，同时生成 AEC 参考声道 |
 
-实时音频定时器（cap / pb / send）相互独立，单个阻塞后端不会拖垮整条音频链路；
+实时音频定时器（cap / pb / send）相互独立，单个阻塞实现不会拖垮整条音频链路；
 状态机与启动流程使用专用线程，不抢占音频节拍。
 
 ### 工作流
@@ -341,9 +341,9 @@ flowchart LR
 
 ```text
 mybot/
-├── include/mybot/          # SDK 公共头文件和平台契约
+├── include/mybot/          # SDK 公共头文件和平台接口规范
 ├── src/                    # 跨平台实现；internal/ 不属于公共 API
-├── platforms/linux/        # Linux 参考后端（ALSA/stdin/file/console）
+├── platforms/linux/        # Linux 参考实现（ALSA/stdin/file/console）
 ├── examples/linux/         # Linux 示例应用入口
 ├── tests/                  # 单元、平台和宿主集成测试
 ├── docs/                   # 移植与发布指南
@@ -354,13 +354,13 @@ mybot/
 主要 CMake 目标：
 
 - `mybot::sdk`：跨平台 SDK 核心（AOSL + Agora RTSA）。
-- `mybot::platform_linux`：Linux 参考后端，不属于跨平台核心。
+- `mybot::platform_linux`：Linux 参考实现，不属于跨平台核心。
 - `mybot::linux_example`：Linux CLI 示例应用。
 
 ## 文档
 
 - [docs/PORTING.md](docs/PORTING.md)（[简体中文](docs/PORTING.zh-CN.md)）— 新平台移植指南
-  与验收契约
+  与验收清单
 - [docs/EMBEDDED.md](docs/EMBEDDED.md)（[简体中文](docs/EMBEDDED.zh-CN.md)）— 面向 MCU
   集成者的体积、内存、线程/栈、时序、功耗与日志说明
 - [docs/RELEASING.md](docs/RELEASING.md)（[简体中文](docs/RELEASING.zh-CN.md)）— 版本发布流程

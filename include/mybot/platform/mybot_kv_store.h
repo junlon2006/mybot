@@ -13,11 +13,11 @@ extern "C" {
 /**
  * Persistent key-value store operations.
  *
- * The backend implements durable storage for small records (the SDK persists
+ * The implementation provides durable storage for small records (the SDK persists
  * device credentials through this interface). All callbacks are required.
  */
 typedef struct {
-    /** Backend name for logging and diagnostics. */
+    /** Implementation name for logging and diagnostics. */
     const char *name;
 
     /**
@@ -75,7 +75,7 @@ typedef struct {
 } mybot_kv_store_ops_t;
 
 /**
- * Register the persistent KV-store backend for the current platform.
+ * Register the persistent KV-store implementation for the current platform.
  *
  * @param ops KV-store operations table; must remain valid for the process
  *            lifetime

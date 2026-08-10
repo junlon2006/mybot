@@ -14,11 +14,11 @@ extern "C" {
 /**
  * TLS stream operations used by the built-in HTTPS client.
  *
- * The backend wraps the platform TLS stack (e.g. mbedTLS, BearSSL or a
+ * The implementation wraps the platform TLS stack (e.g. mbedTLS, BearSSL or a
  * chipset TLS socket API). The SDK core does not link OpenSSL.
  */
 typedef struct {
-    /** Backend name for logging and diagnostics. */
+    /** Implementation name for logging and diagnostics. */
     const char *name;
 
     /**

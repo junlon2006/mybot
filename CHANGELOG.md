@@ -11,75 +11,7 @@ This project follows Semantic Versioning.
   code, through the normal playback path. The platform supplies raw 16 kHz
   mono s16 PCM assets per locale (Linux reference: `./assets/locales/<locale>/prompt.pcm`
   and `0.pcm`..`9.pcm`); the SDK core contains no audio decoder.
-
-### Fixed
-
-- Continue binding-status polling during active conversations and end RTC locally when the device
-  becomes unbound or its credential is rejected.
-- Harden the Linux file KV backend against symlink traversal and persist atomic replacements and
-  deletions with file and directory `fsync`.
-- Preserve runtime Wi-Fi disconnect/reconnect events, pause device-service traffic while offline,
-  and end active RTC conversations locally without reinitializing services after reconnect.
-- Percent-encode device IDs in URL path segments and reject control characters in dynamic HTTP
-  header values and request targets.
-- Reject conversation-start responses without a valid conversation ID before entering the active
-  conversation state.
-- Reject `MYBOT_BUILD_LINUX_PLATFORM=ON` with a non-Linux `CONFIG_PLATFORM` at configure time, and
-  document the two independent platform-selection variables (`CONFIG_PLATFORM` selects the AOSL
-  HAL port; `MYBOT_BUILD_LINUX_PLATFORM` builds the Linux reference backends).
-- Fix a NULL dereference in `mybot_json_create_*_array()` when an allocation fails mid-array,
-  replace unbounded `strcpy` in JSON printing with bounded copies, and stop calling side-effecting
-  functions inside test `assert()` (found by cppcheck / clang-tidy).
-- Fix a heap buffer overflow in `mybot_json` string parsing: a malformed `\u` escape followed by a
-  quote could swallow the closing quote and overflow the output buffer (found by the new
-  deterministic JSON parser fuzz).
-- Guard `mybot_rtc_session_join()` and `mybot_rtc_session_send_audio()` against calls before
-  initialization, which previously dereferenced a NULL mutex (found by the new RTC session test).
-- Release partially initialized services immediately when `start_services()` fails, instead of
-  relying on a later `mybot_stop()` call; service teardown is shared, idempotent, and safe to
-  run twice after a failed startup.
-
-### Changed
-
-- AOSL is now a git submodule at `third_party/aosl` tracking the latest upstream master commit
-  `39c3fb7b` instead of a vendored copy; no local AOSL changes are carried.
-- Volume control is now fully SDK-internal: when a device volume backend is registered, volume
-  changes drive real hardware volume and the playback pipeline skips the software gain; otherwise
-  the SDK falls back to the media-volume software gain. The volume control functions moved from
-  `include/mybot/platform/mybot_audio.h` to the internal `src/internal/mybot_audio_internal.h`.
-- Reduce `include/mybot/platform/*.h` to the platform backend contract only (ops tables, enums
-  and the `mybot_*_register()` entry points, plus the audio volume scale constants): the SDK
-  internal lifecycle/query functions (`init` / `deinit` / `is_registered`, LCD rendering,
-  wake-word PCM feed, KV-store access, capture/playback accessors and volume control) moved to
-  `src/internal/mybot_*_internal.h` and are no longer part of the public API surface.
-- Move conversation-control requests (`mybot_app_start_conversation()`,
-  `mybot_app_stop_conversation()`, `mybot_app_pair()`) out of the public header
-  `include/mybot/mybot.h` into the internal `src/internal/mybot_app.h`: host applications now
-  trigger them only through platform key / wake-word events, and the symbols are no longer
-  exported from the library.
-- Rename the public application entry points from the `mybot_app_*` prefix to the root
-  `mybot_*` namespace (`mybot_start()`, `mybot_stop()`, `mybot_is_running()`,
-  `mybot_get_state()`, `mybot_request_exit()`; types `mybot_config_t` / `mybot_state_t`; state
-  enumerators `MYBOT_STATE_*`). `mybot_app_*` is now reserved for internal app-shell control in
-  `src/`.
-- Unify public API naming around `mybot_<module>_register / init / deinit`: drop redundant middle
-  words (`mybot_audio_register_capture()`, `mybot_audio_register_playback()`, `mybot_key_register()`,
-  `mybot_wifi_register()`, `mybot_https_register()`), rename the HTTPS transport header to
-  `mybot_https.h`, and keep the device-volume family (`mybot_audio_device_volume_*`) distinct from
-  media volume.
-- Unify result codes: add `mybot_errors.h` (0 success, positive payload, negative failure).
-  `mybot_kv_store_get()` now returns `MYBOT_ERR_NOT_FOUND` instead of the positive
-  `MYBOT_KV_STORE_NOT_FOUND`.
-- `mybot_json` now defaults to the AOSL HAL allocator (`aosl_hal_malloc` / `aosl_hal_free`)
-  instead of libc `malloc` / `free`, so JSON follows platform allocator redirects like the rest of
-  the SDK; `mybot_json_init_hooks(NULL)` resets to the same defaults.
-- The `.clang-format` language standard is `Auto` (inferred per file) instead of the misleading
-  `Cpp03`, and the installed `mybot.pc` is relocatable: its prefix is derived from the pkg-config
-  directory at any `CMAKE_INSTALL_LIBDIR` depth rather than baked in at configure time.
-
-### Added
-
-- HTTPS-by-default device-service transport with a platform TLS contract and Linux OpenSSL backend.
+- HTTPS-by-default device-service transport with a platform TLS contract and Linux OpenSSL implementation.
 - Cross-platform porting guide, release checklist, security and contribution policies.
 - CI coverage for Linux builds, tests, public headers, and external CMake host integration.
 - Bilingual (English / Simplified Chinese) README with an AI-conversation product overview and
@@ -110,10 +42,10 @@ This project follows Semantic Versioning.
 - SPDX license identifiers on all self-maintained C sources (Apache-2.0; MIT for the cJSON-derived
   `mybot_json` sources).
 - Media volume control: the SDK applies a 0..100 digital software gain to playback PCM, so media
-  volume works on every platform without a backend.
-- Real-device volume control: optional `mybot_audio_volume_ops_t` backend contract routed through
+  volume works on every platform without an implementation.
+- Real-device volume control: optional `mybot_audio_volume_ops_t` implementation contract routed through
   `mybot_audio_device_set_volume()` / `mybot_audio_device_get_volume()`, with an ALSA mixer
-  reference backend on Linux (Master / PCM / Digital controls).
+  reference implementation on Linux (Master / PCM / Digital controls).
 - Volume-up / volume-down key events, mapped to `u` / `d` on the Linux example; each event steps
   the media volume by 10.
 - Installable CMake package: `find_package(mybot)` with exported `mybot::sdk` / `mybot::aosl`
@@ -121,18 +53,83 @@ This project follows Semantic Versioning.
   Agora RTSA library is supplied by the consumer via `MYBOT_AGORA_SDK_DIR` /
   `MYBOT_AGORA_RTC_LIBRARY` and is covered by an install-and-consume integration test.
 
+### Fixed
+
+- Continue binding-status polling during active conversations and end RTC locally when the device
+  becomes unbound or its credential is rejected.
+- Harden the Linux file KV implementation against symlink traversal and persist atomic replacements and
+  deletions with file and directory `fsync`.
+- Preserve runtime Wi-Fi disconnect/reconnect events, pause device-service traffic while offline,
+  and end active RTC conversations locally without reinitializing services after reconnect.
+- Percent-encode device IDs in URL path segments and reject control characters in dynamic HTTP
+  header values and request targets.
+- Reject conversation-start responses without a valid conversation ID before entering the active
+  conversation state.
+- Reject `MYBOT_BUILD_LINUX_PLATFORM=ON` with a non-Linux `CONFIG_PLATFORM` at configure time, and
+  document the two independent platform-selection variables (`CONFIG_PLATFORM` selects the AOSL
+  HAL port; `MYBOT_BUILD_LINUX_PLATFORM` builds the Linux reference implementations).
+- Fix a NULL dereference in `mybot_json_create_*_array()` when an allocation fails mid-array,
+  replace unbounded `strcpy` in JSON printing with bounded copies, and stop calling side-effecting
+  functions inside test `assert()` (found by cppcheck / clang-tidy).
+- Fix a heap buffer overflow in `mybot_json` string parsing: a malformed `\u` escape followed by a
+  quote could swallow the closing quote and overflow the output buffer (found by the new
+  deterministic JSON parser fuzz).
+- Guard `mybot_rtc_session_join()` and `mybot_rtc_session_send_audio()` against calls before
+  initialization, which previously dereferenced a NULL mutex (found by the new RTC session test).
+- Release partially initialized services immediately when `start_services()` fails, instead of
+  relying on a later `mybot_stop()` call; service teardown is shared, idempotent, and safe to
+  run twice after a failed startup.
+
+### Changed
+
+- AOSL is now a git submodule at `third_party/aosl` tracking the latest upstream master commit
+  `39c3fb7b` instead of a vendored copy; no local AOSL changes are carried.
+- Volume control is now fully SDK-internal: when a device volume implementation is registered, volume
+  changes drive real hardware volume and the playback pipeline skips the software gain; otherwise
+  the SDK falls back to the media-volume software gain. The volume control functions moved from
+  `include/mybot/platform/mybot_audio.h` to the internal `src/internal/mybot_audio_internal.h`.
+- Reduce `include/mybot/platform/*.h` to the platform implementation contract only (ops tables, enums
+  and the `mybot_*_register()` entry points, plus the audio volume scale constants): the SDK
+  internal lifecycle/query functions (`init` / `deinit` / `is_registered`, LCD rendering,
+  wake-word PCM feed, KV-store access, capture/playback accessors and volume control) moved to
+  `src/internal/mybot_*_internal.h` and are no longer part of the public API surface.
+- Move conversation-control requests (`mybot_app_start_conversation()`,
+  `mybot_app_stop_conversation()`, `mybot_app_pair()`) out of the public header
+  `include/mybot/mybot.h` into the internal `src/internal/mybot_app.h`: host applications now
+  trigger them only through platform key / wake-word events, and the symbols are no longer
+  exported from the library.
+- Rename the public application entry points from the `mybot_app_*` prefix to the root
+  `mybot_*` namespace (`mybot_start()`, `mybot_stop()`, `mybot_is_running()`,
+  `mybot_get_state()`, `mybot_request_exit()`; types `mybot_config_t` / `mybot_state_t`; state
+  enumerators `MYBOT_STATE_*`). `mybot_app_*` is now reserved for internal app-shell control in
+  `src/`.
+- Unify public API naming around `mybot_<module>_register / init / deinit`: drop redundant middle
+  words (`mybot_audio_register_capture()`, `mybot_audio_register_playback()`, `mybot_key_register()`,
+  `mybot_wifi_register()`, `mybot_https_register()`), rename the HTTPS transport header to
+  `mybot_https.h`, and keep the device-volume family (`mybot_audio_device_volume_*`) distinct from
+  media volume.
+- Unify result codes: add `mybot_errors.h` (0 success, positive payload, negative failure).
+  `mybot_kv_store_get()` now returns `MYBOT_ERR_NOT_FOUND` instead of the positive
+  `MYBOT_KV_STORE_NOT_FOUND`.
+- `mybot_json` now defaults to the AOSL HAL allocator (`aosl_hal_malloc` / `aosl_hal_free`)
+  instead of libc `malloc` / `free`, so JSON follows platform allocator redirects like the rest of
+  the SDK; `mybot_json_init_hooks(NULL)` resets to the same defaults.
+- The `.clang-format` language standard is `Auto` (inferred per file) instead of the misleading
+  `Cpp03`, and the installed `mybot.pc` is relocatable: its prefix is derived from the pkg-config
+  directory at any `CMAKE_INSTALL_LIBDIR` depth rather than baked in at configure time.
+
 ## [0.1.0-rc.1]
 
 ### Added
 
 - Cross-platform SDK target and public platform ops for audio, Wi-Fi, KV, keys, LCD, and wake words.
-- Linux reference backends and CLI example.
+- Linux reference implementations and CLI example.
 - Device pairing, lifecycle, Agora RTC audio, and optional local wake-word flow.
 - Version API and validated CMake feature configuration.
 - Unit, Linux platform, public-header, and external-host integration tests.
 
 ### Known limitations
 
-- MCU ports must provide a certificate-validating TLS backend and CA trust store.
+- MCU ports must provide a certificate-validating TLS implementation and CA trust store.
 - API/ABI is not stable; the runtime uses singleton registries and process-global dependencies.
 - Bundled Agora RTSA artifacts are x86_64 Linux only and require separate license verification.

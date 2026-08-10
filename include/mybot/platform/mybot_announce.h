@@ -38,7 +38,7 @@ typedef enum {
 } mybot_announce_sound_t;
 
 /**
- * Announcement backend operations.
+ * Announcement implementation operations.
  *
  * All PCM exchanged through this interface is 16000 Hz, mono, signed 16-bit.
  * open()/read()/close() may be called from different SDK threads, and open()
@@ -46,11 +46,11 @@ typedef enum {
  * because the SDK calls it from the real-time playback worker.
  */
 typedef struct {
-    /** Backend name for logging and diagnostics. */
+    /** Implementation name for logging and diagnostics. */
     const char *name;
 
-    /** Allocate and initialize the announcement backend.
-     *  @param ctx [out] backend context handle
+    /** Allocate and initialize the announcement implementation.
+     *  @param ctx [out] implementation context handle
      *  @return 0 on success, -1 on error */
     int (*init)(void **ctx);
 
@@ -66,17 +66,17 @@ typedef struct {
     /** Close a sound handle returned by open(). */
     void (*close)(void *ctx, void *sound);
 
-    /** Release the backend context. */
+    /** Release the implementation context. */
     void (*destroy)(void *ctx);
 } mybot_announce_ops_t;
 
 /**
- * Register the announcement backend.
+ * Register the announcement implementation.
  *
  * @param ops operations table; must remain valid for the process lifetime
  * @return 0 on success, -1 if ops is invalid or already registered
  *
- * @note Optional backend: without one, the SDK skips local announcements and
+ * @note Optional implementation: without one, the SDK skips local announcements and
  *       only logs. Call once, before mybot_start().
  */
 MYBOT_API int mybot_announce_register(const mybot_announce_ops_t *ops);

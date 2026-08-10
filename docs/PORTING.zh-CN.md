@@ -2,12 +2,12 @@
 
 > [English](PORTING.md) | 简体中文
 
-本文档定义 mybot 1.0.0 的平台契约。公开 API 与 ABI 遵循语义化版本。平台代码必须只
+本文档定义 mybot 1.0.0 的跨平台集成规范。公开 API 与 ABI 遵循语义化版本。平台代码必须只
 包含 `include/mybot` 下的头文件，并链接 `mybot::sdk`。
 
 mybot 设计为可移植到几乎任意平台——Linux、RTOS 或裸机——只要 AOSL 有对应的
 `CONFIG_PLATFORM` 移植、且目标 ABI 存在 Agora RTSA 库。无论宿主操作系统或芯片厂商如何，
-以下契约完全一致。
+以下规范完全一致。
 
 ## 第 1 步：核实前置条件
 
@@ -32,14 +32,15 @@ platforms/my_mcu/
   my_mcu_kv_store.c
   my_mcu_key.c
   my_mcu_lcd.c          # 可选
+  my_mcu_announce.c     # 可选（配对码语音播报）
   my_mcu_wake_words.c   # 可选
 ```
 
 独立（out-of-tree）固件工程可使用相同布局，无需改动本仓库。
 
-## 第 3 步：实现必需后端
+## 第 3 步：实现必需平台能力
 
-在 `mybot_start()` 之前，每个必需后端恰好注册一次。
+在 `mybot_start()` 之前，每个必需实现恰好注册一次。
 
 ### 音频
 
@@ -64,8 +65,8 @@ platforms/my_mcu/
 - **设备音量**是首选路径。实现 `mybot_audio_volume_ops_t` 并调用
   `mybot_audio_device_register_volume()`，即可让 SDK 的音量变化路由到真实硬件（Codec
   寄存器、功放或混音器）。`init`、`set_volume`、`destroy` 为必需；`get_volume` 可选，
-  仅用于同步 SDK 的音量状态。SDK 在启动时初始化该后端，关闭时释放。
-- **媒体音量**是未注册设备音量后端时的兜底。SDK 保存 0..100 的软件增益，播放流水线在
+  仅用于同步 SDK 的音量状态。SDK 在启动时初始化该实现，关闭时释放。
+- **媒体音量**是未注册设备音量实现时的兜底。SDK 保存 0..100 的软件增益，播放流水线在
   PCM 到达设备前以数字方式应用（线性幅度，100 为原增益）。无需平台代码。
 
 初始化失败仅禁用设备音量控制；SDK 回退到软件增益，播放不受影响。
@@ -74,11 +75,11 @@ platforms/my_mcu/
 
 实现 `mybot_wifi_ops_t`。`init` 无需等待用户即启动 APSTA。将 connected、
 disconnected 与 failed 事件作为状态变化发出。事件可来自平台线程，但 `destroy` 返回后不得
-再运行任何事件。Destroy 必须停止传输并等待在途回调。后端在首次成功连接后必须持续监控 STA
+再运行任何事件。Destroy 必须停止传输并等待在途回调。实现在首次成功连接后必须持续监控 STA
 链路，并上报运行期断开与重连事件；SDK 在离线期间暂停设备服务流量，重连后恢复。使用
 `mybot_wifi_register()` 注册。
 
-Linux 后端立即上报已连接，不是真正的 APSTA 参考实现。
+Linux 参考实现立即上报已连接，不是真正的 APSTA 参考实现。
 
 ### 持久化键值存储
 
@@ -96,7 +97,7 @@ Linux 后端立即上报已连接，不是真正的 APSTA 参考实现。
 
 生产构建保持 `MYBOT_ENABLE_HTTPS=ON`，并在 `mybot_start()` 之前注册一个
 `mybot_https_ops_t`。封装 mbedTLS、BearSSL 或芯片厂商 TLS socket API；SDK 核心
-不链接 OpenSSL。后端必须：
+不链接 OpenSSL。实现必须：
 
 - 在给定超时内建立 TCP 与 TLS；
 - 将 DNS 主机作为 SNI 发送，对照受维护的信任库验证证书链，并校验证书主机名；
@@ -105,13 +106,13 @@ Linux 后端立即上报已连接，不是真正的 APSTA 参考实现。
 - `close` 释放整个 TLS 连接。
 
 使用 `mybot_https_register()` 注册。不要为开发证书关闭证书或主机名校验；请将
-所需 CA 安装到设备信任库。Linux 参考后端使用 OpenSSL 与系统 CA 库。明文 HTTP 仅存在于
+所需 CA 安装到设备信任库。Linux 参考实现使用 OpenSSL 与系统 CA 库。明文 HTTP 仅存在于
 配置了 `MYBOT_ENABLE_HTTPS=OFF -DMYBOT_ALLOW_INSECURE_HTTP=ON` 的隔离开发构建。
 
 ### 按键
 
 实现 `mybot_key_ops_t`，将硬件输入转换为会话开始、停止、配对、退出、音量增大与
-音量减小事件。SDK 收到音量事件时将音量步进 10——设备音量后端激活时调整真实硬件音量，
+音量减小事件。SDK 收到音量事件时将音量步进 10——设备音量实现激活时调整真实硬件音量，
 否则回退到媒体音量软件增益；音量事件为可选。事件可以是异步的。Destroy 必须停止输入源
 并等待所有处理器。使用 `mybot_key_register()` 注册。
 
@@ -122,7 +123,7 @@ Linux 后端立即上报已连接，不是真正的 APSTA 参考实现。
 
 ### 唤醒词（可选）
 
-仅在 `MYBOT_WAKE_WORDS=ON` 时必需。Process 接收借用的 PCM。异步后端必须复制需要保留的
+仅在 `MYBOT_WAKE_WORDS=ON` 时必需。`process()` 回调接收借用的 PCM。异步实现必须复制需要保留的
 数据，destroy 必须等待所有检测处理器。使用 `mybot_wake_words_register()` 注册。
 
 ### 配对码语音播报（可选）
@@ -135,10 +136,10 @@ Linux 后端立即上报已连接，不是真正的 APSTA 参考实现。
 设备离开 `awaiting_claim` 状态（认领成功、重新配对或离线）时立即停止。提示音缺失则跳过
 整段播报，某个数字音缺失则只跳过该位——配对流程不会被音频阻塞。
 
-契约：`init` 初始化后端；`open` 打开一个逻辑声音（`MYBOT_ANNOUNCE_SOUND_PROMPT`、
+接口约定：`init` 初始化实现；`open` 打开一个逻辑声音（`MYBOT_ANNOUNCE_SOUND_PROMPT`、
 `MYBOT_ANNOUNCE_SOUND_DIGIT_0`..`9`），可做 I/O；`read` 最多拷贝 `max_frames` 帧，必须
-轻量（运行在实时播放线程上）；`close` / `destroy` 释放句柄与后端。在 `mybot_start()` 之前
-用 `mybot_announce_register()` 注册。该后端可选：未注册时 SDK 跳过本地播报，仅记日志。
+轻量（运行在实时播放线程上）；`close` / `destroy` 释放句柄与实现。在 `mybot_start()` 之前
+用 `mybot_announce_register()` 注册。该实现可选：未注册时 SDK 跳过本地播报，仅记日志。
 
 Linux 参考实现按语言从 `./assets/locales/<locale>/` 读取原始 PCM 文件（`prompt.pcm`、
 `0.pcm`~`9.pcm`）；可用环境变量 `MYBOT_ASSETS_DIR` 覆盖目录（默认 `./assets`），
@@ -158,7 +159,7 @@ int my_mcu_platform_register(void) {
 }
 ```
 
-传播每个失败。启用 LCD 与唤醒词时加入对应注册。
+传播每个失败。启用 LCD、唤醒词与配对码播报时加入对应注册。
 
 ## 第 5 步：与 CMake 集成
 
@@ -178,9 +179,9 @@ target_link_libraries(device_firmware PRIVATE mybot::sdk my_mcu_platform)
 ```
 
 两个相互独立的变量选择平台代码：`CONFIG_PLATFORM` 选择 `third_party/aosl` 消费的 AOSL HAL
-端口（如 `linux`、`esp32`）；`MYBOT_BUILD_LINUX_PLATFORM` 构建随附的 Linux 参考后端
+端口（如 `linux`、`esp32`）；`MYBOT_BUILD_LINUX_PLATFORM` 构建随附的 Linux 参考实现
 （`platforms/linux/`）并要求 `CONFIG_PLATFORM=linux`。MCU 移植保持
-`MYBOT_BUILD_LINUX_PLATFORM=OFF`。宿主可预定义名为 `agora-rtc-sdk` 的导入目标。本 RC 支持
+`MYBOT_BUILD_LINUX_PLATFORM=OFF`。宿主可预定义名为 `agora-rtc-sdk` 的导入目标。本版本支持
 `add_subdirectory()` 源码集成，也支持通过 `find_package(mybot)` 消费已安装包。源码集成需先
 初始化 mybot 的嵌套 AOSL submodule（在 mybot 检出目录执行
 `git submodule update --init --recursive`）。
@@ -232,8 +233,8 @@ cmake --build build-target -j
 
 ## 已知限制
 
-- HTTPS 需要平台 TLS 后端与受维护的 CA 信任库。Linux 提供 OpenSSL 参考实现；MCU 移植必须
+- HTTPS 需要平台 TLS 实现与受维护的 CA 信任库。Linux 提供 OpenSSL 参考实现；MCU 移植必须
   集成其 TLS 栈。
 - RTC 是 Agora 专用，注册表是单例，且仅支持单应用实例。
-- Linux 后端是开发参考，不是生产级配网或安全存储。
+- Linux 参考实现是开发参考，不是生产级配网或安全存储。
 - 第三方再分发权需单独核实；见 `THIRD_PARTY_NOTICES.md`。
