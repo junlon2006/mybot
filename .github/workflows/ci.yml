@@ -31,7 +31,7 @@ jobs:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
       - name: Install build dependencies
@@ -81,11 +81,14 @@ jobs:
 
   coverage:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
     env:
       MIN_LINE_COVERAGE: 50
       MIN_BRANCH_COVERAGE: 50
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
       - name: Install build dependencies
@@ -124,21 +127,22 @@ jobs:
               }
             ' coverage.info
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: coverage.info
       - name: Upload to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         with:
           files: coverage.info
           fail_ci_if_error: true
+          use_oidc: true
 
 
   docs:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
       - name: Install build dependencies
@@ -148,7 +152,7 @@ jobs:
       - name: Build API reference
         run: doxygen build/docs/Doxyfile
       - name: Upload API reference
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: api-reference
           path: build/docs/api/html
