@@ -63,8 +63,10 @@ int mybot_rtc_session_leave(void);
 bool mybot_rtc_session_fini(void);
 
 /** Send PCM audio data to the channel.
- *  @param data  PCM buffer (16-bit, 16 kHz, mono)
- *  @param len   buffer length in bytes
+ *  @param data  PCM buffer (16-bit, 16 kHz mic). With Cloud AEC enabled, the
+ *               payload uses the service-defined [mic, ref] interleaving while
+ *               the RTC PCM channel declaration remains mono.
+ *  @param len   complete payload length in bytes
  *  @return 0 on success, -1 on error.
  */
 int mybot_rtc_session_send_audio(const void *data, size_t len);

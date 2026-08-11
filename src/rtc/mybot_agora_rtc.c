@@ -248,6 +248,8 @@ int mybot_rtc_session_join(const char *channel, const char *token, const char *u
     /* Tell SDK we'll send PCM; it will encode to G.722 */
     ch_opt.audio_codec_opt.audio_codec_type = AUDIO_CODEC_TYPE_G722;
     ch_opt.audio_codec_opt.pcm_sample_rate = 16000;
+    /* Cloud AEC uses the service's paired [mic, ref] payload convention. The
+     * pair is interpreted out of band and is not SDK stereo. */
     ch_opt.audio_codec_opt.pcm_channel_num = 1;
     ch_opt.audio_codec_opt.pcm_duration = MYBOT_AUDIO_PTIME_MS;
 
