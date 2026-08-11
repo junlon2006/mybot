@@ -58,8 +58,8 @@ RTOS, or a bare-metal MCU.
   conversation with a physical button.
 - **Button and LCD workflows**: Semantic screen states (provisioning / pair code / ready / in
   conversation); how each is displayed is up to the platform.
-- **Pairing-code voice prompt**: Once per pair code, plays a fixed prompt ("请在WEB中输入
-  配对码") followed by one sound per digit through the normal speaker path. Assets are raw
+- **Pairing-code voice prompt**: Once per pair code, plays a fixed prompt ("Please enter the
+  pairing code in the console") followed by one sound per digit through the normal speaker path. Assets are raw
   16 kHz mono s16 PCM files under `./assets/locales/<locale>/` (`prompt.pcm`, `0.pcm`..`9.pcm`);
   the platform owns them and the SDK core contains no audio decoder.
 - **HTTPS transport**: The device service accepts HTTPS only by default. Linux uses OpenSSL; MCU
@@ -132,7 +132,7 @@ Run the example:
   --hw-model linux-reference
 ```
 
-The example also plays an optional pairing-code voice prompt ("请在WEB中输入配对码…") from
+The example also plays an optional pairing-code voice prompt ("Please enter the pairing code in the console...") from
 `./assets/locales/<locale>/` (raw 16 kHz mono s16 PCM: `prompt.pcm`, `0.pcm`..`9.pcm`).
 The default locale is `zh-CN`; set `MYBOT_LOCALE` and `MYBOT_ASSETS_DIR` to override.
 

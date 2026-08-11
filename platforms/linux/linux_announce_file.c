@@ -13,7 +13,7 @@
  * Linux reference announcement backend: raw 16 kHz mono signed 16-bit PCM
  * files, one file per logical sound, organized per locale:
  *
- *   <assets_dir>/locales/<locale>/prompt.pcm   ("请在WEB中输入配对码" sentence)
+ *   <assets_dir>/locales/<locale>/prompt.pcm   ("Please enter the pairing code in the console")
  *   <assets_dir>/locales/<locale>/0.pcm ... 9.pcm
  *
  * Defaults: assets_dir = ./assets, locale = zh-CN. Both can be overridden
