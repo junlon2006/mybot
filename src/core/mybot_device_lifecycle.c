@@ -519,7 +519,7 @@ void mybot_device_lifecycle_tick(void) {
      * before the device is rebound. */
     if (aosl_atomic_xchg(&s_state.start_pairing_flag, false)) {
         if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
-            action_stop_conversation("re-pair");
+            action_stop_conversation(MYBOT_CONVERSATION_STOP_REASON_USER_REQUESTED);
         }
         clear_device_auth();
         s_state.conversation_id[0] = '\0';
@@ -571,8 +571,9 @@ void mybot_device_lifecycle_tick(void) {
         mybot_stop_request_t request =
             (mybot_stop_request_t)aosl_atomic_xchg(&s_state.stop_request, MYBOT_STOP_REQUEST_NONE);
         if (request != MYBOT_STOP_REQUEST_NONE) {
-            const char *reason =
-                request == MYBOT_STOP_REQUEST_DEVICE_HANGUP ? "device_hangup" : "error";
+            const char *reason = request == MYBOT_STOP_REQUEST_DEVICE_HANGUP
+                                     ? MYBOT_CONVERSATION_STOP_REASON_DEVICE_HANGUP
+                                     : MYBOT_CONVERSATION_STOP_REASON_ERROR;
             action_stop_conversation(reason);
             return;
         }
@@ -600,7 +601,7 @@ void mybot_device_lifecycle_shutdown(void) {
     if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION &&
         aosl_atomic_read(&s_state.network_available) &&
         !aosl_atomic_read(&s_state.network_loss_pending)) {
-        action_stop_conversation("device_hangup");
+        action_stop_conversation(MYBOT_CONVERSATION_STOP_REASON_DEVICE_HANGUP);
     } else if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
         complete_conversation_locally();
     }

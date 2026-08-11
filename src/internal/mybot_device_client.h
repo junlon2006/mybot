@@ -18,6 +18,11 @@ extern "C" {
 #define MYBOT_DEVICE_CLIENT_MAX_TOKEN 512
 #define MYBOT_DEVICE_CLIENT_MAX_ID 128
 
+#define MYBOT_CONVERSATION_STOP_REASON_USER_REQUESTED "user_requested"
+#define MYBOT_CONVERSATION_STOP_REASON_DEVICE_HANGUP "device_hangup"
+#define MYBOT_CONVERSATION_STOP_REASON_TIMEOUT "timeout"
+#define MYBOT_CONVERSATION_STOP_REASON_ERROR "error"
+
 /** Pair-code response. */
 typedef struct {
     char device_id[MYBOT_DEVICE_CLIENT_MAX_ID];
