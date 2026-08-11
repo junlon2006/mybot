@@ -89,6 +89,9 @@ static int s_rtc_join_calls;
 static int s_rtc_leave_calls;
 static int s_rtc_fini_calls;
 static int s_rtc_send_calls;
+static int s_rtc_renew_calls;
+static int s_token_renewal_requests;
+static char s_renewed_token[512];
 
 static size_t s_sent_lengths[TEST_MAX_SENT_FRAMES];
 static int16_t s_sent_frames[TEST_MAX_SENT_FRAMES][TEST_SEND_FRAME_BYTES / sizeof(int16_t)];
@@ -583,6 +586,12 @@ void mybot_device_lifecycle_notify_conversation_ended(void) {
     mock_unlock();
 }
 
+void mybot_device_lifecycle_request_rtc_token_renewal(void) {
+    mock_lock();
+    s_token_renewal_requests++;
+    mock_unlock();
+}
+
 int mybot_rtc_session_init(const char *app_id, mybot_rtc_session_callbacks_t *callbacks) {
     assert(strcmp(app_id, "rtc-app") == 0);
     assert(callbacks != NULL);
@@ -656,6 +665,18 @@ int mybot_rtc_session_send_audio(const void *data, size_t len) {
     return 0;
 }
 
+int mybot_rtc_session_renew_token(const char *token) {
+    mock_lock();
+    if (!s_rtc_joined || !token || !token[0]) {
+        mock_unlock();
+        return -1;
+    }
+    snprintf(s_renewed_token, sizeof(s_renewed_token), "%s", token);
+    s_rtc_renew_calls++;
+    mock_unlock();
+    return 0;
+}
+
 int main(void) {
     mybot_config_t config;
     memset(&config, 0, sizeof(config));
@@ -695,6 +716,21 @@ int main(void) {
     mock_lock();
     assert(strcmp(s_join_channel, "rtc-channel") == 0);
     assert(strcmp(s_join_user, "device-uid") == 0);
+    mock_unlock();
+
+    mock_lock();
+    void (*token_will_expire)(void) = s_rtc_callbacks.on_token_will_expire;
+    int (*token_renewed)(const char *) = s_device_callbacks.on_rtc_token_renewed;
+    mock_unlock();
+    assert(token_will_expire != NULL);
+    assert(token_renewed != NULL);
+
+    token_will_expire();
+    assert(read_counter(&s_token_renewal_requests) == 1);
+    assert(token_renewed("renewed-token") == 0);
+    assert(read_counter(&s_rtc_renew_calls) == 1);
+    mock_lock();
+    assert(strcmp(s_renewed_token, "renewed-token") == 0);
     mock_unlock();
 
     assert(wait_for_counter(&s_rtc_send_calls, 1, 3000));

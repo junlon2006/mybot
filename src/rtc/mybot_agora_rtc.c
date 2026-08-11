@@ -133,6 +133,9 @@ static void __on_token_privilege_will_expire(connection_id_t conn_id, const char
     (void)conn_id;
     (void)token;
     AOSL_LOG_INF("[RTC] token privilege will expire");
+    if (s_rtc.cbs.on_token_will_expire) {
+        s_rtc.cbs.on_token_will_expire();
+    }
 }
 
 static void __on_rtc_stats(connection_id_t conn_id, rtc_stats_t stats) {
@@ -367,6 +370,27 @@ int mybot_rtc_session_send_audio(const void *data, size_t len) {
     }
 
 out:
+    aosl_hal_mutex_unlock(s_rtc.lock);
+    return ret;
+}
+
+int mybot_rtc_session_renew_token(const char *token) {
+    if (!token || !token[0] || !aosl_atomic_read(&s_rtc.initialized)) {
+        return -1;
+    }
+
+    aosl_hal_mutex_lock(s_rtc.lock);
+
+    int ret = -1;
+    if (aosl_atomic_read(&s_rtc.initialized) && s_rtc.conn_id != 0) {
+        ret = agora_rtc_renew_token(s_rtc.conn_id, token);
+        if (ret < 0) {
+            AOSL_LOG_ERR("[RTC] renew_token failed: %s", agora_rtc_err_2_str(ret));
+        } else {
+            AOSL_LOG_INF("[RTC] token renewed");
+        }
+    }
+
     aosl_hal_mutex_unlock(s_rtc.lock);
     return ret;
 }

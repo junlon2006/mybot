@@ -186,6 +186,19 @@ static char *build_stop_conversation_body(const char *conversation_id, const cha
     return body;
 }
 
+static char *build_rtc_token_body(const char *channel, const char *local_uid) {
+    mybot_json_t *root = mybot_json_create_object();
+    if (!root || mybot_json_add_string(root, "channel", channel) < 0 ||
+        mybot_json_add_string(root, "local_uid", local_uid) < 0) {
+        mybot_json_delete(root);
+        return NULL;
+    }
+
+    char *body = mybot_json_print_unformatted(root);
+    mybot_json_delete(root);
+    return body;
+}
+
 /* ----------------------------------------------------------
  * Internal: extract nested RTC block from conversation start response
  * ---------------------------------------------------------- */
@@ -439,6 +452,75 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
 
     AOSL_LOG_INF("conversation: id=%s channel=%s uid=%s", resp->conversation_id, resp->rtc_channel,
                  resp->rtc_uid);
+
+    mybot_json_delete(root);
+    mybot_http_client_response_free(&raw);
+    return 0;
+}
+
+int mybot_device_client_renew_rtc_token(const char *base_url, const char *device_id,
+                                        const char *device_token, const char *channel,
+                                        const char *local_uid, mybot_device_rtc_token_t *resp) {
+    if (!base_url || !device_id || !device_token || !channel || !channel[0] || !local_uid ||
+        !local_uid[0] || !resp) {
+        return -1;
+    }
+    memset(resp, 0, sizeof(*resp));
+
+    char url[MYBOT_DEVICE_CLIENT_MAX_URL];
+    if (build_device_url(base_url, device_id, "/rtc-token", url, sizeof(url)) < 0) {
+        return -1;
+    }
+
+    char *body = build_rtc_token_body(channel, local_uid);
+    if (!body) {
+        return -1;
+    }
+
+    char extra_hdrs[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32];
+    if (build_authorization_header("Device ", device_token, extra_hdrs, sizeof(extra_hdrs)) < 0) {
+        mybot_json_free_string(body);
+        return -1;
+    }
+
+    AOSL_LOG_INF("POST %s", url);
+
+    mybot_http_client_response_t raw;
+    memset(&raw, 0, sizeof(raw));
+    int ret = mybot_http_client_post_ex(url, "application/json", body, extra_hdrs, &raw);
+    mybot_json_free_string(body);
+    if (ret < 0) {
+        AOSL_LOG_ERR("POST %s failed (http)", url);
+        return -1;
+    }
+
+    AOSL_LOG_INF("POST %s -> status=%d", url, raw.status_code);
+    if (!http_response_ok(&raw)) {
+        int status = raw.status_code;
+        AOSL_LOG_ERR("POST %s -> HTTP error %d", url, status);
+        mybot_http_client_response_free(&raw);
+        return status > 0 ? status : -1;
+    }
+
+    mybot_json_t *root = raw.body ? mybot_json_parse(raw.body) : NULL;
+    if (!root) {
+        mybot_http_client_response_free(&raw);
+        return -1;
+    }
+
+    mybot_json_t *data = mybot_json_get_object_item(root, "data");
+    mybot_json_t *rtc = data ? mybot_json_get_object_item(data, "rtc") : NULL;
+    if (!rtc ||
+        copy_required_json_string(rtc, "channel", resp->rtc_channel, sizeof(resp->rtc_channel)) <
+            0 ||
+        copy_required_json_string(rtc, "uid", resp->rtc_uid, sizeof(resp->rtc_uid)) < 0 ||
+        copy_required_json_string(rtc, "token", resp->rtc_token, sizeof(resp->rtc_token)) < 0) {
+        AOSL_LOG_ERR("RTC-token response missing required rtc fields");
+        mybot_json_delete(root);
+        mybot_http_client_response_free(&raw);
+        return -1;
+    }
+    copy_json_string(rtc, "app_id", resp->rtc_app_id, sizeof(resp->rtc_app_id));
 
     mybot_json_delete(root);
     mybot_http_client_response_free(&raw);

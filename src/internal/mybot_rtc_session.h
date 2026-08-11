@@ -30,6 +30,9 @@ typedef struct {
      */
     void (*on_remote_audio)(uint32_t uid, const void *data, size_t len);
 
+    /** Called when the SDK asks the application to renew the channel token. */
+    void (*on_token_will_expire)(void);
+
     /** Called when state changes. */
     void (*on_state_changed)(mybot_rtc_state_t state);
 } mybot_rtc_session_callbacks_t;
@@ -70,6 +73,12 @@ bool mybot_rtc_session_fini(void);
  *  @return 0 on success, -1 on error.
  */
 int mybot_rtc_session_send_audio(const void *data, size_t len);
+
+/** Apply a renewed token to the active RTC connection.
+ *  @param token renewed RTC token
+ *  @return 0 on success, -1 on error.
+ */
+int mybot_rtc_session_renew_token(const char *token);
 
 /** Get current session state. */
 mybot_rtc_state_t mybot_rtc_session_get_state(void);

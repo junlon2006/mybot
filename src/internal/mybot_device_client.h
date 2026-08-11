@@ -51,6 +51,14 @@ typedef struct {
     char rtc_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
 } mybot_device_conversation_t;
 
+/** RTC-token renewal response. */
+typedef struct {
+    char rtc_app_id[64];
+    char rtc_channel[128];
+    char rtc_uid[64];
+    char rtc_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
+} mybot_device_rtc_token_t;
+
 /* ----------------------------------------------------------
  * Client calls - return 0 on success, a positive HTTP status code for a
  * non-2xx response, or -1 for transport/parsing/local failures.
@@ -69,6 +77,11 @@ int mybot_device_client_get_binding_status(const char *base_url, const char *dev
 int mybot_device_client_start_conversation(const char *base_url, const char *device_id,
                                            const char *device_token, const char *body_params,
                                            mybot_device_conversation_t *resp);
+
+/** Renew the RTC token for an active channel and local UID. */
+int mybot_device_client_renew_rtc_token(const char *base_url, const char *device_id,
+                                        const char *device_token, const char *channel,
+                                        const char *local_uid, mybot_device_rtc_token_t *resp);
 
 /** Stop a conversation. */
 int mybot_device_client_stop_conversation(const char *base_url, const char *device_id,
