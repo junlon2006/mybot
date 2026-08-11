@@ -27,6 +27,7 @@ static bool s_start_missing_conversation_id;
 static bool s_disconnect_during_start;
 static int s_start_call_count;
 static int s_stop_call_count;
+static char s_last_stop_reason[32];
 static int s_conversation_start_count;
 static int s_conversation_stop_count;
 
@@ -147,7 +148,7 @@ int mybot_device_client_stop_conversation(const char *base_url, const char *devi
     (void)device_id;
     (void)device_token;
     assert(strcmp(conversation_id, "conversation-1") == 0);
-    assert(strcmp(reason, "device_hangup") == 0);
+    snprintf(s_last_stop_reason, sizeof(s_last_stop_reason), "%s", reason);
     s_stop_call_count++;
     return 0;
 }
@@ -253,6 +254,7 @@ int main(void) {
 
     mybot_device_lifecycle_shutdown();
     assert(s_stop_call_count == 1);
+    assert(strcmp(s_last_stop_reason, MYBOT_CONVERSATION_STOP_REASON_DEVICE_HANGUP) == 0);
     assert(s_conversation_stop_count == 1);
     assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_RUNTIME);
 
@@ -334,6 +336,23 @@ int main(void) {
     assert(s_conversation_stop_count == conversation_stop_callbacks + 1);
     assert(s_stop_call_count == 1);
     assert(!s_kv_store_present);
+
+    /* User-initiated re-pairing stops an active conversation with a reason
+     * accepted by the device-service protocol. */
+    strcpy(s_binding_status, "bound");
+    strcpy(s_binding_token, "device-token");
+    begin_pairing();
+    tick_many(30);
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_RUNTIME);
+    mybot_device_lifecycle_request_start();
+    mybot_device_lifecycle_tick();
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION);
+
+    mybot_device_lifecycle_request_pair();
+    mybot_device_lifecycle_tick();
+    assert(strcmp(s_last_stop_reason, MYBOT_CONVERSATION_STOP_REASON_USER_REQUESTED) == 0);
+    assert(s_stop_call_count == 2);
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
 
     mybot_kv_store_deinit();
     aosl_dtor();
