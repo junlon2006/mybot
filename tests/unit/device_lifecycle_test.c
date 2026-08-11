@@ -26,6 +26,13 @@ static int s_start_result;
 static bool s_start_missing_conversation_id;
 static bool s_disconnect_during_start;
 static int s_start_call_count;
+static int s_renew_result;
+static int s_renew_call_count;
+static int s_sdk_renew_result;
+static int s_sdk_renew_call_count;
+static char s_last_renew_channel[128];
+static char s_last_renew_uid[64];
+static char s_last_renewed_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
 static int s_stop_call_count;
 static char s_last_stop_reason[32];
 static int s_conversation_start_count;
@@ -141,6 +148,26 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
     return 0;
 }
 
+int mybot_device_client_renew_rtc_token(const char *base_url, const char *device_id,
+                                        const char *device_token, const char *channel,
+                                        const char *local_uid, mybot_device_rtc_token_t *resp) {
+    assert(strcmp(base_url, "http://server") == 0);
+    assert(strcmp(device_id, "device-1") == 0);
+    assert(device_token != NULL);
+    snprintf(s_last_renew_channel, sizeof(s_last_renew_channel), "%s", channel);
+    snprintf(s_last_renew_uid, sizeof(s_last_renew_uid), "%s", local_uid);
+    s_renew_call_count++;
+    if (s_renew_result != 0) {
+        return s_renew_result;
+    }
+    memset(resp, 0, sizeof(*resp));
+    snprintf(resp->rtc_app_id, sizeof(resp->rtc_app_id), "%s", "rtc-app-id");
+    snprintf(resp->rtc_channel, sizeof(resp->rtc_channel), "%s", channel);
+    snprintf(resp->rtc_uid, sizeof(resp->rtc_uid), "%s", local_uid);
+    snprintf(resp->rtc_token, sizeof(resp->rtc_token), "%s", "renewed-token");
+    return 0;
+}
+
 int mybot_device_client_stop_conversation(const char *base_url, const char *device_id,
                                           const char *device_token, const char *conversation_id,
                                           const char *reason) {
@@ -160,6 +187,12 @@ static void on_conversation_start(const mybot_conversation_params_t *params) {
 
 static void on_conversation_stop(void) {
     s_conversation_stop_count++;
+}
+
+static int on_rtc_token_renewed(const char *token) {
+    snprintf(s_last_renewed_token, sizeof(s_last_renewed_token), "%s", token);
+    s_sdk_renew_call_count++;
+    return s_sdk_renew_result;
 }
 
 static void tick_many(int count) {
@@ -244,6 +277,7 @@ int main(void) {
     mybot_device_lifecycle_callbacks_t callbacks = {
         .on_conversation_start = on_conversation_start,
         .on_conversation_stop = on_conversation_stop,
+        .on_rtc_token_renewed = on_rtc_token_renewed,
     };
     assert(mybot_device_lifecycle_init("http://server", "device-1", NULL, NULL, &callbacks) == 0);
 
@@ -260,6 +294,32 @@ int main(void) {
     assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION);
     assert(s_conversation_start_count == 1);
     assert(s_start_call_count == 2);
+
+    s_renew_result = -1;
+    mybot_device_lifecycle_request_rtc_token_renewal();
+    mybot_device_lifecycle_tick();
+    assert(s_renew_call_count == 1);
+    assert(s_sdk_renew_call_count == 0);
+    tick_many(9);
+    assert(s_renew_call_count == 1);
+    s_renew_result = 0;
+    mybot_device_lifecycle_tick();
+    assert(s_renew_call_count == 2);
+    assert(s_sdk_renew_call_count == 1);
+    assert(strcmp(s_last_renew_channel, "rtc-channel") == 0);
+    assert(strcmp(s_last_renew_uid, "rtc-uid") == 0);
+    assert(strcmp(s_last_renewed_token, "renewed-token") == 0);
+
+    s_sdk_renew_result = -1;
+    mybot_device_lifecycle_request_rtc_token_renewal();
+    mybot_device_lifecycle_tick();
+    assert(s_renew_call_count == 3);
+    assert(s_sdk_renew_call_count == 2);
+    tick_many(9);
+    s_sdk_renew_result = 0;
+    mybot_device_lifecycle_tick();
+    assert(s_renew_call_count == 4);
+    assert(s_sdk_renew_call_count == 3);
 
     mybot_device_lifecycle_shutdown();
     assert(s_stop_call_count == 1);

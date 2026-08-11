@@ -29,7 +29,11 @@ static int s_leave_calls;
 static int s_destroy_calls;
 static int s_create_calls;
 static int s_send_calls;
+static int s_renew_calls;
+static int s_renew_result;
+static char s_renewed_token[512];
 static int s_remote_audio_calls;
+static int s_token_expiry_calls;
 static int s_state_changes;
 static mybot_rtc_state_t s_last_state;
 static rtc_channel_options_t s_join_options;
@@ -92,6 +96,14 @@ int agora_rtc_leave_channel(connection_id_t conn_id) {
     return 0;
 }
 
+int agora_rtc_renew_token(connection_id_t conn_id, const char *token) {
+    assert(conn_id == 1);
+    assert(token != NULL);
+    snprintf(s_renewed_token, sizeof(s_renewed_token), "%s", token);
+    s_renew_calls++;
+    return s_renew_result;
+}
+
 int agora_rtc_set_bwe_param(connection_id_t conn_id, uint32_t min_bps, uint32_t max_bps,
                             uint32_t start_bps) {
     (void)conn_id;
@@ -125,6 +137,10 @@ static void on_remote_audio(uint32_t uid, const void *data, size_t len) {
     s_remote_audio_calls++;
 }
 
+static void on_token_will_expire(void) {
+    s_token_expiry_calls++;
+}
+
 int main(void) {
     aosl_ctor();
 
@@ -137,11 +153,14 @@ int main(void) {
     assert(mybot_rtc_session_leave() == 0);
     assert(!mybot_rtc_session_fini()); /* no agora_rtc_fini when uninitialized */
     assert(s_fini_calls == 0);
+    assert(mybot_rtc_session_renew_token("renewed-token") < 0);
+    assert(s_renew_calls == 0);
 
     mybot_rtc_session_callbacks_t cbs;
     memset(&cbs, 0, sizeof(cbs));
     cbs.on_state_changed = on_state_changed;
     cbs.on_remote_audio = on_remote_audio;
+    cbs.on_token_will_expire = on_token_will_expire;
 
     assert(mybot_rtc_session_init("test-app", &cbs) == 0);
     assert(s_init_calls == 1);
@@ -172,6 +191,16 @@ int main(void) {
     s_handler.on_join_channel_success(1, 42, 100);
     assert(mybot_rtc_session_is_connected());
     assert(mybot_rtc_session_get_state() == MYBOT_RTC_STATE_CONNECTED);
+
+    s_handler.on_token_privilege_will_expire(1, "old-token");
+    assert(s_token_expiry_calls == 1);
+    assert(mybot_rtc_session_renew_token("renewed-token") == 0);
+    assert(s_renew_calls == 1);
+    assert(strcmp(s_renewed_token, "renewed-token") == 0);
+    s_renew_result = -1;
+    assert(mybot_rtc_session_renew_token("rejected-token") < 0);
+    assert(s_renew_calls == 2);
+    s_renew_result = 0;
 
     assert(mybot_rtc_session_send_audio(pcm_frame, sizeof(pcm_frame)) == 0);
     assert(s_last_send_len == sizeof(pcm_frame));
@@ -209,6 +238,8 @@ int main(void) {
     assert(mybot_rtc_session_get_state() == MYBOT_RTC_STATE_INITIALIZED);
     assert(mybot_rtc_session_leave() == 0); /* idempotent without a connection */
     assert(s_leave_calls == 1);
+    assert(mybot_rtc_session_renew_token("renewed-token") < 0);
+    assert(s_renew_calls == 2);
 
     /* Finalize calls agora_rtc_fini exactly once. */
     assert(mybot_rtc_session_fini() == true);

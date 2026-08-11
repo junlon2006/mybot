@@ -31,8 +31,9 @@
 
 #include <hal/aosl_hal_thread.h>
 
-#include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 /* ----------------------------------------------------------
  * Constants
@@ -380,6 +381,13 @@ static void on_rtc_state_changed(mybot_rtc_state_t state) {
     }
 }
 
+static void on_rtc_token_will_expire(void) {
+    if (!aosl_atomic_read(&s_app.running)) {
+        return;
+    }
+    mybot_device_lifecycle_request_rtc_token_renewal();
+}
+
 /* ----------------------------------------------------------
  * MPQ timer (ptime cadence) — send captured PCM to RTC
  * ---------------------------------------------------------- */
@@ -443,6 +451,20 @@ static void dev_on_pair_code(const char *code) {
     mybot_announce_play_pair_code(code);
 }
 
+static int dev_on_rtc_token_renewed(const char *token) {
+    if (!aosl_atomic_read(&s_app.running)) {
+        return -1;
+    }
+
+    int ret = mybot_rtc_session_renew_token(token);
+    if (ret < 0) {
+        return ret;
+    }
+
+    snprintf(s_app.rtc_token, sizeof(s_app.rtc_token), "%s", token);
+    return 0;
+}
+
 static void dev_on_conversation_start(const mybot_conversation_params_t *params) {
     if (!aosl_atomic_read(&s_app.running)) {
         AOSL_LOG_INF("ignoring conversation start during shutdown");
@@ -467,6 +489,7 @@ static void dev_on_conversation_start(const mybot_conversation_params_t *params)
     mybot_rtc_session_callbacks_t cbs;
     memset(&cbs, 0, sizeof(cbs));
     cbs.on_remote_audio = on_remote_audio;
+    cbs.on_token_will_expire = on_rtc_token_will_expire;
     cbs.on_state_changed = on_rtc_state_changed;
 
     int ret = mybot_rtc_session_init(params->rtc_app_id, &cbs);
@@ -895,6 +918,7 @@ static int start_services(void) {
     dev_cbs.on_pair_code = dev_on_pair_code;
     dev_cbs.on_conversation_start = dev_on_conversation_start;
     dev_cbs.on_conversation_stop = dev_on_conversation_stop;
+    dev_cbs.on_rtc_token_renewed = dev_on_rtc_token_renewed;
     dev_cbs.on_state_changed = dev_on_state_changed;
 
     if (mybot_device_lifecycle_init(cfg->server_base, cfg->device_id, cfg->firmware_ver,

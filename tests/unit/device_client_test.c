@@ -40,6 +40,14 @@ static const char s_empty_id_response_body[] =
     "{\"data\":{\"conversation_id\":\"\",\"rtc\":{\"app_id\":\"app-1\","
     "\"channel\":\"channel-1\",\"token\":\"token-1\",\"uid\":\"device-uid\"}}}";
 
+static const char s_valid_renew_response_body[] =
+    "{\"data\":{\"rtc\":{\"app_id\":\"app-1\",\"channel\":\"channel-1\","
+    "\"token\":\"renewed-token\",\"uid\":\"device-uid\"}}}";
+
+static const char s_missing_renew_token_response_body[] =
+    "{\"data\":{\"rtc\":{\"app_id\":\"app-1\",\"channel\":\"channel-1\","
+    "\"uid\":\"device-uid\"}}}";
+
 static int mock_http_response(mybot_http_client_response_t *resp) {
     assert(s_response_body != NULL);
     size_t response_len = strlen(s_response_body);
@@ -143,6 +151,34 @@ int main(void) {
     int post_calls = s_post_ex_call_count;
     assert(mybot_device_client_start_conversation(
                "http://server", "device-1", "token\r\nX-Injected: yes", NULL, &conversation) < 0);
+    assert(s_post_ex_call_count == post_calls);
+
+    mybot_device_rtc_token_t renewed;
+    s_response_body = s_valid_renew_response_body;
+    assert(mybot_device_client_renew_rtc_token("http://server", "device-1", "token", "channel-1",
+                                               "device-uid", &renewed) == 0);
+    assert(strcmp(renewed.rtc_app_id, "app-1") == 0);
+    assert(strcmp(renewed.rtc_channel, "channel-1") == 0);
+    assert(strcmp(renewed.rtc_uid, "device-uid") == 0);
+    assert(strcmp(renewed.rtc_token, "renewed-token") == 0);
+    assert(strcmp(s_request_url, "http://server/devices/device-1/rtc-token") == 0);
+    assert(strcmp(s_request_headers, "Authorization: Device token\r\n") == 0);
+    {
+        mybot_json_t *renew_body = mybot_json_parse(s_request_body);
+        assert(renew_body != NULL);
+        assert(strcmp(mybot_json_get_string(mybot_json_get_object_item(renew_body, "channel")),
+                      "channel-1") == 0);
+        assert(strcmp(mybot_json_get_string(mybot_json_get_object_item(renew_body, "local_uid")),
+                      "device-uid") == 0);
+        mybot_json_delete(renew_body);
+    }
+
+    s_response_body = s_missing_renew_token_response_body;
+    assert(mybot_device_client_renew_rtc_token("http://server", "device-1", "token", "channel-1",
+                                               "device-uid", &renewed) < 0);
+    post_calls = s_post_ex_call_count;
+    assert(mybot_device_client_renew_rtc_token("http://server", "device-1", "token\nInjected",
+                                               "channel-1", "device-uid", &renewed) < 0);
     assert(s_post_ex_call_count == post_calls);
 
     mybot_device_binding_t binding;

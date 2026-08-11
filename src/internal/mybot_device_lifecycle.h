@@ -42,6 +42,9 @@ typedef struct {
     /** Conversation should stop — leave RTC channel. */
     void (*on_conversation_stop)(void);
 
+    /** Apply a renewed RTC token. Return 0 when the RTC SDK accepts it. */
+    int (*on_rtc_token_renewed)(const char *token);
+
     /** State changed (for logging / UI). */
     void (*on_state_changed)(mybot_device_state_t state);
 } mybot_device_lifecycle_callbacks_t;
@@ -97,6 +100,9 @@ void mybot_device_lifecycle_request_stop(void);
 
 /** Notify state machine that conversation RTC connection ended. */
 void mybot_device_lifecycle_notify_conversation_ended(void);
+
+/** Request RTC-token renewal for the active conversation. May be called from any thread. */
+void mybot_device_lifecycle_request_rtc_token_renewal(void);
 
 #ifdef __cplusplus
 }

@@ -15,6 +15,8 @@
 #define MYBOT_DEVICE_AUTH_VERSION 1U
 #define MYBOT_PAIR_RETRY_INITIAL_TICKS 30
 #define MYBOT_PAIR_RETRY_MAX_TICKS 600
+#define MYBOT_RTC_TOKEN_RETRY_INITIAL_TICKS 10
+#define MYBOT_RTC_TOKEN_RETRY_MAX_TICKS 100
 
 typedef struct {
     uint32_t version;
@@ -49,8 +51,14 @@ static struct {
     /* Requests are atomically published by the main/SDK threads and consumed
      * by the state_mpq thread. */
     char conversation_id[MYBOT_DEVICE_CLIENT_MAX_ID];
+    char rtc_channel[128];
+    char rtc_uid[64];
     aosl_atomic_t conversation_requested; /* user wants to start */
     aosl_atomic_t stop_request;           /* mybot_stop_request_t */
+    aosl_atomic_t rtc_token_renewal_requested;
+    bool rtc_token_renewal_pending;
+    int rtc_token_retry_delay_ticks;
+    int rtc_token_retry_ticks_remaining;
 
     /* One-shot action flag consumed by tick() */
     aosl_atomic_t start_pairing_flag;
@@ -350,6 +358,28 @@ static void tick_runtime_binding_poll(void) {
     }
 }
 
+static void clear_rtc_token_renewal(void) {
+    aosl_atomic_set(&s_state.rtc_token_renewal_requested, false);
+    s_state.rtc_token_renewal_pending = false;
+    s_state.rtc_token_retry_delay_ticks = 0;
+    s_state.rtc_token_retry_ticks_remaining = 0;
+    s_state.rtc_channel[0] = '\0';
+    s_state.rtc_uid[0] = '\0';
+}
+
+static void schedule_rtc_token_retry(void) {
+    if (s_state.rtc_token_retry_delay_ticks == 0) {
+        s_state.rtc_token_retry_delay_ticks = MYBOT_RTC_TOKEN_RETRY_INITIAL_TICKS;
+    } else if (s_state.rtc_token_retry_delay_ticks < MYBOT_RTC_TOKEN_RETRY_MAX_TICKS / 2) {
+        s_state.rtc_token_retry_delay_ticks *= 2;
+    } else {
+        s_state.rtc_token_retry_delay_ticks = MYBOT_RTC_TOKEN_RETRY_MAX_TICKS;
+    }
+    s_state.rtc_token_retry_ticks_remaining = s_state.rtc_token_retry_delay_ticks;
+    AOSL_LOG_WRN("RTC-token renewal failed, retrying in %d ms",
+                 s_state.rtc_token_retry_delay_ticks * 100);
+}
+
 /* ----------------------------------------------------------
  * Action: start conversation
  * ---------------------------------------------------------- */
@@ -385,6 +415,9 @@ static void action_start_conversation(void) {
     }
 
     strncpy(s_state.conversation_id, resp.conversation_id, sizeof(s_state.conversation_id) - 1);
+    clear_rtc_token_renewal();
+    snprintf(s_state.rtc_channel, sizeof(s_state.rtc_channel), "%s", resp.rtc_channel);
+    snprintf(s_state.rtc_uid, sizeof(s_state.rtc_uid), "%s", resp.rtc_uid);
 
     AOSL_LOG_INF("conversation started: %s, channel=%s, uid=%s", s_state.conversation_id,
                  resp.rtc_channel, resp.rtc_uid);
@@ -408,6 +441,7 @@ static void action_start_conversation(void) {
  * Action: stop conversation
  * ---------------------------------------------------------- */
 static void complete_conversation_locally(void) {
+    clear_rtc_token_renewal();
     s_state.conversation_id[0] = '\0';
     if (s_state.cbs.on_conversation_stop) {
         s_state.cbs.on_conversation_stop();
@@ -439,6 +473,7 @@ static void action_stop_conversation(const char *reason) {
     }
 
     AOSL_LOG_INF("conversation stopped");
+    clear_rtc_token_renewal();
     s_state.conversation_id[0] = '\0';
 
     if (s_state.cbs.on_conversation_stop) {
@@ -451,6 +486,56 @@ static void action_stop_conversation(const char *reason) {
     } else {
         set_state(MYBOT_DEVICE_STATE_RUNTIME);
     }
+}
+
+static void action_renew_rtc_token(void) {
+    mybot_device_rtc_token_t resp;
+    memset(&resp, 0, sizeof(resp));
+
+    if (!s_state.rtc_channel[0] || !s_state.rtc_uid[0]) {
+        AOSL_LOG_ERR("cannot renew RTC token without an active channel and UID");
+        action_stop_conversation(MYBOT_CONVERSATION_STOP_REASON_ERROR);
+        return;
+    }
+
+    intptr_t network_generation = aosl_atomic_read(&s_state.network_generation);
+    int ret = mybot_device_client_renew_rtc_token(s_state.server_base, s_state.device_id,
+                                                  s_state.device_token, s_state.rtc_channel,
+                                                  s_state.rtc_uid, &resp);
+    if (!network_request_is_current(network_generation)) {
+        AOSL_LOG_WRN("discarding RTC-token response after network change");
+        return;
+    }
+    if (api_rejected_device_auth(ret)) {
+        AOSL_LOG_WRN("device credential rejected while renewing RTC token (HTTP %d)", ret);
+        invalidate_runtime_binding();
+        return;
+    }
+    if (ret == 400 || ret == 410) {
+        AOSL_LOG_ERR("RTC-token renewal permanently rejected (HTTP %d)", ret);
+        action_stop_conversation(MYBOT_CONVERSATION_STOP_REASON_ERROR);
+        return;
+    }
+    if (ret != 0) {
+        schedule_rtc_token_retry();
+        return;
+    }
+    if (strcmp(resp.rtc_channel, s_state.rtc_channel) != 0 ||
+        strcmp(resp.rtc_uid, s_state.rtc_uid) != 0) {
+        AOSL_LOG_ERR("RTC-token response does not match the active channel and UID");
+        action_stop_conversation(MYBOT_CONVERSATION_STOP_REASON_ERROR);
+        return;
+    }
+    if (!s_state.cbs.on_rtc_token_renewed || s_state.cbs.on_rtc_token_renewed(resp.rtc_token) < 0) {
+        AOSL_LOG_ERR("RTC SDK rejected renewed token");
+        schedule_rtc_token_retry();
+        return;
+    }
+
+    s_state.rtc_token_renewal_pending = false;
+    s_state.rtc_token_retry_delay_ticks = 0;
+    s_state.rtc_token_retry_ticks_remaining = 0;
+    AOSL_LOG_INF("RTC token renewed");
 }
 
 /* ----------------------------------------------------------
@@ -577,6 +662,21 @@ void mybot_device_lifecycle_tick(void) {
             action_stop_conversation(reason);
             return;
         }
+
+        if (aosl_atomic_xchg(&s_state.rtc_token_renewal_requested, false)) {
+            s_state.rtc_token_renewal_pending = true;
+            s_state.rtc_token_retry_delay_ticks = 0;
+            s_state.rtc_token_retry_ticks_remaining = 0;
+        }
+        if (s_state.rtc_token_renewal_pending) {
+            if (s_state.rtc_token_retry_ticks_remaining > 0) {
+                s_state.rtc_token_retry_ticks_remaining--;
+            }
+            if (s_state.rtc_token_retry_ticks_remaining == 0) {
+                action_renew_rtc_token();
+                return;
+            }
+        }
         tick_runtime_binding_poll();
         return;
     }
@@ -597,6 +697,7 @@ void mybot_device_lifecycle_shutdown(void) {
     aosl_atomic_set(&s_state.start_pairing_flag, false);
     aosl_atomic_set(&s_state.conversation_requested, false);
     aosl_atomic_set(&s_state.stop_request, MYBOT_STOP_REQUEST_NONE);
+    aosl_atomic_set(&s_state.rtc_token_renewal_requested, false);
 
     if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION &&
         aosl_atomic_read(&s_state.network_available) &&
@@ -647,4 +748,15 @@ void mybot_device_lifecycle_notify_conversation_ended(void) {
     if (current_state() == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
         aosl_atomic_set(&s_state.stop_request, MYBOT_STOP_REQUEST_ERROR);
     }
+}
+
+void mybot_device_lifecycle_request_rtc_token_renewal(void) {
+    if (aosl_atomic_read(&s_state.shutting_down) || !aosl_atomic_read(&s_state.network_available)) {
+        return;
+    }
+    if (current_state() != MYBOT_DEVICE_STATE_IN_CONVERSATION) {
+        AOSL_LOG_WRN("ignoring RTC-token renewal request without an active conversation");
+        return;
+    }
+    aosl_atomic_set(&s_state.rtc_token_renewal_requested, true);
 }
