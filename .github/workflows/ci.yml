@@ -81,6 +81,9 @@ jobs:
 
   coverage:
     runs-on: ubuntu-24.04
+    env:
+      MIN_LINE_COVERAGE: 50
+      MIN_BRANCH_COVERAGE: 50
     steps:
       - uses: actions/checkout@v4
         with:
@@ -101,6 +104,25 @@ jobs:
             --rc branch_coverage=1 \
             '*/third_party/*' '*/tests/*'
           lcov --summary coverage.info --rc branch_coverage=1
+      - name: Enforce coverage thresholds
+        run: |
+          awk -F: \
+            -v min_lines="$MIN_LINE_COVERAGE" \
+            -v min_branches="$MIN_BRANCH_COVERAGE" '
+              $1 == "LF" { lines_found += $2 }
+              $1 == "LH" { lines_hit += $2 }
+              $1 == "BRF" { branches_found += $2 }
+              $1 == "BRH" { branches_hit += $2 }
+              END {
+                line_rate = lines_found ? 100 * lines_hit / lines_found : 0
+                branch_rate = branches_found ? 100 * branches_hit / branches_found : 0
+                printf "Line coverage: %.1f%% (minimum %.1f%%)\n", line_rate, min_lines
+                printf "Branch coverage: %.1f%% (minimum %.1f%%)\n", branch_rate, min_branches
+                if (line_rate < min_lines || branch_rate < min_branches) {
+                  exit 1
+                }
+              }
+            ' coverage.info
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
@@ -110,7 +132,7 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           files: coverage.info
-          fail_ci_if_error: false
+          fail_ci_if_error: true
 
 
   docs:
