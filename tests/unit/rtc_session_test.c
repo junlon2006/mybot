@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "mybot_rtc_session.h"
+#include <mybot/mybot_build_config.h>
 
 #include "agora_rtc_api.h"
 #include <api/aosl.h>
@@ -7,6 +8,14 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+
+#define RTC_PCM_FRAME_SAMPLES (16000 * MYBOT_AUDIO_PTIME_MS / 1000)
+#if MYBOT_CLOUD_AEC
+#define RTC_PCM_FRAME_STREAMS 2
+#else
+#define RTC_PCM_FRAME_STREAMS 1
+#endif
+#define RTC_PCM_FRAME_BYTES (RTC_PCM_FRAME_SAMPLES * RTC_PCM_FRAME_STREAMS * sizeof(int16_t))
 
 /* ---- Agora SDK stubs: capture the event handler and count calls. The real
  * x86_64 archive is not linked into this test; only the wrapper logic in
@@ -23,6 +32,9 @@ static int s_send_calls;
 static int s_remote_audio_calls;
 static int s_state_changes;
 static mybot_rtc_state_t s_last_state;
+static rtc_channel_options_t s_join_options;
+static size_t s_last_send_len;
+static audio_frame_info_t s_last_send_info;
 
 const char *agora_rtc_get_version(void) {
     return "stub";
@@ -68,7 +80,8 @@ int agora_rtc_join_channel_with_user_account(connection_id_t conn_id, const char
     (void)channel_name;
     (void)user_account;
     (void)token;
-    (void)options;
+    assert(options != NULL);
+    s_join_options = *options;
     s_join_calls++;
     return 0;
 }
@@ -91,9 +104,10 @@ int agora_rtc_set_bwe_param(connection_id_t conn_id, uint32_t min_bps, uint32_t 
 int agora_rtc_send_audio_data(connection_id_t conn_id, const void *data_ptr, size_t data_len,
                               audio_frame_info_t *info_ptr) {
     (void)conn_id;
-    (void)data_ptr;
-    (void)data_len;
-    (void)info_ptr;
+    assert(data_ptr != NULL);
+    assert(info_ptr != NULL);
+    s_last_send_len = data_len;
+    s_last_send_info = *info_ptr;
     s_send_calls++;
     return 0;
 }
@@ -113,6 +127,8 @@ static void on_remote_audio(uint32_t uid, const void *data, size_t len) {
 
 int main(void) {
     aosl_ctor();
+
+    unsigned char pcm_frame[RTC_PCM_FRAME_BYTES] = {0};
 
     /* Not initialized yet. */
     assert(mybot_rtc_session_get_state() == MYBOT_RTC_STATE_IDLE);
@@ -136,13 +152,20 @@ int main(void) {
     assert(s_init_calls == 1);
 
     /* Cannot send before joining. */
-    assert(mybot_rtc_session_send_audio("pcm", 3) < 0);
+    assert(mybot_rtc_session_send_audio(pcm_frame, sizeof(pcm_frame)) < 0);
     assert(s_send_calls == 0);
 
     /* Join: connecting until the SDK reports success. */
     assert(mybot_rtc_session_join("room", "token", "user1") == 0);
     assert(s_join_calls == 1);
     assert(s_create_calls == 1);
+    assert(s_join_options.audio_codec_opt.audio_codec_type == AUDIO_CODEC_TYPE_G722);
+    assert(s_join_options.audio_codec_opt.pcm_sample_rate == 16000);
+    assert(s_join_options.audio_codec_opt.pcm_channel_num == 1);
+    assert(s_join_options.audio_codec_opt.pcm_duration == MYBOT_AUDIO_PTIME_MS);
+    assert(s_join_options.audio_jitter_frame_duration == MYBOT_AUDIO_PTIME_MS);
+    assert(s_join_options.enable_audio_downlink_aec == (MYBOT_CLOUD_AEC != 0));
+    assert(s_join_options.enable_audio_ai_qos == (MYBOT_AI_QOS != 0));
     assert(mybot_rtc_session_get_state() == MYBOT_RTC_STATE_CONNECTING);
     assert(!mybot_rtc_session_is_connected());
 
@@ -150,17 +173,20 @@ int main(void) {
     assert(mybot_rtc_session_is_connected());
     assert(mybot_rtc_session_get_state() == MYBOT_RTC_STATE_CONNECTED);
 
-    assert(mybot_rtc_session_send_audio("pcm", 3) == 0);
+    assert(mybot_rtc_session_send_audio(pcm_frame, sizeof(pcm_frame)) == 0);
+    assert(s_last_send_len == sizeof(pcm_frame));
+    assert(s_last_send_info.data_type == AUDIO_DATA_TYPE_PCM);
     assert(s_send_calls == 1);
 
     /* Connection loss blocks sends until the rejoin callback. */
     s_handler.on_connection_lost(1);
     assert(mybot_rtc_session_get_state() == MYBOT_RTC_STATE_DISCONNECTED);
-    assert(mybot_rtc_session_send_audio("pcm", 3) < 0);
+    assert(mybot_rtc_session_send_audio(pcm_frame, sizeof(pcm_frame)) < 0);
     s_handler.on_rejoin_channel_success(1, 42, 50);
     assert(mybot_rtc_session_is_connected());
-    assert(mybot_rtc_session_send_audio("pcm", 3) == 0);
+    assert(mybot_rtc_session_send_audio(pcm_frame, sizeof(pcm_frame)) == 0);
     assert(s_send_calls == 2);
+    assert(s_last_send_len == sizeof(pcm_frame));
 
     /* License failure moves to ERROR. */
     s_handler.on_license_validation_failure(1, 2);

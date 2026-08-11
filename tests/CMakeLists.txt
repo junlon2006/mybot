@@ -4,6 +4,17 @@ set(MYBOT_TEST_COMMON_INCLUDES
 )
 set(MYBOT_TEST_SYSTEM_LIBS pthread dl rt m)
 
+set(MYBOT_TEST_FEATURE_DEFINITIONS
+    MYBOT_AUDIO_PTIME_MS=${MYBOT_AUDIO_PTIME_MS}
+    MYBOT_CLOUD_AEC=$<BOOL:${MYBOT_CLOUD_AEC}>
+    MYBOT_WAKE_WORDS=$<BOOL:${MYBOT_WAKE_WORDS}>
+    MYBOT_AI_QOS=$<BOOL:${MYBOT_AI_QOS}>
+    MYBOT_FAST_SEND_MULTIPLIER=${MYBOT_FAST_SEND_MULTIPLIER}
+    MYBOT_SHOW_TRANSCRIPT=$<BOOL:${MYBOT_SHOW_TRANSCRIPT}>
+    MYBOT_ENABLE_HTTPS=$<BOOL:${MYBOT_ENABLE_HTTPS}>
+    MYBOT_ALLOW_INSECURE_HTTP=$<BOOL:${MYBOT_ALLOW_INSECURE_HTTP}>
+)
+
 function(mybot_add_test target)
     add_executable(${target} ${ARGN})
     target_include_directories(${target} PRIVATE ${MYBOT_TEST_COMMON_INCLUDES})
@@ -66,7 +77,16 @@ target_link_libraries(mybot_announce_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS}
 mybot_add_test(mybot_rtc_session_test unit/rtc_session_test.c ../src/rtc/mybot_agora_rtc.c)
 target_include_directories(mybot_rtc_session_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/agora_rtsa_sdk/agora_sdk/include)
+target_compile_definitions(mybot_rtc_session_test PRIVATE ${MYBOT_TEST_FEATURE_DEFINITIONS})
 target_link_libraries(mybot_rtc_session_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
+
+mybot_add_test(mybot_app_test
+    unit/app_test.c
+    ../src/core/mybot_app.c
+    ../src/support/mybot_ringbuf.c
+)
+target_compile_definitions(mybot_app_test PRIVATE ${MYBOT_TEST_FEATURE_DEFINITIONS})
+target_link_libraries(mybot_app_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
 mybot_add_test(mybot_public_headers_test integration/public_headers_test.c)
 target_link_libraries(mybot_public_headers_test PRIVATE mybot::sdk)
