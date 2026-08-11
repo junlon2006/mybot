@@ -270,8 +270,15 @@ int mybot_device_client_create_pair_code(const char *base_url, const char *devic
     }
 
     copy_json_string(data, "device_id", resp->device_id, sizeof(resp->device_id));
-    copy_json_string(data, "code", resp->code, sizeof(resp->code));
-    copy_json_string(data, "pair_token", resp->pair_token, sizeof(resp->pair_token));
+    int code_result = copy_required_json_string(data, "code", resp->code, sizeof(resp->code));
+    int pair_token_result =
+        copy_required_json_string(data, "pair_token", resp->pair_token, sizeof(resp->pair_token));
+    if (code_result < 0 || pair_token_result < 0) {
+        AOSL_LOG_ERR("pair-code response missing or invalid code/pair_token");
+        mybot_json_delete(root);
+        mybot_http_client_response_free(&raw);
+        return -1;
+    }
     copy_json_integer(data, "expires_in_seconds", &resp->expires_in_seconds);
     copy_json_integer(data, "poll_after_seconds", &resp->poll_after_seconds);
 
