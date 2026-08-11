@@ -456,6 +456,9 @@ void mybot_wake_words_deinit(void) {
 }
 
 int mybot_wifi_init(const char *device_id, mybot_wifi_state_handler_t handler, void *user_data) {
+    if (!device_id || !handler) {
+        return -1;
+    }
     assert(strcmp(device_id, "device-1") == 0);
     mock_lock();
     s_wifi_handler = handler;
