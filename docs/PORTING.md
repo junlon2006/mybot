@@ -143,8 +143,8 @@ must copy retained data, and destroy must wait for all detection handlers. Regis
 
 ### Pairing-code voice announcement (optional)
 
-Implement `mybot_announce_ops_t` to play the pairing-code prompt on the speaker ("请在WEB中输入
-配对码 xxx"). All PCM exchanged with the SDK is raw 16 kHz mono signed 16-bit — the SDK contains
+Implement `mybot_announce_ops_t` to play the pairing-code prompt on the speaker ("Please enter the
+pairing code xxx in the console"). All PCM exchanged with the SDK is raw 16 kHz mono signed 16-bit — the SDK contains
 no audio decoder, so the platform must decode/resample its own assets to that format.
 
 When a pair code is obtained, the SDK queues the fixed prompt sound followed by one sound per

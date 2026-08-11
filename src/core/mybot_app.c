@@ -441,7 +441,7 @@ static void send_audio_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t ar
 static void dev_on_pair_code(const char *code) {
     AOSL_LOG_INF("==== PAIR CODE ====");
     AOSL_LOG_INF("*** PAIR CODE: %s ***", code);
-    AOSL_LOG_INF("*** Enter this code in the web UI to claim the device ***");
+    AOSL_LOG_INF("*** Enter this pairing code in the console to claim the device ***");
     mybot_state_t app_state = mybot_get_state();
     if (app_state == MYBOT_STATE_STOPPING || app_state == MYBOT_STATE_FAILED ||
         app_state == MYBOT_STATE_WIFI_DISCONNECTED) {

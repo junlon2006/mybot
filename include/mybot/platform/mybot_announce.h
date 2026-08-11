@@ -13,8 +13,8 @@ extern "C" {
  * Platform announcement (local voice prompt) operations
  *
  * The SDK plays short local prompts on the speaker through the normal
- * playback path — for example the pairing-code announcement "请在WEB中输入
- * 配对码 xxx" (fixed prompt sentence followed by one sound per code digit).
+ * playback path — for example the pairing-code announcement "Please enter the
+ * pairing code xxx in the console" (fixed prompt sentence followed by one sound per code digit).
  *
  * The platform owns the audio assets and exposes them as raw 16 kHz mono
  * signed 16-bit PCM streams. The SDK never decodes or resamples audio; the
@@ -23,7 +23,7 @@ extern "C" {
 
 /** Logical sounds used by the SDK. */
 typedef enum {
-    MYBOT_ANNOUNCE_SOUND_PROMPT = 0, /* fixed sentence, e.g. "请在WEB中输入配对码" */
+    MYBOT_ANNOUNCE_SOUND_PROMPT = 0, /* e.g. "Please enter the pairing code in the console" */
     MYBOT_ANNOUNCE_SOUND_DIGIT_0,
     MYBOT_ANNOUNCE_SOUND_DIGIT_1,
     MYBOT_ANNOUNCE_SOUND_DIGIT_2,
