@@ -12,9 +12,9 @@ extern "C" {
 /* ----------------------------------------------------------
  * Platform announcement (local voice prompt) operations
  *
- * The SDK plays short local prompts on the speaker through the normal
- * playback path — for example the pairing-code announcement "Please enter the
- * pairing code xxx in the console" (fixed prompt sentence followed by one sound per code digit).
+ * The SDK plays short local prompts on the speaker through the normal playback
+ * path — for example, the fixed prompt "Please enter the pairing code in the
+ * console" followed by one sound per pairing-code digit.
  *
  * The platform owns the audio assets and exposes them as raw 16 kHz mono
  * signed 16-bit PCM streams. The SDK never decodes or resamples audio; the

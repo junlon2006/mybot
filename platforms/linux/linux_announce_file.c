@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#include "linux_backends.h"
+#include "linux_platform_adapters.h"
 
 #include <mybot/platform/mybot_announce.h>
 
@@ -10,10 +10,10 @@
 #include <string.h>
 
 /*
- * Linux reference announcement backend: raw 16 kHz mono signed 16-bit PCM
+ * Linux reference announcement adapter: raw 16 kHz mono signed 16-bit PCM
  * files, one file per logical sound, organized per locale:
  *
- *   <assets_dir>/locales/<locale>/prompt.pcm   ("Please enter the pairing code in the console")
+ *   <assets_dir>/locales/<locale>/prompt.pcm   (localized fixed pairing-code prompt)
  *   <assets_dir>/locales/<locale>/0.pcm ... 9.pcm
  *
  * Defaults: assets_dir = ./assets, locale = zh-CN. Both can be overridden
@@ -77,7 +77,7 @@ static int file_init(void **ctx) {
              dir && dir[0] ? dir : MYBOT_ANNOUNCE_DEFAULT_DIR);
     snprintf(c->locale, sizeof(c->locale), "%s",
              locale && locale[0] ? locale : MYBOT_ANNOUNCE_DEFAULT_LOCALE);
-    AOSL_LOG_INF("announce backend: dir=%s locale=%s", c->base_dir, c->locale);
+    AOSL_LOG_INF("announcement implementation: dir=%s locale=%s", c->base_dir, c->locale);
     *ctx = c;
     return 0;
 }

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
-#ifndef MYBOT_LINUX_BACKENDS_H_
-#define MYBOT_LINUX_BACKENDS_H_
+#ifndef MYBOT_LINUX_PLATFORM_ADAPTERS_H_
+#define MYBOT_LINUX_PLATFORM_ADAPTERS_H_
 
 #include <mybot/mybot_build_config.h>
 
@@ -16,4 +16,4 @@ int linux_wifi_platform_register_host_network(void);
 int linux_https_platform_register_openssl(void);
 #endif
 
-#endif /* MYBOT_LINUX_BACKENDS_H_ */
+#endif /* MYBOT_LINUX_PLATFORM_ADAPTERS_H_ */

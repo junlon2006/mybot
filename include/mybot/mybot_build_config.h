@@ -49,7 +49,7 @@
 #endif
 
 #ifndef MYBOT_SHOW_TRANSCRIPT
-#define MYBOT_SHOW_TRANSCRIPT 0 /* real-time transcript in datastream */
+#define MYBOT_SHOW_TRANSCRIPT 0 /* request real-time transcripts from the service */
 #endif
 
 #if MYBOT_SHOW_TRANSCRIPT != 0 && MYBOT_SHOW_TRANSCRIPT != 1

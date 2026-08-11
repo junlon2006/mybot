@@ -1,12 +1,15 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <mybot/platform/mybot_wifi.h>
 
-#include "linux_backends.h"
+#include "linux_platform_adapters.h"
 
 #include "api/aosl_log.h"
 
 #include <stdlib.h>
 
+/* Reference adapter for development hosts whose operating system already owns
+ * network provisioning. Product platforms should normally implement the
+ * recommended APSTA workflow for consistent device onboarding and recovery. */
 typedef struct {
     mybot_wifi_event_handler_t emit;
     void *user_data;

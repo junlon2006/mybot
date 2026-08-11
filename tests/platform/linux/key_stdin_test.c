@@ -3,7 +3,7 @@
 
 #include "mybot_key_internal.h"
 
-#include "linux_backends.h"
+#include "linux_platform_adapters.h"
 
 #include "api/aosl.h"
 #include "api/aosl_atomic.h"

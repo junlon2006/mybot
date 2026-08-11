@@ -73,7 +73,8 @@ int mybot_device_client_create_pair_code(const char *base_url, const char *devic
 int mybot_device_client_get_binding_status(const char *base_url, const char *device_id,
                                            const char *auth_header, mybot_device_binding_t *resp);
 
-/** Start a conversation. body_params may contain optional JSON fields. */
+/** Start a conversation. body_params is a complete JSON request body; pass
+ *  NULL to generate one from the build configuration. */
 int mybot_device_client_start_conversation(const char *base_url, const char *device_id,
                                            const char *device_token, const char *body_params,
                                            mybot_device_conversation_t *resp);

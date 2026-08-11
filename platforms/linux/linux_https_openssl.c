@@ -6,7 +6,7 @@
 #include <mybot/mybot_build_config.h>
 #include <mybot/platform/mybot_https.h>
 
-#include "linux_backends.h"
+#include "linux_platform_adapters.h"
 
 #include <api/aosl_log.h>
 

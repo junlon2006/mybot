@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <mybot/platform/mybot_audio.h>
 
-#include "linux_backends.h"
+#include "linux_platform_adapters.h"
 
 #include <alsa/asoundlib.h>
 
@@ -97,7 +97,7 @@ static int pcm_write(snd_pcm_t *handle, const char *buf, size_t frames, size_t f
     return (int)result;
 }
 
-/* ---- internal context ---- */
+/* ---- Internal context ---- */
 typedef struct {
     snd_pcm_t *handle;
     int rate;
@@ -105,7 +105,7 @@ typedef struct {
     int bits_per_sample;
 } alsa_pb_t;
 
-/* ---- playback ops implementation ---- */
+/* ---- Playback ops implementation ---- */
 
 static int alsa_playback_init(void **ctx, int rate, int channels, int bits) {
     if (!ctx) {
@@ -157,7 +157,7 @@ static int alsa_playback_init(void **ctx, int rate, int channels, int bits) {
         goto fail;
     }
 
-    /* Larger buffer for playback (150 ms) — acts as jitter buffer */
+    /* A 150 ms playback buffer absorbs device scheduling jitter. */
     snd_pcm_uframes_t buf_frames = (snd_pcm_uframes_t)(rate * 150 / 1000);
     snd_pcm_hw_params_set_buffer_size_near(p->handle, hw, &buf_frames);
 

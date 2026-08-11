@@ -21,7 +21,7 @@ static void set_state(mybot_wifi_state_t state) {
     }
 }
 
-static void on_backend_event(mybot_wifi_event_t event, void *user_data) {
+static void on_platform_event(mybot_wifi_event_t event, void *user_data) {
     (void)user_data;
 
     switch (event) {
@@ -54,7 +54,7 @@ int mybot_wifi_init(const char *device_id, mybot_wifi_state_handler_t handler, v
     s_handler = handler;
     s_user_data = user_data;
     aosl_atomic_set(&s_state, MYBOT_WIFI_STATE_PROVISIONING);
-    if (s_ops->init(&s_ctx, device_id, on_backend_event, NULL) < 0) {
+    if (s_ops->init(&s_ctx, device_id, on_platform_event, NULL) < 0) {
         s_ctx = NULL;
         s_handler = NULL;
         s_user_data = NULL;

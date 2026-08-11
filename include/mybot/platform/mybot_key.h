@@ -20,9 +20,9 @@ typedef enum {
     MYBOT_KEY_EVENT_PAIR,
     /** Request a graceful application exit. */
     MYBOT_KEY_EVENT_EXIT,
-    /** Raise the SDK-managed media volume. Optional. */
+    /** Raise the active playback volume. Optional. */
     MYBOT_KEY_EVENT_VOLUME_UP,
-    /** Lower the SDK-managed media volume. Optional. */
+    /** Lower the active playback volume. Optional. */
     MYBOT_KEY_EVENT_VOLUME_DOWN,
 } mybot_key_event_t;
 

@@ -5,7 +5,7 @@
 
 #include "mybot_kv_store_internal.h"
 
-#include "linux_backends.h"
+#include "linux_platform_adapters.h"
 
 #include <assert.h>
 #include <fcntl.h>

@@ -10,19 +10,19 @@ extern "C" {
 
 /**
  * SDK-internal wake-word facade. The public mybot/platform/mybot_wake_words.h
- * only exposes the backend contract (handler typedef, ops table and
+ * only exposes the platform contract (handler typedef, ops table and
  * mybot_wake_words_register()); the SDK audio pipeline drives the registered
- * backend through the functions below.
+ * implementation through the functions below.
  */
 
-/** Return whether the current platform registered a local ASR backend. */
+/** Return whether the current platform registered a local ASR implementation. */
 bool mybot_wake_words_is_registered(void);
 
-/** Initialize the registered backend for the capture PCM format. */
+/** Initialize the registered implementation for the capture PCM format. */
 int mybot_wake_words_init(int sample_rate, int channels, int bits_per_sample,
                           mybot_wake_words_handler_t handler, void *user_data);
 
-/** Feed captured interleaved PCM frames to the local ASR backend. */
+/** Feed captured interleaved PCM frames to the local ASR implementation. */
 int mybot_wake_words_process(const void *pcm, int frames);
 
 /** Stop local ASR and release its resources. Idempotent. */

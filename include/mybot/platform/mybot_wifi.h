@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 /**
- * Wi-Fi connection events emitted by the platform provisioning implementation.
+ * Wi-Fi connection events emitted by the platform connectivity implementation.
  *
  * Events may be emitted from platform threads. The implementation must not emit any
  * event after destroy() returns.
@@ -29,9 +29,9 @@ typedef enum {
  * The implementation emits connection events; the SDK maps them onto these states.
  */
 typedef enum {
-    /** No implementation registered and no provisioning session active. */
+    /** No provisioning or connectivity session is active. */
     MYBOT_WIFI_STATE_IDLE = 0,
-    /** APSTA provisioning is running and waiting for the STA link. */
+    /** The platform Wi-Fi workflow is running and waiting for the STA link. */
     MYBOT_WIFI_STATE_PROVISIONING,
     /** The STA link is connected. */
     MYBOT_WIFI_STATE_CONNECTED,
@@ -64,11 +64,18 @@ typedef void (*mybot_wifi_event_handler_t)(mybot_wifi_event_t event, void *user_
 typedef void (*mybot_wifi_state_handler_t)(mybot_wifi_state_t state, void *user_data);
 
 /**
- * Platform APSTA provisioning implementation operations.
+ * Platform Wi-Fi connectivity operations.
  *
- * The implementation owns the provisioning transport (AP + STA) and Wi-Fi credential
- * persistence. It must keep monitoring the STA link after the first successful
- * connection and report runtime disconnects and reconnects through emit().
+ * APSTA provisioning is the project's recommended production model and current
+ * preferred solution. Platform ports should use APSTA wherever available so
+ * onboarding, connection transitions, and recovery behavior remain consistent
+ * across products. Alternative platform implementations remain supported for development hosts
+ * or platforms that cannot provide APSTA.
+ *
+ * The implementation owns the platform-specific connection or provisioning
+ * workflow and, where applicable, Wi-Fi credential persistence. It must keep
+ * monitoring the STA link after the first successful connection and report
+ * runtime disconnects and reconnects through emit().
  *
  * @note All callbacks may run on platform threads. destroy() must stop the
  *       transport and wait for any in-flight callback to return before it
@@ -79,7 +86,8 @@ typedef struct {
     const char *name;
 
     /**
-     * Start APSTA provisioning without waiting for the user.
+     * Start the platform Wi-Fi workflow without waiting for the STA link.
+     * Production implementations should normally start APSTA provisioning.
      *
      * @param ctx       [out] implementation context handle
      * @param device_id NUL-terminated device identifier forwarded from
@@ -94,8 +102,8 @@ typedef struct {
     /**
      * Stop provisioning and release all resources.
      *
-     * Must stop the AP/STA transport and wait for in-flight handlers. No
-     * event is emitted after this returns.
+     * Must stop provisioning and link monitoring, then wait for in-flight
+     * handlers. No event is emitted after this returns.
      *
      * @param ctx implementation context from init()
      */
@@ -103,7 +111,7 @@ typedef struct {
 } mybot_wifi_ops_t;
 
 /**
- * Register the APSTA provisioning implementation for the current platform.
+ * Register the Wi-Fi connectivity implementation for the current platform.
  *
  * @param ops implementation operations table; must remain valid for the process
  *            lifetime

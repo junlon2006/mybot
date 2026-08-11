@@ -7,7 +7,7 @@
 
 #include <string.h>
 
-/* Singleton registry — only one capture, playback and volume platform active. */
+/* Singleton registry: one capture, playback, and volume implementation may be registered. */
 static const mybot_audio_capture_ops_t *g_capture_ops = NULL;
 static const mybot_audio_playback_ops_t *g_playback_ops = NULL;
 static const mybot_audio_volume_ops_t *g_volume_ops = NULL;
@@ -16,8 +16,8 @@ static bool g_volume_active = false;
 
 /* Media volume is SDK-managed digital gain. Defaults to unity (no scaling). */
 static aosl_atomic_t g_media_volume = MYBOT_AUDIO_VOLUME_DEFAULT;
-/* SDK-tracked device volume, used to step volume when the backend has no
- * get_volume() and to resume after a backend re-initialization. */
+/* SDK-tracked device volume, used to step volume when the implementation has no
+ * get_volume() and to resume after an implementation re-initialization. */
 static aosl_atomic_t g_device_volume = MYBOT_AUDIO_VOLUME_DEFAULT;
 
 int mybot_audio_register_capture(const mybot_audio_capture_ops_t *ops) {
@@ -71,7 +71,7 @@ int mybot_audio_device_volume_init(void) {
         return -1;
     }
     g_volume_active = true;
-    /* Sync the SDK-tracked value with the backend when it can report one. */
+    /* Sync the SDK-tracked value with the implementation when it can report one. */
     if (g_volume_ops->get_volume) {
         int volume = 0;
         if (g_volume_ops->get_volume(g_volume_ctx, &volume) == 0) {

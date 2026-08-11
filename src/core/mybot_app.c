@@ -48,8 +48,8 @@
 #define AUDIO_RINGBUF_DURATION_MS 2000
 #define AUDIO_RINGBUF_SIZE                                                                         \
     (SAMPLE_RATE * AUDIO_RINGBUF_DURATION_MS / 1000 * CHANNELS * BYTES_PER_SAMPLE)
-/* Announcement pre-buffer: keep this much announcement PCM queued in the
- * playback ring buffer so device-write jitter never causes an underrun. */
+/* Keep this much announcement PCM queued in the playback ring buffer to reduce
+ * underrun risk from device-write jitter. */
 #define MYBOT_ANNOUNCE_BUFFER_MS 500
 #define MYBOT_ANNOUNCE_TARGET_BYTES                                                                \
     (SAMPLE_RATE * MYBOT_ANNOUNCE_BUFFER_MS / 1000 * CHANNELS * BYTES_PER_SAMPLE)
@@ -111,14 +111,14 @@ static struct {
     char rtc_token[512];
     char rtc_uid[64];
 
-    /* MPQ handles — all real-time audio timers share this one thread */
+    /* Audio sender MPQ: drains captured PCM to RTC at the packet cadence. */
     aosl_mpq_t mpq;
     aosl_timer_t send_timer; /* ptime cadence — send captured PCM to RTC */
     int16_t send_frame[AUDIO_FRAME_SAMPLES * CHANNELS];
 
-    /* Device state machine MPQ — dedicated thread because
-     * mybot_device_lifecycle_tick() does blocking HTTP polling that must not delay
-     * the real-time audio timers on mybot_mpq. */
+    /* Device state machine MPQ: dedicated because mybot_device_lifecycle_tick()
+     * performs blocking HTTP polling that must not delay the audio sender or
+     * capture/playback workers. */
     aosl_mpq_t state_mpq;
     aosl_timer_t state_timer; /* 100 ms — drive the device state machine */
 } s_app;
@@ -163,7 +163,7 @@ static void capture_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc,
         return;
     }
     if (frames > AUDIO_FRAME_SAMPLES) {
-        AOSL_LOG_ERR("capture backend returned invalid frame count: %d > %d", frames,
+        AOSL_LOG_ERR("capture implementation returned invalid frame count: %d > %d", frames,
                      AUDIO_FRAME_SAMPLES);
         return;
     }
@@ -277,7 +277,7 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
         s_app.pb_pending_offset = 0;
         s_app.pb_pending_frames = AUDIO_FRAME_SAMPLES;
 
-        /* Volume: a registered device volume backend is the primary control
+        /* Volume: a registered device volume implementation is the primary control
          * path, so the software gain is applied only as a fallback. Scale
          * before the platform write and before the AEC reference is
          * published, so the reference matches the signal reaching the
@@ -312,7 +312,7 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
         return;
     }
     if (written > s_app.pb_pending_frames) {
-        AOSL_LOG_ERR("playback backend returned invalid frame count: %d > %d", written,
+        AOSL_LOG_ERR("playback implementation returned invalid frame count: %d > %d", written,
                      s_app.pb_pending_frames);
         s_app.pb_pending_offset = 0;
         s_app.pb_pending_frames = 0;
@@ -374,8 +374,8 @@ static void on_rtc_state_changed(mybot_rtc_state_t state) {
      * mybot_device_lifecycle_notify_conversation_ended() only acts while the
      * device state machine is IN_CONVERSATION, so a deliberate 'q' stop
      * (state already RUNTIME) is never double-ended. RECONNECTING is transient
-     * and is not treated as a drop. The teardown is deferred to the state_mpq
-     * thread (this callback runs on an SDK thread). */
+     * and is not treated as a drop. SDK errors and connection-loss callbacks
+     * may run on SDK threads, so teardown is deferred to state_mpq. */
     if (state == MYBOT_RTC_STATE_DISCONNECTED || state == MYBOT_RTC_STATE_ERROR) {
         mybot_device_lifecycle_notify_conversation_ended();
     }
@@ -517,9 +517,9 @@ static void dev_on_conversation_stop(void) {
     AOSL_LOG_INF("==== CONVERSATION STOP ====");
     AOSL_LOG_INF("  channel: %s, uid: %s", s_app.rtc_channel, s_app.rtc_uid);
 
-    /* Stop the sender/capturer first so send_audio_timer stops attempting
-     * sends before the connection is torn down. mybot_rtc_session_leave() is
-     * additionally serialized against sends by an internal lock. */
+    /* Stop RTC audio flow first so the capture worker discards new input and
+     * send_audio_timer stops sending before the connection is torn down.
+     * mybot_rtc_session_leave() is also serialized against sends internally. */
     aosl_atomic_set(&s_app.rtc_connected, false);
 
     int ret = mybot_rtc_session_leave();
@@ -663,7 +663,7 @@ static void state_mpq_fini(void *arg) {
 }
 
 /* ----------------------------------------------------------
- * MPQ init — runs inside MPQ thread at startup
+ * Audio sender MPQ init — runs inside its MPQ thread at startup
  * ---------------------------------------------------------- */
 static int mpq_init(void *arg) {
     (void)arg;
@@ -679,7 +679,7 @@ static int mpq_init(void *arg) {
 }
 
 /* ----------------------------------------------------------
- * MPQ fini — runs inside MPQ thread at shutdown
+ * Audio sender MPQ fini — runs inside its MPQ thread at shutdown
  * ---------------------------------------------------------- */
 static void mpq_fini(void *arg) {
     (void)arg;
@@ -721,7 +721,7 @@ static void cleanup_services(void) {
         s_app.state_mpq = AOSL_MPQ_INVALID;
     }
 
-    /* The main MPQ fini callback kills the send timer and leaves the RTC
+    /* The audio sender MPQ fini callback kills the send timer and leaves the RTC
      * channel. Must happen before mybot_rtc_session_fini(): the RTC SDK
      * finalizes AOSL itself in agora_rtc_fini(), after which no AOSL call
      * may be made. */
@@ -782,7 +782,7 @@ static void cleanup_services(void) {
         pb_ops->destroy(s_app.pb_ctx);
         s_app.pb_ctx = NULL;
     }
-    /* Release the optional device volume backend after the audio devices. */
+    /* Release the optional device volume implementation after the audio devices. */
     mybot_audio_device_volume_deinit();
 }
 
@@ -826,7 +826,7 @@ static int start_services(void) {
     }
 
     /* ---- 2. Initialize audio devices via the registered platform ops ----
-     * The platform backend (e.g. ALSA on Linux) must have registered itself
+     * The platform implementation (e.g. ALSA on Linux) must have registered itself
      * through mybot_audio_register_*() before mybot_start() is called. */
     const mybot_audio_capture_ops_t *cap_ops = mybot_audio_get_capture();
     const mybot_audio_playback_ops_t *pb_ops = mybot_audio_get_playback();
@@ -844,20 +844,21 @@ static int start_services(void) {
         goto fail;
     }
 
-    /* Optional real-device volume backend. Its init failure is non-fatal: the
+    /* Optional real-device volume implementation. Its init failure is non-fatal: the
      * missing control only disables device volume, software media volume and
      * playback keep working. */
     if (mybot_audio_device_volume_init() < 0) {
-        AOSL_LOG_WRN("device volume backend unavailable, real-device volume control disabled");
+        AOSL_LOG_WRN(
+            "device volume implementation unavailable, real-device volume control disabled");
     }
 
 #if MYBOT_WAKE_WORDS
     if (!mybot_wake_words_is_registered()) {
-        AOSL_LOG_ERR("wake words enabled but no local ASR backend is registered");
+        AOSL_LOG_ERR("wake words enabled but no local ASR implementation is registered");
         goto fail;
     }
     if (mybot_wake_words_init(SAMPLE_RATE, CHANNELS, BITS_PER_SAMPLE, on_wake_word, NULL) < 0) {
-        AOSL_LOG_ERR("wake words backend init failed");
+        AOSL_LOG_ERR("wake words implementation init failed");
         goto fail;
     }
     s_app.wake_words_active = true;
@@ -896,8 +897,8 @@ static int start_services(void) {
      * Each worker is an MPQ created with aosl_mpq_create(), which spawns the
      * thread and gives us join semantics through aosl_mpq_destroy_wait() —
      * the thread HAL (aosl_hal_thread_join) is not available on every
-     * platform. The per-MPQ timer (cap_timer / pb_timer) drives the I/O on
-     * its own thread, so blocking ALSA I/O never starves the audio sender. */
+     * platform. The per-MPQ timer (cap_timer / pb_timer) drives bounded
+     * platform I/O on its own thread, isolated from the audio sender. */
     s_app.cap_mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MPQ_STACK_SIZE, 1000, "cap_mpq",
                                     cap_mpq_init, cap_mpq_fini, NULL);
     if (aosl_mpq_invalid(s_app.cap_mpq)) {
@@ -927,7 +928,7 @@ static int start_services(void) {
         goto fail;
     }
 
-    /* ---- 7. Create the MPQ and run its loop in a dedicated thread ----
+    /* ---- 7. Create the audio sender MPQ ----
      * Use aosl_mpq_create() instead of aosl_main_start(): the latter
      * registers an atexit() hook that re-runs aosl_main_exit_wait() after
      * main() returns, which aborts once aosl_dtor() has finalized AOSL.
@@ -941,8 +942,8 @@ static int start_services(void) {
     }
 
     /* ---- 8. Create the device-state MPQ ----
-     * Dedicated thread: mybot_device_lifecycle_tick() does blocking HTTP polling that
-     * must not delay the real-time audio timers. */
+     * mybot_device_lifecycle_tick() performs blocking HTTP polling, so it runs
+     * on a dedicated thread that cannot delay the audio workers. */
     s_app.state_mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MPQ_STACK_SIZE, 1000, "state_mpq",
                                       state_mpq_init, state_mpq_fini, NULL);
     if (aosl_mpq_invalid(s_app.state_mpq)) {
@@ -1192,8 +1193,8 @@ void mybot_stop(void) {
 
     /* ---- 1. Block further startup transitions and signal workers to stop ----
      * Set BEFORE any AOSL/audio teardown so the MPQ timer callbacks return
-     * early. The ALSA read/write paths are poll-with-timeout, so each worker
-     * exits within a bounded time even when the device yields no data. */
+     * early. Platform read/write callbacks are required to bound blocking, so
+     * each worker can exit even when its device makes no progress. */
     mybot_state_t previous_state = mybot_get_state();
     aosl_atomic_set(&s_app.state, MYBOT_STATE_STOPPING);
     aosl_atomic_set(&s_app.running, false);
