@@ -75,7 +75,7 @@ typedef struct mybot_json_hooks {
 } mybot_json_hooks_t;
 
 /*
- * Configure a matched allocator pair, or pass NULL to restore malloc/free.
+ * Configure a matched allocator pair, or pass NULL to restore the AOSL HAL allocators.
  * Call only when no JSON values or printed strings are alive.
  */
 extern int mybot_json_init_hooks(const mybot_json_hooks_t *hooks);

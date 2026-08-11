@@ -22,8 +22,8 @@ extern "C" {
 /**
  * Capture device operations.
  *
- * The implementation provides a blocking PCM capture device. The SDK drives it on
- * a dedicated worker thread with the fixed format 16000 Hz, mono, 16 bits per
+ * The implementation provides a PCM capture device. The SDK drives it on a
+ * dedicated worker thread with the fixed format 16000 Hz, mono, 16 bits per
  * sample. Byte counts never appear in this interface: read()/write() counts
  * are PCM frames (one sample per channel).
  */
@@ -51,7 +51,7 @@ typedef struct {
     int (*start)(void *ctx);
 
     /**
-     * Read one block of PCM frames (blocking).
+     * Read one block of PCM frames.
      *
      * @param ctx    device context from init()
      * @param buf    destination buffer (size = frames * channels * bits/8)
@@ -59,8 +59,8 @@ typedef struct {
      * @return frames actually read (positive), 0 on no progress, or -1 on
      *         error. Never return more than the requested frames.
      *
-     * @note Blocking is allowed but must be bounded so shutdown can complete;
-     *       stop() must unblock an in-flight read().
+     * @note A call may block, but it must return within a bounded time so the
+     *       worker can observe shutdown. stop() is called after the worker exits.
      */
     int (*read)(void *ctx, void *buf, int frames);
 
@@ -85,8 +85,8 @@ typedef struct {
 /**
  * Playback device operations.
  *
- * The implementation provides a blocking PCM playback device with the same fixed
- * format as capture (16000 Hz, mono, 16 bits per sample) and the same
+ * The implementation provides a PCM playback device with the same fixed format
+ * as capture (16000 Hz, mono, 16 bits per sample) and the same
  * frame-count convention.
  */
 typedef struct {
@@ -113,7 +113,7 @@ typedef struct {
     int (*start)(void *ctx);
 
     /**
-     * Write one block of PCM frames (blocking).
+     * Write one block of PCM frames.
      *
      * @param ctx    device context from init()
      * @param buf    source buffer (size = frames * channels * bits/8)
@@ -121,8 +121,8 @@ typedef struct {
      * @return frames actually written (positive), 0 on no progress, or -1 on
      *         error. Never return more than the requested frames.
      *
-     * @note Blocking is allowed but must be bounded so shutdown can complete;
-     *       stop() must unblock an in-flight write().
+     * @note A call may block, but it must return within a bounded time so the
+     *       worker can observe shutdown. stop() is called after the worker exits.
      */
     int (*write)(void *ctx, const void *buf, int frames);
 

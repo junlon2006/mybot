@@ -10,14 +10,14 @@ extern "C" {
 
 /**
  * SDK-internal key facade. The public mybot/platform/mybot_key.h only exposes
- * the backend contract (event enum, handler typedef, ops table and
- * mybot_key_register()); the SDK core manages the key backend lifecycle.
+ * the platform contract (event enum, handler typedef, ops table and
+ * mybot_key_register()); the SDK core manages the key implementation lifecycle.
  */
 
-/** Initialize the registered backend and install the application event handler. */
+/** Initialize the registered implementation and install the application event handler. */
 int mybot_key_init(mybot_key_event_handler_t handler, void *user_data);
 
-/** Stop the backend and release its resources. No events are emitted after return. */
+/** Stop the implementation and release its resources. No events are emitted after return. */
 void mybot_key_deinit(void);
 
 #ifdef __cplusplus

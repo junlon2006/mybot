@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Mock backend: prompt = 100 frames of 1000; digit d = 20 frames of 1000+d. */
+/* Mock implementation: prompt = 100 frames of 1000; digit d = 20 frames of 1000+d. */
 #define MOCK_PROMPT_FRAMES 100
 #define MOCK_DIGIT_FRAMES 20
 
@@ -171,7 +171,7 @@ static void test_stop_midway(void) {
     assert(!mybot_announce_is_active());
     assert(mybot_announce_read_pcm(buf, 8) == 0);
 
-    /* The backend stays usable after a stop. */
+    /* The implementation stays usable after a stop. */
     assert(mybot_announce_play_pair_code("1") == 0);
     int16_t buf2[256];
     assert(read_all(buf2, 256) == MOCK_PROMPT_FRAMES + MOCK_DIGIT_FRAMES);

@@ -38,11 +38,12 @@ else()
     set(MYBOT_LINUX_DEFAULT OFF)
 endif()
 
-# MYBOT_BUILD_LINUX_PLATFORM selects the mybot reference backends under
-# platforms/linux/ (ALSA, stdin, file KV, console LCD, OpenSSL TLS). It is
+# MYBOT_BUILD_LINUX_PLATFORM selects the bundled reference platform implementations under
+# platforms/linux/ (ALSA audio/volume, stdin keys, file KV, console LCD, PCM
+# announcements, development host networking and optional OpenSSL TLS). It is
 # independent from CONFIG_PLATFORM, which selects the AOSL HAL port consumed
 # by third_party/aosl (e.g. linux, esp32, bk725x).
-option(MYBOT_BUILD_LINUX_PLATFORM "Build the bundled Linux reference backends (requires CONFIG_PLATFORM=linux)" ${MYBOT_LINUX_DEFAULT})
+option(MYBOT_BUILD_LINUX_PLATFORM "Build the bundled Linux platform implementations (requires CONFIG_PLATFORM=linux)" ${MYBOT_LINUX_DEFAULT})
 option(MYBOT_BUILD_EXAMPLES "Build mybot example applications" ${MYBOT_LINUX_DEFAULT})
 option(MYBOT_BUILD_TESTS "Build mybot tests" ${MYBOT_LINUX_DEFAULT})
 option(MYBOT_ENABLE_ASAN "Enable AddressSanitizer for mybot targets" OFF)
@@ -52,11 +53,11 @@ option(MYBOT_ENABLE_COVERAGE "Instrument mybot targets for gcov code coverage" O
 set(MYBOT_AUDIO_PTIME_MS "60" CACHE STRING "Audio packet duration: 20, 40, or 60 ms")
 set_property(CACHE MYBOT_AUDIO_PTIME_MS PROPERTY STRINGS 20 40 60)
 option(MYBOT_CLOUD_AEC "Enable server-side acoustic echo cancellation" ON)
-option(MYBOT_WAKE_WORDS "Enable the platform local-ASR wake-word backend" OFF)
+option(MYBOT_WAKE_WORDS "Enable the platform local-ASR wake-word implementation" OFF)
 option(MYBOT_AI_QOS "Enable Agora AI-driven QoS optimization" ON)
 set(MYBOT_FAST_SEND_MULTIPLIER "3" CACHE STRING "Agora fast-send multiplier: 1 through 5")
 set_property(CACHE MYBOT_FAST_SEND_MULTIPLIER PROPERTY STRINGS 1 2 3 4 5)
-option(MYBOT_SHOW_TRANSCRIPT "Receive real-time transcripts over the data stream" OFF)
+option(MYBOT_SHOW_TRANSCRIPT "Request real-time transcripts from the service" OFF)
 option(MYBOT_ENABLE_HTTPS "Enable HTTPS device-service transport" ON)
 option(MYBOT_ALLOW_INSECURE_HTTP "Allow plaintext HTTP for local development" OFF)
 
@@ -154,9 +155,10 @@ add_library(mybot_sdk STATIC
 add_library(mybot::sdk ALIAS mybot_sdk)
 set_target_properties(mybot_sdk PROPERTIES EXPORT_NAME sdk)
 
-# MYBOT_API expands to dllexport / default-visibility while the library is
-# being built; consumers see dllimport or nothing. -fvisibility=hidden keeps
-# internal symbols out of any future shared build.
+# MYBOT_API expands to dllexport while building a Windows DLL, dllimport for
+# Windows consumers, and default visibility on GCC/Clang. The separate
+# -fvisibility=hidden option keeps unannotated internal symbols out of any
+# future shared build.
 target_compile_definitions(mybot_sdk PRIVATE MYBOT_BUILDING_LIBRARY)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(mybot_sdk PRIVATE -fvisibility=hidden)
@@ -194,14 +196,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 mybot_enable_sanitizers(mybot_sdk)
 
-# The Linux reference backends (ALSA) require the AOSL Linux HAL. CONFIG_PLATFORM
+# The Linux reference platform implementations (ALSA) require the AOSL Linux HAL. CONFIG_PLATFORM
 # is set by third_party/aosl; reject a mismatch at configure time instead of
 # failing later with confusing compiler errors.
 if(MYBOT_BUILD_LINUX_PLATFORM AND NOT CONFIG_PLATFORM STREQUAL "linux")
     message(FATAL_ERROR
         "MYBOT_BUILD_LINUX_PLATFORM=ON requires CONFIG_PLATFORM=linux "
         "(current: '${CONFIG_PLATFORM}'). CONFIG_PLATFORM selects the AOSL HAL port; "
-        "MYBOT_BUILD_LINUX_PLATFORM selects the mybot Linux reference backends.")
+        "MYBOT_BUILD_LINUX_PLATFORM selects the mybot Linux platform implementations.")
 endif()
 
 if(MYBOT_BUILD_LINUX_PLATFORM)

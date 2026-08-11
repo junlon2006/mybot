@@ -33,7 +33,7 @@ typedef struct {
 
 /* Callbacks invoked by the state machine onto the app layer */
 typedef struct {
-    /** A pair code was obtained — device should TTS-broadcast it. */
+    /** A pair code was obtained; present it through the device UI and/or speaker. */
     void (*on_pair_code)(const char *code);
 
     /** Conversation should start — join RTC channel with given params. */
@@ -54,7 +54,7 @@ typedef struct {
  * ---------------------------------------------------------- */
 
 /** Initialize the device state machine.
- *  @param server_base  HTTPS device-service URL.
+ *  @param server_base  Device-service base URL.
  *  @param device_id    Unique device identifier (e.g. "AG-A1B2C3")
  *  @param firmware_ver Firmware version string (may be NULL)
  *  @param hw_model     Hardware model string (may be NULL)
@@ -65,8 +65,8 @@ int mybot_device_lifecycle_init(const char *server_base, const char *device_id,
                                 const char *firmware_ver, const char *hw_model,
                                 mybot_device_lifecycle_callbacks_t *cbs);
 
-/** Must be called periodically from the main loop (e.g., every 100ms).
- *  Drives polling and state transitions. */
+/** Called every 100 ms from the state machine's owning worker thread.
+ *  Drives polling and state transitions; calls must be serialized. */
 void mybot_device_lifecycle_tick(void);
 
 /**
@@ -86,10 +86,10 @@ mybot_device_state_t mybot_device_lifecycle_get_state(void);
 /** Return human-readable state name. */
 const char *mybot_device_lifecycle_state_name(mybot_device_state_t s);
 
-/** Return the current device_token (NULL if not in runtime). */
+/** Return the current device_token (NULL unless runtime or in a conversation). */
 const char *mybot_device_lifecycle_get_token(void);
 
-/** Trigger pairing from unprovisioned state. */
+/** Request a fresh pairing flow from any lifecycle state. */
 void mybot_device_lifecycle_request_pair(void);
 
 /** Trigger conversation start (user pressed button). */

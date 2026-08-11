@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
     aosl_set_log_level(AOSL_LOG_INFO);
 
 #if defined(MYBOT_EXAMPLE_ASSETS_DIR)
-    /* Point the announcement backend at the PCM assets CMake copied into the
+    /* Point the announcement implementation at the PCM assets CMake copied into the
      * build tree, unless the caller explicitly set MYBOT_ASSETS_DIR. */
     if (!getenv("MYBOT_ASSETS_DIR")) {
         setenv("MYBOT_ASSETS_DIR", MYBOT_EXAMPLE_ASSETS_DIR, 0);
@@ -91,9 +91,9 @@ int main(int argc, char **argv) {
         AOSL_LOG_INF("  hw-model : %s", cfg.hw_model);
     }
 
-    /* ---- Register platform backends. Wi-Fi provisioning is the first app stage. ---- */
+    /* ---- Register platform implementations. Wi-Fi provisioning is the first app stage. ---- */
     if (linux_platform_register() < 0) {
-        AOSL_LOG_ERR("failed to register Linux platform backends");
+        AOSL_LOG_ERR("failed to register Linux platform implementations");
         return 1;
     }
 

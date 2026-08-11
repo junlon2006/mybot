@@ -47,7 +47,7 @@ static void test_round_trip(void) {
     assert(result == 0);
     result = mybot_json_add_bool(root, "enabled", true);
     assert(result == 0);
-    result = mybot_json_add_string(details, "backend", "namespaced-cjson");
+    result = mybot_json_add_string(details, "implementation", "namespaced-cjson");
     assert(result == 0);
     result = mybot_json_add_item(root, "details", details);
     assert(result == 0);
@@ -75,9 +75,10 @@ static void test_round_trip(void) {
     assert(enabled->type == MYBOT_JSON_TRUE);
 
     details = mybot_json_get_object_item(root, "details");
-    const char *backend = mybot_json_get_string(mybot_json_get_object_item(details, "backend"));
-    assert(backend != NULL);
-    assert(strcmp(backend, "namespaced-cjson") == 0);
+    const char *implementation =
+        mybot_json_get_string(mybot_json_get_object_item(details, "implementation"));
+    assert(implementation != NULL);
+    assert(strcmp(implementation, "namespaced-cjson") == 0);
 
     mybot_json_delete(root);
 }

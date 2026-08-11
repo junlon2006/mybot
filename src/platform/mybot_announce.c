@@ -54,7 +54,7 @@ int mybot_announce_init(void) {
 
     void *ctx = NULL;
     if (s_ann.ops->init(&ctx) < 0) {
-        AOSL_LOG_ERR("announce: backend init failed");
+        AOSL_LOG_ERR("announce: implementation init failed");
         aosl_hal_mutex_destroy(s_ann.lock);
         s_ann.lock = NULL;
         return -1;

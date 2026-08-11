@@ -3,7 +3,7 @@
 
 #include <mybot/platform/mybot_kv_store.h>
 
-#include "linux_backends.h"
+#include "linux_platform_adapters.h"
 
 #include <api/aosl_log.h>
 
@@ -134,7 +134,7 @@ static int kv_store_file_init(void **out_ctx) {
     }
 
     *out_ctx = ctx;
-    AOSL_LOG_INF("kv store backend: %s", ctx->root);
+    AOSL_LOG_INF("kv store implementation: %s", ctx->root);
     return 0;
 }
 

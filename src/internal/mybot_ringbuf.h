@@ -11,8 +11,10 @@ extern "C" {
 /**
  * @brief Lock-free single-producer single-consumer ring buffer.
  *
- * Thread-safe only when used in SPSC mode (one writer, one reader).
- * All operations are non-blocking (no locks).
+ * Data access is thread-safe only in SPSC mode (one writer, one reader).
+ * create(), destroy(), and clear() require external lifecycle synchronization
+ * and must not overlap data access. Read, write, and size-query operations use
+ * no locks and are non-blocking.
  *
  * Memory ordering: the payload is made visible to the peer before the index is
  * published (release) and the peer observes the published index before touching
@@ -37,10 +39,12 @@ int mybot_ringbuf_get_free_size(mybot_ringbuf_t handle);
 /** Number of bytes available for reading. */
 int mybot_ringbuf_get_data_size(mybot_ringbuf_t handle);
 
-/** Write data (non-blocking). Returns bytes written, or -1 if full. */
+/** Write data (non-blocking). Returns bytes written, or -1 on invalid input or
+ *  insufficient space. */
 int mybot_ringbuf_write(mybot_ringbuf_t handle, const char *src, int writelen);
 
-/** Read data (non-blocking). Returns bytes read, or -1 if empty. */
+/** Read data (non-blocking). Returns bytes read, or -1 on invalid input or
+ *  insufficient data. */
 int mybot_ringbuf_read(char *dst, int readlen, mybot_ringbuf_t handle);
 
 #ifdef __cplusplus

@@ -12,15 +12,15 @@
 
 #define TAG "RTC"
 
-/* ---- internal state ----
+/* ---- Internal state ----
  * lock serializes SDK calls that touch the same connection: send_audio runs
- * on the mybot_mpq thread while join/leave run on the state_mpq thread, so
- * without it agora_rtc_send_audio_data() could race with
+ * on the audio sender MPQ while join/leave may run on lifecycle or sender MPQ
+ * threads, so without it agora_rtc_send_audio_data() could race with
  * agora_rtc_destroy_connection(). Created lazily by mybot_rtc_session_init();
- * set_state() and the SDK callbacks intentionally do NOT take it (they run
- * inside SDK threads and would deadlock). */
+ * set_state() and the SDK callbacks intentionally do not take it because an
+ * SDK callback can be invoked while the SDK call holding this lock is active. */
 typedef struct {
-    aosl_atomic_t state; /* atomic: written by SDK callbacks */
+    aosl_atomic_t state; /* written by SDK callbacks and session API threads */
     mybot_rtc_session_callbacks_t cbs;
     connection_id_t conn_id;
     aosl_atomic_t initialized;
@@ -141,10 +141,10 @@ static void __on_token_privilege_will_expire(connection_id_t conn_id, const char
 static void __on_rtc_stats(connection_id_t conn_id, rtc_stats_t stats) {
     (void)conn_id;
     (void)stats;
-    /* optional: log stats periodically */
+    /* Optional hook for periodic statistics logging. */
 }
 
-/* ---- public API ---- */
+/* ---- Session API ---- */
 
 int mybot_rtc_session_init(const char *app_id, mybot_rtc_session_callbacks_t *cbs) {
     if (aosl_atomic_read(&s_rtc.initialized)) {

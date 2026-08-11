@@ -14,21 +14,21 @@ extern "C" {
 /*
  * SDK-internal announcement facade.
  *
- * The public mybot/platform/mybot_announce.h only exposes the backend contract
+ * The public mybot/platform/mybot_announce.h only exposes the platform contract
  * (ops table + mybot_announce_register()); the SDK core drives the registered
- * backend through the functions below. When a pair code is obtained the core
+ * implementation through the functions below. When a pair code is obtained the core
  * queues the fixed prompt followed by one sound per digit and streams those
  * sounds into the playback ring buffer, so the prompt plays once through the
  * normal speaker path without an RTC session.
  */
 
-/** Whether the current platform registered an announcement backend. */
+/** Whether the current platform registered an announcement implementation. */
 bool mybot_announce_is_registered(void);
 
-/** Initialize the registered backend. No-op when none is registered. */
+/** Initialize the registered implementation. No-op when none is registered. */
 int mybot_announce_init(void);
 
-/** Release the backend and any queued announcement. Idempotent. */
+/** Release the implementation and any queued announcement. Idempotent. */
 void mybot_announce_deinit(void);
 
 /**
@@ -40,10 +40,11 @@ void mybot_announce_deinit(void);
  */
 int mybot_announce_play_pair_code(const char *code);
 
-/** Stop the announcement and drop any unplayed audio. Idempotent. */
+/** Discard source sounds not yet copied into the playback buffer. Idempotent.
+ *  PCM already buffered for playback is unaffected. */
 void mybot_announce_stop(void);
 
-/** Whether an announcement still has PCM left to play. */
+/** Whether source sounds still have PCM left to feed into the playback buffer. */
 bool mybot_announce_is_active(void);
 
 /** Copy the next announcement PCM frames (16 kHz mono s16).

@@ -10,21 +10,21 @@ extern "C" {
 
 /**
  * SDK-internal Wi-Fi facade. The public mybot/platform/mybot_wifi.h only
- * exposes the backend contract (enums, handler typedefs, ops table and
+ * exposes the platform contract (enums, handler typedefs, ops table and
  * mybot_wifi_register()); the SDK core drives provisioning and state.
  */
 
 /**
- * Start APSTA provisioning without waiting for STA to connect.
- * A successful return means the backend started; subsequent connection results
- * are reported through handler and mybot_wifi_get_state().
+ * Start the platform Wi-Fi workflow without waiting for the STA link.
+ * A successful return means the implementation started; subsequent link results are
+ * reported through handler and mybot_wifi_get_state().
  */
 int mybot_wifi_init(const char *device_id, mybot_wifi_state_handler_t handler, void *user_data);
 
 /** Return the current provisioning state. */
 mybot_wifi_state_t mybot_wifi_get_state(void);
 
-/** Stop APSTA provisioning and release its resources. Idempotent. */
+/** Stop provisioning/link monitoring and release its resources. Idempotent. */
 void mybot_wifi_deinit(void);
 
 #ifdef __cplusplus

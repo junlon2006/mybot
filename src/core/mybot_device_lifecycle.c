@@ -39,7 +39,7 @@ static struct {
     /* Pairing phase */
     char pair_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
     int pair_poll_interval; /* seconds between polls */
-    int pair_tick_counter;  /* counts tick() calls (100ms each) */
+    int pair_tick_counter;  /* counts tick() calls (100 ms each) */
     int pair_retry_delay_ticks;
     int pair_retry_ticks_remaining;
 
@@ -48,8 +48,8 @@ static struct {
     int runtime_poll_interval;
     int runtime_tick_counter;
 
-    /* Requests are atomically published by the main/SDK threads and consumed
-     * by the state_mpq thread. */
+    /* Requests are atomically published by application/SDK threads and
+     * consumed by the state_mpq thread. */
     char conversation_id[MYBOT_DEVICE_CLIENT_MAX_ID];
     char rtc_channel[128];
     char rtc_uid[64];
@@ -224,7 +224,7 @@ static void action_create_pair_code(void) {
     /* Clear any old device token */
     s_state.device_token[0] = '\0';
 
-    /* Notify app to broadcast pair code */
+    /* Notify the app to present the pair code. */
     if (s_state.cbs.on_pair_code) {
         s_state.cbs.on_pair_code(resp.code);
     }
@@ -267,7 +267,7 @@ static void action_poll_binding_pair(void) {
 
     if (strcmp(resp.status, "pending") == 0) {
         s_state.pair_poll_interval = resp.poll_after_seconds >= 3 ? resp.poll_after_seconds : 3;
-        /* stay in awaiting_claim */
+        /* Stay in awaiting_claim. */
     } else if (strcmp(resp.status, "bound") == 0) {
         if (resp.device_token[0]) {
             strncpy(s_state.device_token, resp.device_token, sizeof(s_state.device_token) - 1);
@@ -290,11 +290,11 @@ static void action_poll_binding_pair(void) {
          * request on the next tick. */
         aosl_atomic_set(&s_state.start_pairing_flag, true);
     } else if (strcmp(resp.status, "unbound") == 0) {
-        /* Shouldn't happen during pairing, but handle gracefully */
+        /* Unexpected during pairing, but handle it gracefully. */
         AOSL_LOG_INF("unexpected unbound during pairing");
         set_state(MYBOT_DEVICE_STATE_UNPROVISIONED);
     } else {
-        /* unknown status */
+        /* Unknown status. */
         AOSL_LOG_ERR("unknown bind status: %s", resp.status);
     }
 }
@@ -598,8 +598,8 @@ void mybot_device_lifecycle_tick(void) {
         return;
     }
 
-    /* A pending pairing request (first boot, expired pair code, or the user
-     * pressing 'p') starts a fresh pair-code request from ANY state. If a
+    /* A pending pairing request (first boot, expired pair code, or an explicit
+     * re-pair request) starts a fresh pair-code request from any state. If a
      * conversation is active, end it first so the RTC connection is torn down
      * before the device is rebound. */
     if (aosl_atomic_xchg(&s_state.start_pairing_flag, false)) {
@@ -631,7 +631,7 @@ void mybot_device_lifecycle_tick(void) {
 
     if (current_state() == MYBOT_DEVICE_STATE_AWAITING_CLAIM) {
         s_state.pair_tick_counter++;
-        /* 100ms per tick, convert poll interval to ticks */
+        /* Convert the poll interval using the 100 ms tick period. */
         int interval_ticks = s_state.pair_poll_interval * 10;
         if (s_state.pair_tick_counter >= interval_ticks) {
             s_state.pair_tick_counter = 0;

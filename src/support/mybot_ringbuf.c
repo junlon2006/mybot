@@ -3,11 +3,11 @@
 
 #include <string.h>
 
-/* AOSL cross-platform interfaces */
+/* AOSL cross-platform interfaces. */
 #include <api/aosl_atomic.h>
 #include <hal/aosl_hal_memory.h>
 
-/* Keep one byte unfilled to distinguish full from empty */
+/* Keep one byte unfilled to distinguish full from empty. */
 #define RINGBUF_GUARD_BYTE 1
 
 typedef struct {

@@ -24,7 +24,7 @@
  * ---------------------------------------------------------- */
 #define HTTP_DEFAULT_PORT 80
 #define HTTPS_DEFAULT_PORT 443
-#define HTTP_TIMEOUT_MS 5000 /* deadline for the socket request stages */
+#define HTTP_TIMEOUT_MS 5000 /* shared deadline for connect/send/receive stages */
 #define RECV_BUF_SIZE 4096
 #define RECV_BUF_MAX (32 * 1024) /* hard cap on response buffer */
 #define MAX_URL_LEN 512
@@ -156,7 +156,7 @@ static int parse_url(const char *url, url_parts_t *parts) {
         return -1;
     }
 
-    /* extract host (up to ':' or '/' or end) */
+    /* Extract host (up to ':', '/', or the end). */
     const char *host_start = p;
     while (*p && *p != ':' && *p != '/') {
         p++;
@@ -171,7 +171,7 @@ static int parse_url(const char *url, url_parts_t *parts) {
         return -1;
     }
 
-    /* optional port */
+    /* Parse an optional port. */
     if (*p == ':') {
         p++;
         char port_str[8];
@@ -189,7 +189,7 @@ static int parse_url(const char *url, url_parts_t *parts) {
         }
     }
 
-    /* path (defaults to "/") */
+    /* Parse the path, defaulting to "/". */
     if (*p == '/') {
         size_t path_len = strlen(p);
         if (path_len >= sizeof(parts->path)) {
@@ -337,7 +337,7 @@ static aosl_fd_t tcp_connect(const char *host, int port, uint64_t deadline) {
     if (addr->sa_family == AOSL_AF_INET6) {
         domain = AOSL_AF_INET6;
     } else if (addr->sa_family != AOSL_AF_INET) {
-        return AOSL_INVALID_FD; /* unknown address family */
+        return AOSL_INVALID_FD; /* Unknown address family. */
     }
 
     /* Fix the port (the resolver does not set it). */
@@ -429,7 +429,7 @@ static char *read_all(http_stream_t *stream, size_t *out_len, int *out_closed, u
              * misbehaving server cannot cause unbounded memory growth. */
             if (cap - len < RECV_BUF_SIZE / 2) {
                 if (cap >= RECV_BUF_MAX) {
-                    break; /* response exceeds the cap — stop reading */
+                    break; /* No room remains for another receive chunk within the cap. */
                 }
                 cap *= 2;
                 if (cap > RECV_BUF_MAX) {
@@ -449,7 +449,7 @@ static char *read_all(http_stream_t *stream, size_t *out_len, int *out_closed, u
              * the deadline bounds the total wait even if the peer is silent. */
             aosl_hal_msleep(10);
         } else {
-            /* real error */
+            /* A non-retryable receive error. */
             goto fail;
         }
     }
@@ -463,14 +463,14 @@ fail:
 }
 
 /*
- * Parse HTTP status line: "HTTP/1.x STATUS_TEXT\r\n"
+ * Parse an HTTP status line such as "HTTP/1.1 200 OK\r\n".
  */
 static int parse_status_line(const char *line) {
     /* Expect "HTTP/1.x <CODE> <reason>", e.g. "HTTP/1.1 200 OK". */
     if (strncmp(line, "HTTP/", 5) != 0) {
         return 0;
     }
-    line += 5; /* skip "HTTP/" */
+    line += 5; /* Skip "HTTP/". */
 
     /* Skip the version ("1.0", "1.1", ...). */
     while (*line == '.' || (*line >= '0' && *line <= '9')) {
@@ -497,7 +497,7 @@ static int parse_status_line(const char *line) {
 static char *dechunk_body(const char *body, size_t body_len, size_t *out_len) {
     const char *p = body;
     const char *end = body + body_len;
-    size_t cap = body_len + 1; /* decoded data never exceeds the raw body */
+    size_t cap = body_len + 1; /* Decoded data never exceeds the raw body. */
     char *out = (char *)aosl_hal_malloc(cap);
     size_t len = 0;
 
@@ -615,7 +615,7 @@ static int parse_content_length(const char *value, const char *end, size_t *out_
 
 /*
  * Parse a complete HTTP response from raw data.
- * Returns the response struct (body will point into or be a copy from raw).
+ * Any non-empty response body is returned in a separately allocated buffer.
  */
 static int parse_response(const char *raw, size_t raw_len, int stream_closed,
                           mybot_http_client_response_t *resp) {
@@ -624,7 +624,7 @@ static int parse_response(const char *raw, size_t raw_len, int stream_closed,
     const char *p = raw;
     const char *end = raw + raw_len;
 
-    /* status line */
+    /* Parse the status line. */
     const char *nl = (const char *)memchr(p, '\n', (size_t)(end - p));
     if (!nl) {
         return -1;
@@ -632,12 +632,12 @@ static int parse_response(const char *raw, size_t raw_len, int stream_closed,
     resp->status_code = parse_status_line(p);
     p = nl + 1;
 
-    /* skip CR if present */
+    /* Skip a CR that begins an immediate empty header line. */
     if (p < end && *p == '\r') {
         p++;
     }
 
-    /* headers */
+    /* Parse headers. */
     size_t body_offset = 0;
     size_t content_length = 0;
     int has_content_length = 0;
@@ -651,7 +651,7 @@ static int parse_response(const char *raw, size_t raw_len, int stream_closed,
         }
 
         size_t hdr_len = (size_t)(nl - p);
-        /* end of headers: empty line */
+        /* An empty line terminates the headers. */
         if (hdr_len == 0 || (hdr_len == 1 && *p == '\r')) {
             p = nl + 1;
             if (p < end && *p == '\r') {
@@ -674,13 +674,13 @@ static int parse_response(const char *raw, size_t raw_len, int stream_closed,
             has_content_length = 1;
         }
 
-        /* parse Transfer-Encoding (takes precedence over Content-Length) */
+        /* Parse Transfer-Encoding, which takes precedence over Content-Length. */
         if (hdr_len > 18 && strncasecmp(p, "Transfer-Encoding:", 18) == 0) {
             const char *val = p + 18;
             while (val < nl && *val == ' ') {
                 val++;
             }
-            /* "chunked" may appear in a comma-separated list, e.g. "gzip, chunked" */
+            /* "chunked" may appear in a comma-separated list, e.g. "gzip, chunked". */
             for (const char *v = val; v + 7 <= nl; v++) {
                 if (strncasecmp(v, "chunked", 7) == 0) {
                     chunked = 1;
@@ -751,7 +751,7 @@ static int http_request(const char *method, const char *url, const char *content
         return -1;
     }
 
-    /* Build HTTP request */
+    /* Build the HTTP request. */
     char req[2048];
     int req_len;
 
@@ -783,14 +783,14 @@ static int http_request(const char *method, const char *url, const char *content
         return -1;
     }
 
-    /* Send request */
+    /* Send the request. */
     int ret = send_all(&stream, req, (size_t)req_len, deadline);
     if (ret < 0) {
         stream_close(&stream);
         return -1;
     }
 
-    /* Read response */
+    /* Read the response. */
     size_t raw_len = 0;
     int stream_closed = 0;
     char *raw = read_all(&stream, &raw_len, &stream_closed, deadline);
@@ -800,7 +800,7 @@ static int http_request(const char *method, const char *url, const char *content
         return -1;
     }
 
-    /* Parse */
+    /* Parse the response. */
     ret = parse_response(raw, raw_len, stream_closed, resp);
     aosl_hal_free(raw);
 

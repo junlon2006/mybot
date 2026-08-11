@@ -21,7 +21,7 @@ extern "C" {
 typedef enum {
     /** The device is powering up. */
     MYBOT_LCD_SCREEN_STARTING = 0,
-    /** APSTA Wi-Fi provisioning is in progress. */
+    /** The platform Wi-Fi provisioning/connection workflow is in progress. */
     MYBOT_LCD_SCREEN_WIFI_PROVISIONING,
     /** The Wi-Fi link was lost at runtime. */
     MYBOT_LCD_SCREEN_WIFI_DISCONNECTED,
@@ -105,8 +105,7 @@ typedef struct {
  *            lifetime
  * @return 0 on success, -1 if ops is invalid or already registered
  *
- * @note Call exactly once, before mybot_start(). Required only when the LCD
- *       feature is enabled.
+ * @note Optional. When used, call exactly once before mybot_start().
  */
 MYBOT_API int mybot_lcd_register(const mybot_lcd_ops_t *ops);
 

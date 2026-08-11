@@ -104,7 +104,7 @@ int main(void) {
     assert(mybot_audio_register_playback(&playback) < 0);
     assert(mybot_audio_get_playback() == &playback);
 
-    /* Device volume backend registration and lifecycle. */
+    /* Device volume implementation registration and lifecycle. */
     assert(mybot_audio_device_register_volume(NULL) < 0);
     assert(mybot_audio_device_register_volume(&incomplete_volume) < 0);
     assert(mybot_audio_device_register_volume(&volume) == 0);
@@ -113,7 +113,7 @@ int main(void) {
     assert(!mybot_audio_device_volume_is_active());
 
     int v = -1;
-    assert(mybot_audio_device_set_volume(50) < 0); /* backend not initialized yet */
+    assert(mybot_audio_device_set_volume(50) < 0); /* implementation not initialized yet */
     assert(mybot_audio_device_get_volume(&v) < 0);
 
     assert(mybot_audio_device_volume_init() == 0);
@@ -134,7 +134,7 @@ int main(void) {
     assert(mybot_audio_device_volume_init() == 0); /* re-init after deinit */
     assert(mybot_audio_device_volume_is_active());
     assert(mybot_audio_device_get_volume(&v) == 0);
-    assert(v == 60); /* backend state survives deinit in this fake backend */
+    assert(v == 60); /* implementation state survives deinit in this fake implementation */
     mybot_audio_device_volume_deinit();
     assert(!mybot_audio_device_volume_is_active());
 

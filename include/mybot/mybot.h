@@ -47,16 +47,17 @@ typedef enum {
      *  after all worker threads and devices are released; also the value
      *  reported before mybot_start(). */
     MYBOT_STATE_STOPPED = 0,
-    /** APSTA Wi-Fi provisioning is in progress. mybot_start() is
-     *  non-blocking and returns after starting provisioning; this state
-     *  lasts until the STA link reaches MYBOT_WIFI_STATE_CONNECTED. */
+    /** The platform Wi-Fi provisioning/connection workflow is in progress.
+     *  mybot_start() is non-blocking and returns after starting that workflow;
+     *  this state lasts until the STA link reaches MYBOT_WIFI_STATE_CONNECTED. */
     MYBOT_STATE_WIFI_PROVISIONING,
-    /** Wi-Fi is connected and the remaining services (KV storage, keys,
-     *  audio capture/playback, device service, RTC) are being initialized
-     *  asynchronously. A failure here transitions to MYBOT_STATE_FAILED. */
+    /** Wi-Fi is connected and the remaining startup services (KV storage,
+     *  keys, audio capture/playback and the device-service state machine) are
+     *  being initialized asynchronously. RTC is initialized on demand when a
+     *  conversation starts. A failure here transitions to MYBOT_STATE_FAILED. */
     MYBOT_STATE_STARTING_SERVICES,
-    /** All services are up and the device can start/stop conversations or
-     *  re-pair. Note that this state is retained while a conversation is
+    /** All startup services are up and the device can start/stop conversations
+     *  or re-pair. Note that this state is retained while a conversation is
      *  active; conversation activity is tracked internally and is not
      *  reflected in this enum. */
     MYBOT_STATE_READY,
@@ -76,15 +77,21 @@ typedef enum {
 /**
  * @brief Initialize and start the application.
  *
- * Non-blocking: starts APSTA Wi-Fi provisioning and returns immediately. The
- * remaining services (KV storage, keys, audio, device service, RTC) are
- * initialized asynchronously on the startup worker once the STA link reaches
- * MYBOT_WIFI_STATE_CONNECTED.
+ * Non-blocking: starts the registered platform Wi-Fi workflow and returns
+ * immediately. The remaining startup services (KV storage, keys, audio and the
+ * device-service state machine) are initialized asynchronously on the startup
+ * worker once the STA link reaches MYBOT_WIFI_STATE_CONNECTED. RTC is
+ * initialized later, when a conversation starts.
+ *
+ * Product platforms should normally use the recommended APSTA provisioning
+ * workflow to keep onboarding and connection behavior consistent across
+ * products; see mybot_wifi_ops_t. The generic platform contract also supports
+ * development environments whose host already manages the network connection.
  *
  * Preconditions:
  * - Every required platform implementation must be registered first (Wi-Fi, KV,
- *   key, audio capture and playback, HTTPS transport). LCD and wake-word
- *   implementations are required only when the corresponding features are enabled.
+ *   key, audio capture and playback). LCD and announcement implementations are optional;
+ *   a wake-word implementation is required only when MYBOT_WAKE_WORDS is enabled.
  * - With MYBOT_ENABLE_HTTPS=ON, a "https://" server requires a registered
  *   TLS transport (mybot_https_register()); plain "http://" is rejected
  *   unless MYBOT_ALLOW_INSECURE_HTTP=ON is set for development builds.
@@ -138,8 +145,10 @@ MYBOT_API mybot_state_t mybot_get_state(void);
  * main loop observes the flag change and should then call mybot_stop() to
  * release threads and devices.
  *
- * Safe to call from any thread or event callback (key EXIT events, signal
- * handlers, UI commands) and idempotent — repeated calls are harmless.
+ * Safe to call from any normal thread or event callback (key EXIT events, UI
+ * commands) and idempotent — repeated calls are harmless. A POSIX signal
+ * handler should set a sig_atomic_t flag and call this function later from
+ * normal execution context.
  *
  * @note This is a request, not teardown: use mybot_stop() for actual cleanup.
  */

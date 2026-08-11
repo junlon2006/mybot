@@ -21,7 +21,8 @@ typedef enum {
     MYBOT_RTC_STATE_ERROR,
 } mybot_rtc_state_t;
 
-/* Callbacks from RTC session to application (called from SDK thread) */
+/* Callbacks from the RTC session to the application. State callbacks may run
+ * on an SDK callback thread or on the thread invoking a session API. */
 typedef struct {
     /** Called when remote audio PCM data arrives.
      *  @param uid      remote user ID

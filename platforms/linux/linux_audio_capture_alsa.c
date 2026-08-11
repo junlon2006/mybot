@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <mybot/platform/mybot_audio.h>
 
-#include "linux_backends.h"
+#include "linux_platform_adapters.h"
 
 #include <alsa/asoundlib.h>
 
@@ -20,7 +20,7 @@
 #define PCM_RESUME_TIMEOUT_MS 500
 #define PCM_RESUME_RETRY_MS 1
 
-/* Internal context */
+/* Internal context. */
 typedef struct {
     snd_pcm_t *handle;
     int rate;
@@ -114,7 +114,7 @@ static int pcm_read(snd_pcm_t *handle, char *buf, size_t frames, size_t frame_by
     return (int)result;
 }
 
-/* ---- capture ops implementation ---- */
+/* ---- Capture ops implementation ---- */
 
 static int alsa_capture_init(void **ctx, int rate, int channels, int bits) {
     if (!ctx) {
@@ -146,7 +146,7 @@ static int alsa_capture_init(void **ctx, int rate, int channels, int bits) {
      * capture thread blocked on no data can still notice shutdown. */
     snd_pcm_nonblock(c->handle, 1);
 
-    /* HW params */
+    /* Hardware parameters. */
     snd_pcm_hw_params_alloca(&hw);
     snd_pcm_hw_params_any(c->handle, hw);
     snd_pcm_hw_params_set_access(c->handle, hw, SND_PCM_ACCESS_RW_INTERLEAVED);
@@ -181,7 +181,7 @@ static int alsa_capture_init(void **ctx, int rate, int channels, int bits) {
     AOSL_LOG_DBG("init: hw_params ok (rate=%u, buf=%lu, period=%lu)", actual_rate,
                  (unsigned long)buf_frames, (unsigned long)period_frames);
 
-    /* SW params */
+    /* Software parameters. */
     snd_pcm_sw_params_alloca(&sw);
     snd_pcm_sw_params_current(c->handle, sw);
     snd_pcm_sw_params_set_avail_min(c->handle, sw, period_frames);
