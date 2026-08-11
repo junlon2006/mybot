@@ -21,6 +21,7 @@ compile_commands.json
 
 # macOS
 .DS_Store
+._*
 
 # Internal, not for public distribution
 /DEVICE_API.md
