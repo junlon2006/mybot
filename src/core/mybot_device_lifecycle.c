@@ -276,8 +276,8 @@ static void action_poll_binding_pair(void) {
         set_state(MYBOT_DEVICE_STATE_RUNTIME);
         s_state.runtime_poll_interval = resp.poll_after_seconds > 0 ? resp.poll_after_seconds : 30;
         s_state.runtime_tick_counter = 0;
-    } else if (strcmp(resp.status, "expired") == 0) {
-        AOSL_LOG_INF("pair code expired, re-pairing");
+    } else if (strcmp(resp.status, "expired") == 0 || strcmp(resp.status, "failed") == 0) {
+        AOSL_LOG_INF("pairing status %s, re-pairing", resp.status);
         /* The top-level pairing handler in tick() re-runs the pair-code
          * request on the next tick. */
         aosl_atomic_set(&s_state.start_pairing_flag, true);

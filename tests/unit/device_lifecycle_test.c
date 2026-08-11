@@ -194,6 +194,15 @@ int main(void) {
     assert(s_pair_call_count == 2);
     assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
 
+    int pair_calls_before_failed = s_pair_call_count;
+    strcpy(s_binding_status, "failed");
+    tick_many(30);
+    assert(s_pair_call_count == pair_calls_before_failed);
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
+    mybot_device_lifecycle_tick();
+    assert(s_pair_call_count == pair_calls_before_failed + 1);
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
+
     strcpy(s_binding_status, "bound");
     strcpy(s_binding_token, "device-token");
     begin_pairing();

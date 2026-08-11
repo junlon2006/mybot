@@ -19,6 +19,14 @@ static const char *s_response_body;
 static int s_get_ex_call_count;
 static int s_post_ex_call_count;
 
+static const char s_valid_pair_response_body[] =
+    "{\"data\":{\"code\":\"123456\",\"pair_token\":\"pair-token\"}}";
+
+static const char s_missing_pair_code_response_body[] =
+    "{\"data\":{\"pair_token\":\"pair-token\"}}";
+
+static const char s_missing_pair_token_response_body[] = "{\"data\":{\"code\":\"123456\"}}";
+
 static const char s_valid_response_body[] =
     "{\"data\":{\"conversation_id\":\"conversation-1\",\"rtc\":{"
     "\"app_id\":\"app-1\",\"channel\":\"channel-1\",\"token\":\"token-1\","
@@ -32,6 +40,19 @@ static const char s_empty_id_response_body[] =
     "{\"data\":{\"conversation_id\":\"\",\"rtc\":{\"app_id\":\"app-1\","
     "\"channel\":\"channel-1\",\"token\":\"token-1\",\"uid\":\"device-uid\"}}}";
 
+static int mock_http_response(mybot_http_client_response_t *resp) {
+    assert(s_response_body != NULL);
+    size_t response_len = strlen(s_response_body);
+    resp->body = malloc(response_len + 1);
+    if (!resp->body) {
+        return -1;
+    }
+    memcpy(resp->body, s_response_body, response_len + 1);
+    resp->body_len = response_len;
+    resp->status_code = 200;
+    return 0;
+}
+
 int mybot_http_client_get(const char *url, mybot_http_client_response_t *resp) {
     (void)url;
     (void)resp;
@@ -43,8 +64,7 @@ int mybot_http_client_post(const char *url, const char *content_type, const char
     (void)url;
     (void)content_type;
     (void)body;
-    (void)resp;
-    return -1;
+    return mock_http_response(resp);
 }
 
 int mybot_http_client_get_ex(const char *url, const char *extra_headers,
@@ -69,15 +89,7 @@ int mybot_http_client_post_ex(const char *url, const char *content_type, const c
         return -1;
     }
 
-    size_t response_len = strlen(s_response_body);
-    resp->body = malloc(response_len + 1);
-    if (!resp->body) {
-        return -1;
-    }
-    memcpy(resp->body, s_response_body, response_len + 1);
-    resp->body_len = response_len;
-    resp->status_code = 200;
-    return 0;
+    return mock_http_response(resp);
 }
 
 void mybot_http_client_response_free(mybot_http_client_response_t *resp) {
@@ -90,6 +102,20 @@ void mybot_http_client_response_free(mybot_http_client_response_t *resp) {
 
 int main(void) {
     aosl_ctor();
+
+    mybot_device_pair_code_t pair_code;
+    s_response_body = s_valid_pair_response_body;
+    assert(mybot_device_client_create_pair_code("http://server", "device-1", NULL, NULL,
+                                                &pair_code) == 0);
+    assert(strcmp(pair_code.code, "123456") == 0);
+    assert(strcmp(pair_code.pair_token, "pair-token") == 0);
+
+    s_response_body = s_missing_pair_code_response_body;
+    assert(mybot_device_client_create_pair_code("http://server", "device-1", NULL, NULL,
+                                                &pair_code) < 0);
+    s_response_body = s_missing_pair_token_response_body;
+    assert(mybot_device_client_create_pair_code("http://server", "device-1", NULL, NULL,
+                                                &pair_code) < 0);
 
     mybot_device_conversation_t conversation;
     char long_id[MYBOT_DEVICE_CLIENT_MAX_ID + 1];
