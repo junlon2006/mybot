@@ -189,6 +189,12 @@ int main(void) {
                    "hello",
                    0, "hello");
 
+    expect_success("HTTP/1.1 200 OK\r\n"
+                   "cOnTeNt-LeNgTh: 5\r\n"
+                   "\r\n"
+                   "hello",
+                   0, "hello");
+
     expect_failure("HTTP/1.1 200 OK\r\n"
                    "Content-Length: 6\r\n"
                    "\r\n"
@@ -210,6 +216,12 @@ int main(void) {
 
     expect_success("HTTP/1.1 200 OK\r\n"
                    "Transfer-Encoding: chunked\r\n"
+                   "\r\n"
+                   "5\r\nhello\r\n0\r\n\r\n",
+                   0, "hello");
+
+    expect_success("HTTP/1.1 200 OK\r\n"
+                   "tRaNsFeR-EnCoDiNg: gzip, ChUnKeD\r\n"
                    "\r\n"
                    "5\r\nhello\r\n0\r\n\r\n",
                    0, "hello");

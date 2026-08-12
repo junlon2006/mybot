@@ -2,6 +2,13 @@
 
 This project follows Semantic Versioning.
 
+## [Unreleased]
+
+### Fixed
+
+- Remove the HTTP response parser's POSIX `strncasecmp()` dependency by using
+  an ASCII-only case-insensitive comparison, preserving mixed-case header support on non-POSIX platforms.
+
 ## [1.0.0] - 2026-08-10
 
 ### Added
