@@ -13,7 +13,6 @@
 #include <api/aosl_socket.h>
 
 #include <string.h>
-#include <strings.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <limits.h>
@@ -28,6 +27,23 @@
 #define RECV_BUF_SIZE 4096
 #define RECV_BUF_MAX (32 * 1024) /* hard cap on response buffer */
 #define MAX_URL_LEN 512
+
+static bool ascii_case_equal_n(const char *left, const char *right, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        unsigned char left_char = (unsigned char)left[i];
+        unsigned char right_char = (unsigned char)right[i];
+        if (left_char >= 'A' && left_char <= 'Z') {
+            left_char = (unsigned char)(left_char + ('a' - 'A'));
+        }
+        if (right_char >= 'A' && right_char <= 'Z') {
+            right_char = (unsigned char)(right_char + ('a' - 'A'));
+        }
+        if (left_char != right_char) {
+            return false;
+        }
+    }
+    return true;
+}
 
 static int deadline_remaining_ms(uint64_t deadline) {
     uint64_t now = aosl_hal_get_tick_ms();
@@ -664,7 +680,7 @@ static int parse_response(const char *raw, size_t raw_len, int stream_closed,
 
         /* Parse Content-Length without signed overflow. Repeated fields
          * are accepted only when they carry the same value. */
-        if (hdr_len >= 15 && strncasecmp(p, "Content-Length:", 15) == 0) {
+        if (hdr_len >= 15 && ascii_case_equal_n(p, "Content-Length:", 15)) {
             size_t parsed_length;
             if (parse_content_length(p + 15, nl, &parsed_length) < 0 ||
                 (has_content_length && content_length != parsed_length)) {
@@ -675,14 +691,14 @@ static int parse_response(const char *raw, size_t raw_len, int stream_closed,
         }
 
         /* Parse Transfer-Encoding, which takes precedence over Content-Length. */
-        if (hdr_len > 18 && strncasecmp(p, "Transfer-Encoding:", 18) == 0) {
+        if (hdr_len > 18 && ascii_case_equal_n(p, "Transfer-Encoding:", 18)) {
             const char *val = p + 18;
             while (val < nl && *val == ' ') {
                 val++;
             }
             /* "chunked" may appear in a comma-separated list, e.g. "gzip, chunked". */
             for (const char *v = val; v + 7 <= nl; v++) {
-                if (strncasecmp(v, "chunked", 7) == 0) {
+                if (ascii_case_equal_n(v, "chunked", 7)) {
                     chunked = 1;
                     break;
                 }
