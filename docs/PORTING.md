@@ -179,7 +179,8 @@ int my_mcu_platform_register(void) {
 }
 ```
 
-Propagate every failure. Add LCD, wake-word, and announcement registration when enabled.
+Check and return every registration failure. Add the corresponding LCD, wake-word, or
+announcement registration call when that optional capability is enabled.
 
 ## Step 5: Integrate with CMake
 
