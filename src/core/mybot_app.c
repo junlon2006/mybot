@@ -962,7 +962,7 @@ fail:
     return -1;
 }
 
-static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, uintptr_t argc,
+static void handle_wifi_event(const aosl_ts_t *queued_ts, aosl_refobj_t robj, uintptr_t argc,
                               uintptr_t argv[]) {
     (void)queued_ts;
     (void)robj;
@@ -975,8 +975,8 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
         return;
     }
 
-    mybot_wifi_state_t wifi_state = (mybot_wifi_state_t)argv[0];
-    if (wifi_state == MYBOT_WIFI_STATE_FAILED && app_state == MYBOT_STATE_WIFI_PROVISIONING) {
+    mybot_wifi_event_t wifi_event = (mybot_wifi_event_t)argv[0];
+    if (wifi_event == MYBOT_WIFI_EVENT_FAILED && app_state == MYBOT_STATE_WIFI_PROVISIONING) {
         if (aosl_atomic_cmpxchg(&s_app.state, MYBOT_STATE_WIFI_PROVISIONING, MYBOT_STATE_FAILED) ==
             MYBOT_STATE_WIFI_PROVISIONING) {
             lcd_show_screen(MYBOT_LCD_SCREEN_FAILED);
@@ -986,7 +986,7 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
         return;
     }
 
-    if (wifi_state == MYBOT_WIFI_STATE_DISCONNECTED) {
+    if (wifi_event == MYBOT_WIFI_EVENT_STA_DISCONNECTED) {
         if (app_state == MYBOT_STATE_READY) {
             mybot_device_lifecycle_set_network_available(false);
             aosl_atomic_set(&s_app.state, MYBOT_STATE_WIFI_DISCONNECTED);
@@ -998,7 +998,10 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
         return;
     }
 
-    if (wifi_state == MYBOT_WIFI_STATE_FAILED && app_state != MYBOT_STATE_WIFI_PROVISIONING) {
+    if (wifi_event == MYBOT_WIFI_EVENT_FAILED && app_state != MYBOT_STATE_WIFI_PROVISIONING) {
+        if (app_state == MYBOT_STATE_WIFI_DISCONNECTED) {
+            return;
+        }
         mybot_device_lifecycle_set_network_available(false);
         aosl_atomic_set(&s_app.state, MYBOT_STATE_WIFI_DISCONNECTED);
         lcd_show_screen(MYBOT_LCD_SCREEN_WIFI_DISCONNECTED);
@@ -1006,7 +1009,8 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
         return;
     }
 
-    if (wifi_state == MYBOT_WIFI_STATE_CONNECTED && app_state == MYBOT_STATE_WIFI_DISCONNECTED) {
+    if (wifi_event == MYBOT_WIFI_EVENT_STA_CONNECTED &&
+        app_state == MYBOT_STATE_WIFI_DISCONNECTED) {
         mybot_device_lifecycle_set_network_available(true);
         aosl_atomic_set(&s_app.state, MYBOT_STATE_READY);
         AOSL_LOG_INF("Wi-Fi reconnected; resuming device-service activity");
@@ -1014,7 +1018,7 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
         return;
     }
 
-    if (wifi_state != MYBOT_WIFI_STATE_CONNECTED ||
+    if (wifi_event != MYBOT_WIFI_EVENT_STA_CONNECTED ||
         aosl_atomic_cmpxchg(&s_app.state, MYBOT_STATE_WIFI_PROVISIONING,
                             MYBOT_STATE_STARTING_SERVICES) != MYBOT_STATE_WIFI_PROVISIONING) {
         return;
@@ -1036,7 +1040,7 @@ static void handle_wifi_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
     }
 }
 
-static void on_wifi_state_changed(mybot_wifi_state_t state, void *user_data) {
+static void on_wifi_event(mybot_wifi_event_t event, void *user_data) {
     (void)user_data;
     mybot_state_t app_state = mybot_get_state();
     if (app_state == MYBOT_STATE_STOPPING || app_state == MYBOT_STATE_FAILED ||
@@ -1044,9 +1048,9 @@ static void on_wifi_state_changed(mybot_wifi_state_t state, void *user_data) {
         return;
     }
 
-    if (aosl_mpq_queue(s_app.startup_mpq, AOSL_MPQ_INVALID, AOSL_REF_INVALID, "handle_wifi_state",
-                       handle_wifi_state, 1, (uintptr_t)state) < 0) {
-        AOSL_LOG_ERR("failed to queue wifi state transition");
+    if (aosl_mpq_queue(s_app.startup_mpq, AOSL_MPQ_INVALID, AOSL_REF_INVALID, "handle_wifi_event",
+                       handle_wifi_event, 1, (uintptr_t)event) < 0) {
+        AOSL_LOG_ERR("failed to queue wifi event");
         if (aosl_atomic_cmpxchg(&s_app.state, app_state, MYBOT_STATE_FAILED) == app_state) {
             lcd_show_screen(MYBOT_LCD_SCREEN_FAILED);
             aosl_atomic_set(&s_app.running, false);
@@ -1135,7 +1139,7 @@ int mybot_start(const mybot_config_t *cfg) {
 
     aosl_atomic_set(&s_app.state, MYBOT_STATE_WIFI_PROVISIONING);
     lcd_show_screen(MYBOT_LCD_SCREEN_WIFI_PROVISIONING);
-    if (mybot_wifi_init(s_app.config.device_id, on_wifi_state_changed, NULL) < 0) {
+    if (mybot_wifi_init(s_app.config.device_id, on_wifi_event, NULL) < 0) {
         AOSL_LOG_ERR("wifi provisioning init failed");
         goto fail;
     }

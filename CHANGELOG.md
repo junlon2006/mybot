@@ -4,6 +4,12 @@ This project follows Semantic Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- Simplify the Wi-Fi platform boundary to connectivity events: remove the redundant
+  `mybot_wifi_state_t`, `mybot_wifi_state_handler_t`, and internal state query, and
+  require connected events to represent usable IP networking.
+
 ### Fixed
 
 - Remove the HTTP response parser's POSIX `strncasecmp()` dependency by using

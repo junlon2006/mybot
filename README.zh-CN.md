@@ -120,7 +120,7 @@ ctest --test-dir build --output-on-failure
 就绪后输入 `s` 开始会话、`q` 停止会话、`p` 重新配对、`u` / `d` 增大 / 减小媒体音量、
 `e` 退出。
 
-Linux 参考实现是**开发替身**：它直接使用宿主机现有网络并立即报告 STA 已连接，不实现真实
+Linux 参考实现是**开发替身**：它直接使用宿主机现有网络并立即报告网络可用，不实现真实
 APSTA 配网；音频使用 ALSA `default` 设备；KV 数据默认写入当前目录的 `.mybot-kv-store/`，
 可用环境变量 `MYBOT_KV_STORE_DIR` 修改。
 
@@ -166,7 +166,7 @@ while (mybot_is_running()) {
 mybot_stop();
 ```
 
-`mybot_start()` 非阻塞：先启动配网，收到 STA connected 事件后才异步初始化存储、
+`mybot_start()` 非阻塞：先启动配网，收到网络可用事件后才异步初始化存储、
 按键、音频、设备服务和 RTC。`mybot_stop()` 会等待全部工作线程退出，因此不应从
 平台事件回调内部调用。
 
@@ -290,7 +290,7 @@ flowchart TB
 
 | 线程 (MPQ) | 驱动 | 职责 |
 | --- | --- | --- |
-| `startup_mpq` | Wi-Fi 状态事件 | 串行化启动过渡；STA connected 后异步初始化各项服务 |
+| `startup_mpq` | Wi-Fi 连接事件 | 串行化启动过渡；网络可用后异步初始化各项服务 |
 | `state_mpq` | 100 ms 定时器 | 设备状态机 tick；阻塞式 HTTP 轮询独立于此线程 |
 | `mybot_mpq` | ptime 定时器 | 按音频包长节奏发送上行音频（Agora RTSA） |
 | `cap_mpq` | ptime 定时器 | 麦克风采集 → 采集环形缓冲 →（可选）唤醒词 |

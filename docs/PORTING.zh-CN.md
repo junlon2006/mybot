@@ -74,9 +74,10 @@ platforms/my_mcu/
 ### Wi-Fi 配网
 
 实现 `mybot_wifi_ops_t`。`init` 无需等待用户即启动 APSTA。将 connected、
-disconnected 与 failed 事件作为状态变化发出。事件可来自平台线程，但 `destroy` 返回后不得
-再运行任何事件。Destroy 必须停止传输并等待在途回调。实现在首次成功连接后必须持续监控 STA
-链路，并上报运行期断开与重连事件；SDK 在离线期间暂停设备服务流量，重连后恢复。使用
+disconnected 与 failed 事件仅在连接状态转换时发出。只有 STA 已获取 IP 且网络可供 SDK
+请求使用时才能上报 connected。事件可来自平台线程，但必须串行传递，且 `destroy` 返回后
+不得再运行任何事件。Destroy 必须停止传输并等待在途回调。实现在首次成功连接后必须持续监控
+网络连接，并上报运行期断开与重连事件；SDK 在离线期间暂停设备服务流量，重连后恢复。使用
 `mybot_wifi_register()` 注册。
 
 Linux 参考实现立即上报已连接，不是真正的 APSTA 参考实现。
@@ -201,7 +202,7 @@ mybot_stop();
 ```
 
 `server_base` 必须是 HTTPS URL，且两个字段都必须是非空、以 NUL 结尾的字符串。未注册 TLS
-传输时，启动会在全局初始化之前失败。启动是非阻塞的；Wi-Fi 上报已连接后服务继续运行。不要
+传输时，启动会在全局初始化之前失败。启动是非阻塞的；Wi-Fi 上报网络可用后服务继续运行。不要
 从平台回调中调用 stop，因为它会等待工作线程与回调。mybot 当前拥有进程级 AOSL 与 Agora
 生命周期。
 
