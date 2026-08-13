@@ -191,7 +191,8 @@ mybot_stop();
 ```
 
 `mybot_start()` is non-blocking: it starts provisioning first, then initializes storage,
-buttons, audio, the device service, and RTC asynchronously once the STA-connected event arrives.
+buttons, audio, the device service, and RTC asynchronously once usable network connectivity is
+reported.
 `mybot_stop()` waits for all worker threads to exit and must not be called from inside a
 platform event callback.
 
@@ -324,7 +325,7 @@ responsibilities:
 
 | Thread (MPQ) | Driven by | Responsibility |
 | --- | --- | --- |
-| `startup_mpq` | Wi-Fi state events | Serializes startup transitions; initializes services asynchronously after STA connects |
+| `startup_mpq` | Wi-Fi connectivity events | Serializes startup transitions; initializes services asynchronously when the network is ready |
 | `state_mpq` | 100 ms timer | Device state-machine tick; blocking HTTP polling stays on this thread |
 | `mybot_mpq` | ptime timer | Sends uplink audio at the packetization cadence (Agora RTSA) |
 | `cap_mpq` | ptime timer | Mic capture → capture ring buffer → (optional) wake words |

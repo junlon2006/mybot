@@ -81,12 +81,13 @@ playback keeps working.
 ### Wi-Fi provisioning
 
 Implement `mybot_wifi_ops_t`. `init` starts APSTA without waiting for the user.
-Emit connected, disconnected and failed events as state changes. Events may come from a platform
-thread, but none may run after `destroy` returns. Destroy must stop the transport and wait for
-in-flight callbacks. The implementation must keep monitoring the STA link after the first successful
-connection and report runtime disconnect and reconnect events; the SDK pauses device-service
-traffic while offline and resumes it after reconnect. Register with
-`mybot_wifi_register()`.
+Emit connected, disconnected and failed events only on connectivity transitions. Emit connected
+only after the STA has an IP address and the network is ready for SDK traffic. Events may come from
+platform threads, but must be delivered serially and none may run after `destroy` returns. Destroy
+must stop the transport and wait for in-flight callbacks. The implementation must keep monitoring
+network connectivity after the first successful connection and report runtime disconnect and
+reconnect events; the SDK pauses device-service traffic while offline and resumes it after
+reconnect. Register with `mybot_wifi_register()`.
 
 The Linux reference implementation reports connected immediately and is not a real APSTA reference.
 
@@ -223,7 +224,7 @@ mybot_stop();
 
 `server_base` must be an HTTPS URL and both fields must be non-empty NUL-terminated strings. Start
 fails before global initialization when no TLS transport is registered. Start is non-blocking;
-services continue after Wi-Fi reports connected. Do not call stop from a platform callback because
+services continue after Wi-Fi reports usable network connectivity. Do not call stop from a platform callback because
 it waits for workers and callbacks. mybot currently owns process-wide AOSL and Agora lifecycles.
 
 ## Step 7: Cross-compile

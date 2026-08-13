@@ -49,7 +49,7 @@ typedef enum {
     MYBOT_STATE_STOPPED = 0,
     /** The platform Wi-Fi provisioning/connection workflow is in progress.
      *  mybot_start() is non-blocking and returns after starting that workflow;
-     *  this state lasts until the STA link reaches MYBOT_WIFI_STATE_CONNECTED. */
+     *  this state lasts until MYBOT_WIFI_EVENT_STA_CONNECTED is reported. */
     MYBOT_STATE_WIFI_PROVISIONING,
     /** Wi-Fi is connected and the remaining startup services (KV storage,
      *  keys, audio capture/playback and the device-service state machine) are
@@ -80,7 +80,7 @@ typedef enum {
  * Non-blocking: starts the registered platform Wi-Fi workflow and returns
  * immediately. The remaining startup services (KV storage, keys, audio and the
  * device-service state machine) are initialized asynchronously on the startup
- * worker once the STA link reaches MYBOT_WIFI_STATE_CONNECTED. RTC is
+ * worker once MYBOT_WIFI_EVENT_STA_CONNECTED is reported. RTC is
  * initialized later, when a conversation starts.
  *
  * Product platforms should normally use the recommended APSTA provisioning

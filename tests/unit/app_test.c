@@ -52,9 +52,8 @@
 
 static pthread_mutex_t s_lock = PTHREAD_MUTEX_INITIALIZER;
 
-static mybot_wifi_state_handler_t s_wifi_handler;
+static mybot_wifi_event_handler_t s_wifi_handler;
 static void *s_wifi_user_data;
-static mybot_wifi_state_t s_wifi_state = MYBOT_WIFI_STATE_IDLE;
 
 static mybot_device_lifecycle_callbacks_t s_device_callbacks;
 static mybot_device_state_t s_device_state = MYBOT_DEVICE_STATE_RUNTIME;
@@ -180,14 +179,13 @@ static bool wait_for_audio_frame(int16_t reference_sample, int timeout_ms) {
     return false;
 }
 
-static void emit_wifi_state(mybot_wifi_state_t state) {
+static void emit_wifi_event(mybot_wifi_event_t event) {
     mock_lock();
-    s_wifi_state = state;
-    mybot_wifi_state_handler_t handler = s_wifi_handler;
+    mybot_wifi_event_handler_t handler = s_wifi_handler;
     void *user_data = s_wifi_user_data;
     mock_unlock();
     assert(handler != NULL);
-    handler(state, user_data);
+    handler(event, user_data);
 }
 
 static void emit_remote_audio(const int16_t *pcm, size_t len) {
@@ -458,7 +456,7 @@ int mybot_wake_words_process(const void *pcm, int frames) {
 void mybot_wake_words_deinit(void) {
 }
 
-int mybot_wifi_init(const char *device_id, mybot_wifi_state_handler_t handler, void *user_data) {
+int mybot_wifi_init(const char *device_id, mybot_wifi_event_handler_t handler, void *user_data) {
     if (!device_id || !handler) {
         return -1;
     }
@@ -466,24 +464,15 @@ int mybot_wifi_init(const char *device_id, mybot_wifi_state_handler_t handler, v
     mock_lock();
     s_wifi_handler = handler;
     s_wifi_user_data = user_data;
-    s_wifi_state = MYBOT_WIFI_STATE_PROVISIONING;
     s_wifi_init_calls++;
     mock_unlock();
     return 0;
-}
-
-mybot_wifi_state_t mybot_wifi_get_state(void) {
-    mock_lock();
-    mybot_wifi_state_t state = s_wifi_state;
-    mock_unlock();
-    return state;
 }
 
 void mybot_wifi_deinit(void) {
     mock_lock();
     s_wifi_handler = NULL;
     s_wifi_user_data = NULL;
-    s_wifi_state = MYBOT_WIFI_STATE_IDLE;
     s_wifi_deinit_calls++;
     mock_unlock();
 }
@@ -691,7 +680,7 @@ int main(void) {
     assert(mybot_get_state() == MYBOT_STATE_WIFI_PROVISIONING);
     assert(read_counter(&s_wifi_init_calls) == 1);
 
-    emit_wifi_state(MYBOT_WIFI_STATE_CONNECTED);
+    emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
     assert(wait_for_app_state(MYBOT_STATE_READY, 3000));
     assert(read_counter(&s_kv_init_calls) == 1);
     assert(read_counter(&s_key_init_calls) == 1);
@@ -701,15 +690,24 @@ int main(void) {
     assert(read_counter(&s_playback_start_calls) == 1);
     assert(read_counter(&s_device_init_calls) == 1);
 
-    emit_wifi_state(MYBOT_WIFI_STATE_DISCONNECTED);
+    emit_wifi_event(MYBOT_WIFI_EVENT_STA_DISCONNECTED);
     assert(wait_for_app_state(MYBOT_STATE_WIFI_DISCONNECTED, 1000));
     assert(read_counter(&s_network_down_calls) == 1);
     assert(mybot_is_running());
 
-    emit_wifi_state(MYBOT_WIFI_STATE_CONNECTED);
+    emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
     assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
     assert(read_counter(&s_network_up_calls) == 1);
     assert(read_counter(&s_device_init_calls) == 1);
+
+    emit_wifi_event(MYBOT_WIFI_EVENT_FAILED);
+    assert(wait_for_app_state(MYBOT_STATE_WIFI_DISCONNECTED, 1000));
+    assert(read_counter(&s_network_down_calls) == 2);
+    emit_wifi_event(MYBOT_WIFI_EVENT_FAILED);
+    emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
+    assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
+    assert(read_counter(&s_network_down_calls) == 2);
+    assert(read_counter(&s_network_up_calls) == 2);
 
     mybot_app_start_conversation();
     assert(wait_for_counter(&s_rtc_join_calls, 1, 3000));
