@@ -102,7 +102,7 @@ static void set_state(mybot_device_state_t new_state) {
         return;
     }
     aosl_atomic_set(&s_state.state, (intptr_t)new_state);
-    AOSL_LOG_INF("%s", s_name[new_state]);
+    AOSL_LOG_NTC("%s", s_name[new_state]);
     if (s_state.cbs.on_state_changed) {
         s_state.cbs.on_state_changed(new_state);
     }
@@ -212,7 +212,7 @@ static void action_create_pair_code(void) {
     s_state.pair_retry_delay_ticks = 0;
     s_state.pair_retry_ticks_remaining = 0;
 
-    AOSL_LOG_INF("pair-code obtained: code=%s, poll=%ds", resp.code, resp.poll_after_seconds);
+    AOSL_LOG_NTC("pair-code obtained: code=%s, poll=%ds", resp.code, resp.poll_after_seconds);
 
     /* Save pair token and poll settings */
     strncpy(s_state.pair_token, resp.pair_token, sizeof(s_state.pair_token) - 1);
@@ -263,7 +263,7 @@ static void action_poll_binding_pair(void) {
         return;
     }
 
-    AOSL_LOG_INF("bind poll -> status=%s", resp.status);
+    AOSL_LOG_NTC("bind poll -> status=%s", resp.status);
 
     if (strcmp(resp.status, "pending") == 0) {
         s_state.pair_poll_interval = resp.poll_after_seconds >= 3 ? resp.poll_after_seconds : 3;
@@ -280,18 +280,18 @@ static void action_poll_binding_pair(void) {
             AOSL_LOG_ERR("failed to persist device credential, retrying");
             return;
         }
-        AOSL_LOG_INF("device credential persisted");
+        AOSL_LOG_NTC("device credential persisted");
         set_state(MYBOT_DEVICE_STATE_RUNTIME);
         s_state.runtime_poll_interval = resp.poll_after_seconds > 0 ? resp.poll_after_seconds : 30;
         s_state.runtime_tick_counter = 0;
     } else if (strcmp(resp.status, "expired") == 0 || strcmp(resp.status, "failed") == 0) {
-        AOSL_LOG_INF("pairing status %s, re-pairing", resp.status);
+        AOSL_LOG_NTC("pairing status %s, re-pairing", resp.status);
         /* The top-level pairing handler in tick() re-runs the pair-code
          * request on the next tick. */
         aosl_atomic_set(&s_state.start_pairing_flag, true);
     } else if (strcmp(resp.status, "unbound") == 0) {
         /* Unexpected during pairing, but handle it gracefully. */
-        AOSL_LOG_INF("unexpected unbound during pairing");
+        AOSL_LOG_NTC("unexpected unbound during pairing");
         set_state(MYBOT_DEVICE_STATE_UNPROVISIONED);
     } else {
         /* Unknown status. */
@@ -342,7 +342,7 @@ static void action_poll_binding_runtime(void) {
     if (strcmp(resp.status, "bound") == 0) {
         s_state.runtime_poll_interval = resp.poll_after_seconds > 0 ? resp.poll_after_seconds : 30;
     } else if (strcmp(resp.status, "unbound") == 0) {
-        AOSL_LOG_INF("device unbound by user");
+        AOSL_LOG_NTC("device unbound by user");
         invalidate_runtime_binding();
     } else {
         AOSL_LOG_ERR("unexpected runtime status: %s", resp.status);
@@ -419,7 +419,7 @@ static void action_start_conversation(void) {
     snprintf(s_state.rtc_channel, sizeof(s_state.rtc_channel), "%s", resp.rtc_channel);
     snprintf(s_state.rtc_uid, sizeof(s_state.rtc_uid), "%s", resp.rtc_uid);
 
-    AOSL_LOG_INF("conversation started: %s, channel=%s, uid=%s", s_state.conversation_id,
+    AOSL_LOG_NTC("conversation started: %s, channel=%s, uid=%s", s_state.conversation_id,
                  resp.rtc_channel, resp.rtc_uid);
 
     set_state(MYBOT_DEVICE_STATE_IN_CONVERSATION);
@@ -472,7 +472,7 @@ static void action_stop_conversation(const char *reason) {
         return;
     }
 
-    AOSL_LOG_INF("conversation stopped");
+    AOSL_LOG_NTC("conversation stopped");
     clear_rtc_token_renewal();
     s_state.conversation_id[0] = '\0';
 
@@ -535,7 +535,7 @@ static void action_renew_rtc_token(void) {
     s_state.rtc_token_renewal_pending = false;
     s_state.rtc_token_retry_delay_ticks = 0;
     s_state.rtc_token_retry_ticks_remaining = 0;
-    AOSL_LOG_INF("RTC token renewed");
+    AOSL_LOG_NTC("RTC token renewed");
 }
 
 /* ----------------------------------------------------------
@@ -567,7 +567,7 @@ int mybot_device_lifecycle_init(const char *server_base, const char *device_id,
     if (load_device_auth()) {
         s_state.runtime_poll_interval = 30;
         set_state(MYBOT_DEVICE_STATE_RUNTIME);
-        AOSL_LOG_INF("restored persisted device credential");
+        AOSL_LOG_NTC("restored persisted device credential");
     } else {
         set_state(MYBOT_DEVICE_STATE_UNPROVISIONED);
         aosl_atomic_set(&s_state.start_pairing_flag, true);

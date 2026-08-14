@@ -121,7 +121,7 @@ static int alsa_playback_init(void **ctx, int rate, int channels, int bits) {
     p->channels = channels;
     p->bits_per_sample = bits;
 
-    AOSL_LOG_INF("init: rate=%d channels=%d bits=%d", rate, channels, bits);
+    AOSL_LOG_NTC("init: rate=%d channels=%d bits=%d", rate, channels, bits);
 
     int err;
     snd_pcm_hw_params_t *hw;
@@ -185,7 +185,7 @@ static int alsa_playback_init(void **ctx, int rate, int channels, int bits) {
     }
 
     *ctx = p;
-    AOSL_LOG_INF("init: ok");
+    AOSL_LOG_NTC("init: ok");
     return 0;
 
 fail:
@@ -198,7 +198,7 @@ fail:
 
 static int alsa_playback_start(void *ctx) {
     (void)ctx;
-    AOSL_LOG_INF("start");
+    AOSL_LOG_NTC("start");
     return 0;
 }
 
@@ -209,7 +209,7 @@ static int alsa_playback_write(void *ctx, const void *buf, int frames) {
 }
 
 static int alsa_playback_stop(void *ctx) {
-    AOSL_LOG_INF("stop");
+    AOSL_LOG_NTC("stop");
     if (ctx) {
         alsa_pb_t *p = (alsa_pb_t *)ctx;
         /* Immediate stop (does not wait for playback to drain), safe to call
@@ -220,7 +220,7 @@ static int alsa_playback_stop(void *ctx) {
 }
 
 static void alsa_playback_destroy(void *ctx) {
-    AOSL_LOG_INF("destroy");
+    AOSL_LOG_NTC("destroy");
     if (!ctx) {
         return;
     }
@@ -244,7 +244,7 @@ static const mybot_audio_playback_ops_t g_alsa_playback_ops = {
 int linux_audio_platform_register_alsa_playback(void) {
     int ret = mybot_audio_register_playback(&g_alsa_playback_ops);
     if (ret == 0) {
-        AOSL_LOG_INF("ALSA playback platform registered");
+        AOSL_LOG_NTC("ALSA playback platform registered");
     }
     return ret;
 }

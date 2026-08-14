@@ -23,7 +23,7 @@ static void signal_handler(int sig) {
 }
 
 static void print_usage(const char *prog) {
-    AOSL_LOG_INF("Usage: %s --server <URL> --device-id <ID> [options]\n"
+    AOSL_LOG_NTC("Usage: %s --server <URL> --device-id <ID> [options]\n"
                  "\n"
                  "Required:\n"
                  "  --server <url>     Service base URL\n"
@@ -45,7 +45,7 @@ int main(int argc, char **argv) {
     mybot_config_t cfg;
     memset(&cfg, 0, sizeof(cfg));
 
-    aosl_set_log_level(AOSL_LOG_INFO);
+    aosl_set_log_level(AOSL_LOG_NOTICE);
 
 #if defined(MYBOT_EXAMPLE_ASSETS_DIR)
     /* Point the announcement implementation at the PCM assets CMake copied into the
@@ -81,14 +81,14 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    AOSL_LOG_INF("mybot v%s starting...", mybot_version_string());
-    AOSL_LOG_INF("  server   : %s", cfg.server_base);
-    AOSL_LOG_INF("  device-id: %s", cfg.device_id);
+    AOSL_LOG_NTC("mybot v%s starting...", mybot_version_string());
+    AOSL_LOG_NTC("  server   : %s", cfg.server_base);
+    AOSL_LOG_NTC("  device-id: %s", cfg.device_id);
     if (cfg.firmware_ver[0]) {
-        AOSL_LOG_INF("  fw-ver   : %s", cfg.firmware_ver);
+        AOSL_LOG_NTC("  fw-ver   : %s", cfg.firmware_ver);
     }
     if (cfg.hw_model[0]) {
-        AOSL_LOG_INF("  hw-model : %s", cfg.hw_model);
+        AOSL_LOG_NTC("  hw-model : %s", cfg.hw_model);
     }
 
     /* ---- Register platform implementations. Wi-Fi provisioning is the first app stage. ---- */
@@ -110,7 +110,7 @@ int main(int argc, char **argv) {
     bool interactive_help_printed = false;
     while (mybot_is_running()) {
         if (!interactive_help_printed && mybot_get_state() == MYBOT_STATE_READY) {
-            AOSL_LOG_INF("=== mybot ready ===\n"
+            AOSL_LOG_NTC("=== mybot ready ===\n"
                          "  s - start conversation\n"
                          "  q - stop conversation\n"
                          "  p - re-pair device\n"

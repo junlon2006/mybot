@@ -149,7 +149,7 @@ int mybot_announce_play_pair_code(const char *code) {
     s_ann.queue_pos = 0;
     aosl_hal_mutex_unlock(s_ann.lock);
 
-    AOSL_LOG_INF("announce: pair code=%s queued, %d sound(s)", code, len);
+    AOSL_LOG_NTC("announce: pair code=%s queued, %d sound(s)", code, len);
     return 0;
 }
 

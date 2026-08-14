@@ -79,7 +79,7 @@ static int alsa_volume_init(void **ctx) {
     }
 
     *ctx = v;
-    AOSL_LOG_INF("volume init: ok (element=%s, range=%ld..%ld)", snd_mixer_selem_get_name(v->elem),
+    AOSL_LOG_NTC("volume init: ok (element=%s, range=%ld..%ld)", snd_mixer_selem_get_name(v->elem),
                  v->min, v->max);
     return 0;
 
@@ -146,7 +146,7 @@ static const mybot_audio_volume_ops_t g_alsa_volume_ops = {
 int linux_audio_platform_register_alsa_volume(void) {
     int ret = mybot_audio_device_register_volume(&g_alsa_volume_ops);
     if (ret == 0) {
-        AOSL_LOG_INF("ALSA volume platform registered");
+        AOSL_LOG_NTC("ALSA volume platform registered");
     }
     return ret;
 }
