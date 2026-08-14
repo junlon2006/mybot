@@ -77,7 +77,7 @@ static int file_init(void **ctx) {
              dir && dir[0] ? dir : MYBOT_ANNOUNCE_DEFAULT_DIR);
     snprintf(c->locale, sizeof(c->locale), "%s",
              locale && locale[0] ? locale : MYBOT_ANNOUNCE_DEFAULT_LOCALE);
-    AOSL_LOG_INF("announcement implementation: dir=%s locale=%s", c->base_dir, c->locale);
+    AOSL_LOG_NTC("announcement implementation: dir=%s locale=%s", c->base_dir, c->locale);
     *ctx = c;
     return 0;
 }

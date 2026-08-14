@@ -85,10 +85,10 @@ static int lcd_console_render(void *opaque, const mybot_lcd_content_t *content) 
     const char *reset = ctx->color_enabled ? ANSI_RESET : "";
 
     if (content->screen == MYBOT_LCD_SCREEN_PAIR_CODE) {
-        AOSL_LOG_INF("[LCD] %s%s: %s%s", color, screen_label(content->screen), content->pair_code,
+        AOSL_LOG_NTC("[LCD] %s%s: %s%s", color, screen_label(content->screen), content->pair_code,
                      reset);
     } else {
-        AOSL_LOG_INF("[LCD] %s%s%s", color, screen_label(content->screen), reset);
+        AOSL_LOG_NTC("[LCD] %s%s%s", color, screen_label(content->screen), reset);
     }
     return 0;
 }

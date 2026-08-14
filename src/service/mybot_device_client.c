@@ -247,7 +247,7 @@ int mybot_device_client_create_pair_code(const char *base_url, const char *devic
     char url[MYBOT_DEVICE_CLIENT_MAX_URL];
     snprintf(url, sizeof(url), "%s/devices/pair-codes", base_url);
 
-    AOSL_LOG_INF("POST %s", url);
+    AOSL_LOG_NTC("POST %s", url);
 
     mybot_http_client_response_t raw;
     memset(&raw, 0, sizeof(raw));
@@ -259,7 +259,7 @@ int mybot_device_client_create_pair_code(const char *base_url, const char *devic
     }
     mybot_json_free_string(body);
 
-    AOSL_LOG_INF("POST %s -> status=%d", url, raw.status_code);
+    AOSL_LOG_NTC("POST %s -> status=%d", url, raw.status_code);
 
     if (!http_response_ok(&raw)) {
         int status = raw.status_code;
@@ -295,7 +295,7 @@ int mybot_device_client_create_pair_code(const char *base_url, const char *devic
     copy_json_integer(data, "expires_in_seconds", &resp->expires_in_seconds);
     copy_json_integer(data, "poll_after_seconds", &resp->poll_after_seconds);
 
-    AOSL_LOG_INF("pair_code: device_id=%s code=%s expires_in=%ds poll=%ds", resp->device_id,
+    AOSL_LOG_NTC("pair_code: device_id=%s code=%s expires_in=%ds poll=%ds", resp->device_id,
                  resp->code, resp->expires_in_seconds, resp->poll_after_seconds);
 
     mybot_json_delete(root);
@@ -320,7 +320,7 @@ int mybot_device_client_get_binding_status(const char *base_url, const char *dev
         return -1;
     }
 
-    AOSL_LOG_INF("GET %s", url);
+    AOSL_LOG_NTC("GET %s", url);
 
     mybot_http_client_response_t raw;
     memset(&raw, 0, sizeof(raw));
@@ -330,7 +330,7 @@ int mybot_device_client_get_binding_status(const char *base_url, const char *dev
         return -1;
     }
 
-    AOSL_LOG_INF("GET %s -> status=%d", url, raw.status_code);
+    AOSL_LOG_NTC("GET %s -> status=%d", url, raw.status_code);
 
     if (!http_response_ok(&raw)) {
         int status = raw.status_code;
@@ -399,7 +399,7 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
         return -1;
     }
 
-    AOSL_LOG_INF("POST %s", url);
+    AOSL_LOG_NTC("POST %s", url);
 
     mybot_http_client_response_t raw;
     memset(&raw, 0, sizeof(raw));
@@ -411,7 +411,7 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
     }
     mybot_json_free_string(generated_body);
 
-    AOSL_LOG_INF("POST %s -> status=%d", url, raw.status_code);
+    AOSL_LOG_NTC("POST %s -> status=%d", url, raw.status_code);
 
     if (!http_response_ok(&raw)) {
         int status = raw.status_code;
@@ -450,7 +450,7 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
         return -1;
     }
 
-    AOSL_LOG_INF("conversation: id=%s channel=%s uid=%s", resp->conversation_id, resp->rtc_channel,
+    AOSL_LOG_NTC("conversation: id=%s channel=%s uid=%s", resp->conversation_id, resp->rtc_channel,
                  resp->rtc_uid);
 
     mybot_json_delete(root);
@@ -483,7 +483,7 @@ int mybot_device_client_renew_rtc_token(const char *base_url, const char *device
         return -1;
     }
 
-    AOSL_LOG_INF("POST %s", url);
+    AOSL_LOG_NTC("POST %s", url);
 
     mybot_http_client_response_t raw;
     memset(&raw, 0, sizeof(raw));
@@ -494,7 +494,7 @@ int mybot_device_client_renew_rtc_token(const char *base_url, const char *device
         return -1;
     }
 
-    AOSL_LOG_INF("POST %s -> status=%d", url, raw.status_code);
+    AOSL_LOG_NTC("POST %s -> status=%d", url, raw.status_code);
     if (!http_response_ok(&raw)) {
         int status = raw.status_code;
         AOSL_LOG_ERR("POST %s -> HTTP error %d", url, status);
@@ -550,7 +550,7 @@ int mybot_device_client_stop_conversation(const char *base_url, const char *devi
         return -1;
     }
 
-    AOSL_LOG_INF("POST %s", url);
+    AOSL_LOG_NTC("POST %s", url);
 
     mybot_http_client_response_t raw;
     memset(&raw, 0, sizeof(raw));
@@ -559,7 +559,7 @@ int mybot_device_client_stop_conversation(const char *base_url, const char *devi
     mybot_json_free_string(body);
 
     if (ret == 0) {
-        AOSL_LOG_INF("POST %s -> status=%d", url, raw.status_code);
+        AOSL_LOG_NTC("POST %s -> status=%d", url, raw.status_code);
         if (!http_response_ok(&raw)) {
             AOSL_LOG_ERR("POST %s -> HTTP error %d", url, raw.status_code);
             ret = raw.status_code > 0 ? raw.status_code : -1;

@@ -58,7 +58,7 @@ static void key_stdin_emit_char(linux_key_stdin_ctx_t *ctx, char ch) {
     case '\r':
         break;
     default:
-        AOSL_LOG_INF("[KEY] '%c' ignored (s=start, q=stop, p=pair, e=exit, u=vol_up, d=vol_down)",
+        AOSL_LOG_NTC("[KEY] '%c' ignored (s=start, q=stop, p=pair, e=exit, u=vol_up, d=vol_down)",
                      ch);
         break;
     }

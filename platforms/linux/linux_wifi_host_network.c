@@ -30,7 +30,7 @@ static int wifi_host_network_init(void **out_ctx, const char *device_id,
     ctx->user_data = user_data;
     *out_ctx = ctx;
 
-    AOSL_LOG_INF("wifi provisioning: using Linux host network for device %s", device_id);
+    AOSL_LOG_NTC("wifi provisioning: using Linux host network for device %s", device_id);
     ctx->emit(MYBOT_WIFI_EVENT_STA_CONNECTED, ctx->user_data);
     return 0;
 }

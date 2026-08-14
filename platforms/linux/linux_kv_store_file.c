@@ -134,7 +134,7 @@ static int kv_store_file_init(void **out_ctx) {
     }
 
     *out_ctx = ctx;
-    AOSL_LOG_INF("kv store implementation: %s", ctx->root);
+    AOSL_LOG_NTC("kv store implementation: %s", ctx->root);
     return 0;
 }
 
