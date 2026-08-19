@@ -92,6 +92,8 @@ power-aware (it is the natural place to keep only the microphone path alive whil
 
 - Logging comes from AOSL; set the runtime level with `aosl_set_log_level()` (debug through
   error). The Linux reference prints to stdout.
+- The RTC session initializes the Agora RTSA SDK at its default NOTICE threshold; lower-priority
+  SDK informational logs are suppressed unless a platform port overrides the level.
 - Keep hot-path logging (audio timers) minimal — formatting happens per call.
 - Never log device tokens. The reference app logs the pairing code at INFO level; production
   builds should redact it.

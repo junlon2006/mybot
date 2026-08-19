@@ -6,9 +6,10 @@ This project follows Semantic Versioning.
 
 ### Changed
 
-- Promote application informational logs to the AOSL NOTICE level and set the Linux example's
-  runtime log threshold accordingly, keeping application lifecycle messages visible while
-  suppressing lower-priority dependency logs.
+- Promote application informational logs to the AOSL NOTICE level, set the Linux example's
+  runtime log threshold accordingly, and initialize the Agora RTSA SDK at its default NOTICE
+  threshold, keeping application lifecycle messages visible while suppressing lower-priority
+  dependency logs.
 - Simplify the Wi-Fi platform boundary to connectivity events: remove the redundant
   `mybot_wifi_state_t`, `mybot_wifi_state_handler_t`, and internal state query, and
   require connected events to represent usable IP networking.

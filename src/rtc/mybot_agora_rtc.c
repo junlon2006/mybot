@@ -181,7 +181,7 @@ int mybot_rtc_session_init(const char *app_id, mybot_rtc_session_callbacks_t *cb
     rtc_service_option_t opt;
     memset(&opt, 0, sizeof(opt));
     opt.area_code = AREA_CODE_GLOB;
-    opt.log_cfg.log_level = RTC_LOG_INFO;
+    opt.log_cfg.log_level = RTC_LOG_NOTICE;
     opt.use_string_uid = true;
     snprintf(opt.license_value, sizeof(opt.license_value), "%s", "");
 

@@ -83,6 +83,8 @@ x86_64 Linux 参考构建（GCC 13，默认优化），**仅供参考**——请
 
 - 日志来自 AOSL；用 `aosl_set_log_level()` 设置运行级别（debug 到 error）。Linux 参考打印
   到 stdout。
+- RTC 会话按默认 NOTICE 阈值初始化 Agora RTSA SDK；除非平台移植自行覆盖，否则抑制较低优先级
+  SDK 信息日志。
 - 热路径（音频定时器）日志尽量少——每次调用都会做格式化。
 - 绝不打设备 token。参考应用在 INFO 级打印配对码；生产构建应脱敏。
 

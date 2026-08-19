@@ -98,9 +98,19 @@ static bool network_request_is_current(intptr_t generation) {
 }
 
 static void set_state(mybot_device_state_t new_state) {
-    if (current_state() == new_state) {
+    mybot_device_state_t old_state = current_state();
+    if (old_state == new_state) {
         return;
     }
+
+    /* Leaving a conversation invalidates any stop request generated while
+     * that conversation was being torn down (for example by a synchronous
+     * RTC SDK state callback fired from on_conversation_stop()). Otherwise the
+     * next conversation would consume the stale request and stop immediately. */
+    if (old_state == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
+        aosl_atomic_set(&s_state.stop_request, MYBOT_STOP_REQUEST_NONE);
+    }
+
     aosl_atomic_set(&s_state.state, (intptr_t)new_state);
     AOSL_LOG_NTC("%s", s_name[new_state]);
     if (s_state.cbs.on_state_changed) {
