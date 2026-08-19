@@ -5,7 +5,10 @@ This project follows Semantic Versioning.
 ## [Unreleased]
 
 ### Changed
-
+- Remove unused cJSON-derived functions from the internal JSON module (`mybot_json_minify`,
+  `mybot_json_duplicate`, `mybot_json_create_*_array`, `mybot_json_add_item_to_array`,
+  `mybot_json_get_array_size`, `mybot_json_replace_item_in_*`, and other unused helpers),
+  reducing the JSON source from 1268 to 953 lines. No public API change.
 - Promote application informational logs to the AOSL NOTICE level and set the Linux example's
   runtime log threshold accordingly, keeping application lifecycle messages visible while
   suppressing lower-priority dependency logs.
@@ -97,7 +100,6 @@ This project follows Semantic Versioning.
   run twice after a failed startup.
 
 ### Changed
-
 - AOSL is now a git submodule at `third_party/aosl` tracking the latest upstream master commit
   `39c3fb7b` instead of a vendored copy; no local AOSL changes are carried.
 - Volume control is now fully SDK-internal: when a device volume implementation is registered, volume

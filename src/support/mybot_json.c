@@ -485,9 +485,6 @@ mybot_json_t *mybot_json_parse(const char *value) {
 }
 
 /* Render a mybot_json_t item/entity/structure to text. */
-char *mybot_json_print(mybot_json_t *item) {
-    return print_value(item, 0, 1);
-}
 char *mybot_json_print_unformatted(mybot_json_t *item) {
     return print_value(item, 0, 0);
 }
@@ -839,20 +836,6 @@ static char *print_object(mybot_json_t *item, int depth, int fmt) {
     return out;
 }
 
-/* Get Array size/item / object item. */
-int mybot_json_get_array_size(mybot_json_t *array) {
-    mybot_json_t *c = array->child;
-    int i = 0;
-    while (c)
-        i++, c = c->next;
-    return i;
-}
-mybot_json_t *mybot_json_get_array_item(mybot_json_t *array, int item) {
-    mybot_json_t *c = array->child;
-    while (c && item > 0)
-        item--, c = c->next;
-    return c;
-}
 mybot_json_t *mybot_json_get_object_item(const mybot_json_t *object, const char *string) {
     if (!object || !string)
         return NULL;
@@ -876,39 +859,6 @@ bool mybot_json_get_integer(const mybot_json_t *value, int64_t *result) {
     return true;
 }
 
-/* Utility for array list handling. */
-static void suffix_object(mybot_json_t *prev, mybot_json_t *item) {
-    prev->next = item;
-    item->prev = prev;
-}
-/* Utility for handling references. */
-static mybot_json_t *create_reference(mybot_json_t *item) {
-    mybot_json_t *ref = mybot_json_new_item();
-    if (!ref)
-        return 0;
-    memcpy(ref, item, sizeof(mybot_json_t));
-    ref->string = 0;
-    ref->type |= MYBOT_JSON_IS_REFERENCE;
-    ref->next = ref->prev = 0;
-    return ref;
-}
-
-/* Add item to array/object. */
-int mybot_json_add_item_to_array(mybot_json_t *array, mybot_json_t *item) {
-    if (!array || !item)
-        return -1;
-
-    mybot_json_t *c = array->child;
-    if (!c) {
-        array->child = item;
-    } else {
-        while (c->next)
-            c = c->next;
-        suffix_object(c, item);
-    }
-    return 0;
-}
-
 int mybot_json_add_item_to_object(mybot_json_t *object, const char *string, mybot_json_t *item) {
     if (!object || !string || !item)
         return -1;
@@ -920,36 +870,17 @@ int mybot_json_add_item_to_object(mybot_json_t *object, const char *string, mybo
     if (item->string)
         mybot_json_free_fn(item->string);
     item->string = item_name;
-    return mybot_json_add_item_to_array(object, item);
-}
 
-int mybot_json_add_item_reference_to_array(mybot_json_t *array, mybot_json_t *item) {
-    if (!item)
-        return -1;
-
-    mybot_json_t *reference = create_reference(item);
-    if (!reference)
-        return -1;
-
-    int result = mybot_json_add_item_to_array(array, reference);
-    if (result < 0)
-        mybot_json_delete(reference);
-    return result;
-}
-
-int mybot_json_add_item_reference_to_object(mybot_json_t *object, const char *string,
-                                            mybot_json_t *item) {
-    if (!item)
-        return -1;
-
-    mybot_json_t *reference = create_reference(item);
-    if (!reference)
-        return -1;
-
-    int result = mybot_json_add_item_to_object(object, string, reference);
-    if (result < 0)
-        mybot_json_delete(reference);
-    return result;
+    mybot_json_t *c = object->child;
+    if (c) {
+        while (c->next)
+            c = c->next;
+        c->next = item;
+        item->prev = c;
+    } else {
+        object->child = item;
+    }
+    return 0;
 }
 
 static int add_created_item(mybot_json_t *object, const char *name, mybot_json_t *item) {
@@ -962,10 +893,6 @@ static int add_created_item(mybot_json_t *object, const char *name, mybot_json_t
     if (result < 0)
         mybot_json_delete(item);
     return result;
-}
-
-int mybot_json_add_null(mybot_json_t *object, const char *name) {
-    return add_created_item(object, name, mybot_json_create_null());
 }
 
 int mybot_json_add_string(mybot_json_t *object, const char *name, const char *value) {
@@ -989,92 +916,13 @@ int mybot_json_add_item(mybot_json_t *object, const char *name, mybot_json_t *it
     return mybot_json_add_item_to_object(object, name, item);
 }
 
-mybot_json_t *mybot_json_detach_item_from_array(mybot_json_t *array, int which) {
-    mybot_json_t *c = array->child;
-    while (c && which > 0)
-        c = c->next, which--;
-    if (!c)
-        return 0;
-    if (c->prev)
-        c->prev->next = c->next;
-    if (c->next)
-        c->next->prev = c->prev;
-    if (c == array->child)
-        array->child = c->next;
-    c->prev = c->next = 0;
-    return c;
-}
-void mybot_json_delete_item_from_array(mybot_json_t *array, int which) {
-    mybot_json_delete(mybot_json_detach_item_from_array(array, which));
-}
-mybot_json_t *mybot_json_detach_item_from_object(mybot_json_t *object, const char *string) {
-    int i = 0;
-    mybot_json_t *c = object->child;
-    while (c && mybot_json_strcasecmp(c->string, string))
-        i++, c = c->next;
-    if (c)
-        return mybot_json_detach_item_from_array(object, i);
-    return 0;
-}
-void mybot_json_delete_item_from_object(mybot_json_t *object, const char *string) {
-    mybot_json_delete(mybot_json_detach_item_from_object(object, string));
-}
-
-/* Replace array/object items with new ones. */
-void mybot_json_replace_item_in_array(mybot_json_t *array, int which, mybot_json_t *newitem) {
-    mybot_json_t *c = array->child;
-    while (c && which > 0)
-        c = c->next, which--;
-    if (!c)
-        return;
-    newitem->next = c->next;
-    newitem->prev = c->prev;
-    if (newitem->next)
-        newitem->next->prev = newitem;
-    if (c == array->child)
-        array->child = newitem;
-    else
-        newitem->prev->next = newitem;
-    c->next = c->prev = 0;
-    mybot_json_delete(c);
-}
-void mybot_json_replace_item_in_object(mybot_json_t *object, const char *string,
-                                       mybot_json_t *newitem) {
-    int i = 0;
-    mybot_json_t *c = object->child;
-    while (c && mybot_json_strcasecmp(c->string, string))
-        i++, c = c->next;
-    if (c) {
-        newitem->string = mybot_json_strdup(string);
-        mybot_json_replace_item_in_array(object, i, newitem);
-    }
-}
-
-/* Create basic types: */
-mybot_json_t *mybot_json_create_null(void) {
-    mybot_json_t *item = mybot_json_new_item();
-    if (item)
-        item->type = MYBOT_JSON_NULL;
-    return item;
-}
-mybot_json_t *mybot_json_create_true(void) {
-    mybot_json_t *item = mybot_json_new_item();
-    if (item)
-        item->type = MYBOT_JSON_TRUE;
-    return item;
-}
-mybot_json_t *mybot_json_create_false(void) {
-    mybot_json_t *item = mybot_json_new_item();
-    if (item)
-        item->type = MYBOT_JSON_FALSE;
-    return item;
-}
 mybot_json_t *mybot_json_create_bool(int b) {
     mybot_json_t *item = mybot_json_new_item();
     if (item)
         item->type = b ? MYBOT_JSON_TRUE : MYBOT_JSON_FALSE;
     return item;
 }
+
 mybot_json_t *mybot_json_create_number(double num) {
     mybot_json_t *item = mybot_json_new_item();
     if (item) {
@@ -1084,6 +932,7 @@ mybot_json_t *mybot_json_create_number(double num) {
     }
     return item;
 }
+
 mybot_json_t *mybot_json_create_string(const char *string) {
     if (!string)
         return NULL;
@@ -1099,12 +948,7 @@ mybot_json_t *mybot_json_create_string(const char *string) {
     }
     return item;
 }
-mybot_json_t *mybot_json_create_array(void) {
-    mybot_json_t *item = mybot_json_new_item();
-    if (item)
-        item->type = MYBOT_JSON_ARRAY;
-    return item;
-}
+
 mybot_json_t *mybot_json_create_object(void) {
     mybot_json_t *item = mybot_json_new_item();
     if (item)
@@ -1112,157 +956,7 @@ mybot_json_t *mybot_json_create_object(void) {
     return item;
 }
 
-/* Create Arrays: */
-mybot_json_t *mybot_json_create_int_array(const int *numbers, int count) {
-    int i;
-    mybot_json_t *n = 0, *p = 0, *a = mybot_json_create_array();
-    for (i = 0; a && i < count; i++) {
-        n = mybot_json_create_number(numbers[i]);
-        if (!n) {
-            mybot_json_delete(a);
-            return NULL;
-        }
-        if (!i)
-            a->child = n;
-        else
-            suffix_object(p, n);
-        p = n;
-    }
-    return a;
-}
-mybot_json_t *mybot_json_create_float_array(const float *numbers, int count) {
-    int i;
-    mybot_json_t *n = 0, *p = 0, *a = mybot_json_create_array();
-    for (i = 0; a && i < count; i++) {
-        n = mybot_json_create_number(numbers[i]);
-        if (!n) {
-            mybot_json_delete(a);
-            return NULL;
-        }
-        if (!i)
-            a->child = n;
-        else
-            suffix_object(p, n);
-        p = n;
-    }
-    return a;
-}
-mybot_json_t *mybot_json_create_double_array(const double *numbers, int count) {
-    int i;
-    mybot_json_t *n = 0, *p = 0, *a = mybot_json_create_array();
-    for (i = 0; a && i < count; i++) {
-        n = mybot_json_create_number(numbers[i]);
-        if (!n) {
-            mybot_json_delete(a);
-            return NULL;
-        }
-        if (!i)
-            a->child = n;
-        else
-            suffix_object(p, n);
-        p = n;
-    }
-    return a;
-}
-mybot_json_t *mybot_json_create_string_array(const char **strings, int count) {
-    int i;
-    mybot_json_t *n = 0, *p = 0, *a = mybot_json_create_array();
-    for (i = 0; a && i < count; i++) {
-        n = mybot_json_create_string(strings[i]);
-        if (!n) {
-            mybot_json_delete(a);
-            return NULL;
-        }
-        if (!i)
-            a->child = n;
-        else
-            suffix_object(p, n);
-        p = n;
-    }
-    return a;
-}
-
-/* Duplication */
-mybot_json_t *mybot_json_duplicate(mybot_json_t *item, int recurse) {
-    mybot_json_t *newitem, *cptr, *nptr = 0, *newchild;
-    /* Bail on bad ptr */
-    if (!item)
-        return 0;
-    /* Create new item */
-    newitem = mybot_json_new_item();
-    if (!newitem)
-        return 0;
-    /* Copy over all vars */
-    newitem->type = item->type & (~MYBOT_JSON_IS_REFERENCE), newitem->valueint = item->valueint,
-    newitem->valuedouble = item->valuedouble;
-    if (item->valuestring) {
-        newitem->valuestring = mybot_json_strdup(item->valuestring);
-        if (!newitem->valuestring) {
-            mybot_json_delete(newitem);
-            return 0;
-        }
-    }
-    if (item->string) {
-        newitem->string = mybot_json_strdup(item->string);
-        if (!newitem->string) {
-            mybot_json_delete(newitem);
-            return 0;
-        }
-    }
-    /* If non-recursive, then we're done! */
-    if (!recurse)
-        return newitem;
-    /* Walk the ->next chain for the child. */
-    cptr = item->child;
-    while (cptr) {
-        newchild = mybot_json_duplicate(
-            cptr, 1); /* Duplicate (with recurse) each item in the ->next chain */
-        if (!newchild) {
-            mybot_json_delete(newitem);
-            return 0;
-        }
-        if (nptr) {
-            nptr->next = newchild, newchild->prev = nptr;
-            nptr = newchild;
-        } /* If newitem->child already set, then crosswire ->prev and ->next and move on */
-        else {
-            newitem->child = newchild;
-            nptr = newchild;
-        } /* Set newitem->child and move to it */
-        cptr = cptr->next;
-    }
-    return newitem;
-}
-
 void mybot_json_free_string(char *text) {
     if (text)
         mybot_json_free_fn(text);
-}
-
-void mybot_json_minify(char *json) {
-    char *into = json;
-    while (*json) {
-        if (*json == ' ' || *json == '\t' || *json == '\r' || *json == '\n')
-            json++; // Whitespace characters.
-        else if (*json == '/' && json[1] == '/')
-            while (*json && *json != '\n')
-                json++; // double-slash comments, to end of line.
-        else if (*json == '/' && json[1] == '*') {
-            while (*json && !(*json == '*' && json[1] == '/'))
-                json++;
-            json += 2;
-        } // multiline comments.
-        else if (*json == '\"') {
-            *into++ = *json++;
-            while (*json && *json != '\"') {
-                if (*json == '\\')
-                    *into++ = *json++;
-                *into++ = *json++;
-            }
-            *into++ = *json++;
-        } // string literals, which are \" sensitive.
-        else
-            *into++ = *json++; // All other characters.
-    }
-    *into = 0; // and null-terminate.
 }
