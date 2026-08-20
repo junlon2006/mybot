@@ -225,7 +225,11 @@ mybot_stop();
 `server_base` must be an HTTPS URL and both fields must be non-empty NUL-terminated strings. Start
 fails before global initialization when no TLS transport is registered. Start is non-blocking;
 services continue after Wi-Fi reports usable network connectivity. Do not call stop from a platform callback because
-it waits for workers and callbacks. mybot currently owns process-wide AOSL and Agora lifecycles.
+it waits for workers and callbacks. `mybot_start()` acquires one application reference to the
+process-wide AOSL runtime and `mybot_stop()` releases that reference last, after workers, buffers
+and the RTC callback queue have been torn down. `agora_rtc_init()` / `agora_rtc_fini()` own a
+separate SDK reference. A host that uses AOSL directly must pair its own `aosl_ctor()` and
+`aosl_dtor()` calls and keep that reference until all of its AOSL users have stopped.
 
 ## Step 7: Cross-compile
 

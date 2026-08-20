@@ -116,6 +116,11 @@ agora_rtc_init()                       Initialize SDK (once per process)
   └─► agora_rtc_fini()                Release all SDK resources
 ```
 
+`agora_rtc_init()` and `agora_rtc_fini()` also acquire and release the Agora SDK's own
+reference to the process-wide AOSL runtime. Applications that use AOSL directly, or embed this
+SDK alongside another AOSL user, must keep their own `aosl_ctor()` / `aosl_dtor()` pair balanced.
+The SDK's `agora_rtc_fini()` does not replace another owner's AOSL release.
+
 ### Initialization
 
 ```c

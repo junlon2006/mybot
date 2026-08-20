@@ -194,7 +194,11 @@ mybot_stop();
 buttons, audio, the device service, and RTC asynchronously once usable network connectivity is
 reported.
 `mybot_stop()` waits for all worker threads to exit and must not be called from inside a
-platform event callback.
+platform event callback. The application acquires one reference to the process-wide AOSL runtime
+inside `mybot_start()` and releases it at the end of `mybot_stop()`. Agora RTC acquires and releases
+its own independent AOSL reference in `agora_rtc_init()` / `agora_rtc_fini()`. A host that uses AOSL
+directly must keep its own `aosl_ctor()` / `aosl_dtor()` pair balanced; the runtime is finalized only
+after every consumer has released its reference.
 
 ## Build configuration
 

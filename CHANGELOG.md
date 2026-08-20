@@ -6,6 +6,9 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- Update the AOSL lifecycle integration for the reference-counted `aosl_ctor()` / `aosl_dtor()`
+  API: mybot and Agora RTC now hold independent runtime references, and mybot releases its
+  application reference only after RTC callbacks, workers and buffers have been torn down.
 - Promote application informational logs to the AOSL NOTICE level, set the Linux example's
   runtime log threshold accordingly, and initialize the Agora RTSA SDK at its default NOTICE
   threshold, keeping application lifecycle messages visible while suppressing lower-priority

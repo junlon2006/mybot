@@ -57,11 +57,14 @@ int agora_rtc_init(const char *app_id, const agora_rtc_event_handler_t *event_ha
     if (event_handler) {
         s_handler = *event_handler;
     }
+    /* Mirror the real Agora SDK's independent AOSL ownership. */
+    aosl_ctor();
     return 0;
 }
 
 int agora_rtc_fini(void) {
     s_fini_calls++;
+    aosl_dtor();
     return 0;
 }
 
@@ -151,7 +154,7 @@ int main(void) {
     assert(!mybot_rtc_session_is_connected());
     assert(mybot_rtc_session_join("room", "token", "user") < 0);
     assert(mybot_rtc_session_leave() == 0);
-    assert(!mybot_rtc_session_fini()); /* no agora_rtc_fini when uninitialized */
+    mybot_rtc_session_fini(); /* no agora_rtc_fini when uninitialized */
     assert(s_fini_calls == 0);
     assert(mybot_rtc_session_renew_token("renewed-token") < 0);
     assert(s_renew_calls == 0);
@@ -242,12 +245,12 @@ int main(void) {
     assert(s_renew_calls == 2);
 
     /* Finalize calls agora_rtc_fini exactly once. */
-    assert(mybot_rtc_session_fini() == true);
+    mybot_rtc_session_fini();
     assert(s_fini_calls == 1);
     assert(!mybot_rtc_session_is_connected());
     assert(mybot_rtc_session_join("room", "token", "user") < 0);
     assert(mybot_rtc_session_leave() == 0);
-    assert(!mybot_rtc_session_fini()); /* now uninitialized again */
+    mybot_rtc_session_fini(); /* now uninitialized again */
     assert(s_fini_calls == 1);
     assert(s_state_changes > 0);
 

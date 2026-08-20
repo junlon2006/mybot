@@ -589,6 +589,8 @@ int mybot_rtc_session_init(const char *app_id, mybot_rtc_session_callbacks_t *ca
     s_rtc_initialized = true;
     s_rtc_init_calls++;
     mock_unlock();
+    /* Mirror the real Agora SDK's independent AOSL ownership. */
+    aosl_ctor();
     return 0;
 }
 
@@ -623,18 +625,18 @@ int mybot_rtc_session_leave(void) {
     return 0;
 }
 
-bool mybot_rtc_session_fini(void) {
+void mybot_rtc_session_fini(void) {
     mock_lock();
     if (!s_rtc_initialized) {
         mock_unlock();
-        return false;
+        return;
     }
     assert(!s_rtc_joined);
     s_rtc_initialized = false;
     s_rtc_fini_calls++;
     mock_unlock();
+    /* Release the mock SDK's independent AOSL ownership. */
     aosl_dtor();
-    return true;
 }
 
 int mybot_rtc_session_send_audio(const void *data, size_t len) {

@@ -168,7 +168,10 @@ mybot_stop();
 
 `mybot_start()` 非阻塞：先启动配网，收到网络可用事件后才异步初始化存储、
 按键、音频、设备服务和 RTC。`mybot_stop()` 会等待全部工作线程退出，因此不应从
-平台事件回调内部调用。
+平台事件回调内部调用。应用在 `mybot_start()` 内获取一份 AOSL 引用，并在
+`mybot_stop()` 末尾释放；Agora RTC 在 `agora_rtc_init()` / `agora_rtc_fini()` 中管理
+自己独立的一份 AOSL 引用。宿主若直接使用 AOSL，必须自行配对 `aosl_ctor()` /
+`aosl_dtor()`，只有所有消费者都释放引用后运行时才会最终释放。
 
 ## 构建配置
 
