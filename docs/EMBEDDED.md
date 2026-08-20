@@ -76,7 +76,8 @@ Current status: the SDK has **no standby / low-power mode**. While `mybot_is_run
 true, worker threads and timers keep running. The power levers belong to the integrator:
 
 - **Sleep**: call `mybot_stop()` before entering low power and `mybot_start()` on wake;
-  this releases workers, audio devices, TLS, and RTC resources.
+  this releases workers, audio devices, TLS, RTC resources, and mybot's AOSL runtime reference.
+  The Agora SDK reference is released by `agora_rtc_fini()` before the application reference.
 - **Radio**: the Wi-Fi provisioning implementation owns the radio; implement the platform's low-power
   policy there.
 - **Audio path**: gate the codec/amplifier in the audio implementations; the SDK owns volume control — a

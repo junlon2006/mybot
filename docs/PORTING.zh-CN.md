@@ -203,8 +203,10 @@ mybot_stop();
 
 `server_base` 必须是 HTTPS URL，且两个字段都必须是非空、以 NUL 结尾的字符串。未注册 TLS
 传输时，启动会在全局初始化之前失败。启动是非阻塞的；Wi-Fi 上报网络可用后服务继续运行。不要
-从平台回调中调用 stop，因为它会等待工作线程与回调。mybot 当前拥有进程级 AOSL 与 Agora
-生命周期。
+从平台回调中调用 stop，因为它会等待工作线程与回调。`mybot_start()` 获取一份应用持有的
+ AOSL 引用，`mybot_stop()` 在工作线程、缓冲区和 RTC 回调队列全部销毁后最后释放该
+引用。`agora_rtc_init()` / `agora_rtc_fini()` 管理 SDK 独立的一份引用。宿主若直接使用
+AOSL，必须自行配对 `aosl_ctor()` 与 `aosl_dtor()`，并在所有 AOSL 用户停止前保持该引用。
 
 ## 第 7 步：交叉编译
 

@@ -66,7 +66,7 @@
 static struct {
     aosl_atomic_t running;
     aosl_atomic_t state;
-    bool aosl_active;
+    aosl_atomic_t aosl_ref_held;
     bool wifi_active;
     bool kv_store_active;
     bool key_active;
@@ -722,9 +722,9 @@ static void cleanup_services(void) {
     }
 
     /* The audio sender MPQ fini callback kills the send timer and leaves the RTC
-     * channel. Must happen before mybot_rtc_session_fini(): the RTC SDK
-     * finalizes AOSL itself in agora_rtc_fini(), after which no AOSL call
-     * may be made. */
+     * channel. Must happen before mybot_rtc_session_fini(): agora_rtc_fini()
+     * tears down the SDK queues and releases the SDK's own AOSL reference;
+     * the application reference remains held until mybot_stop() finishes. */
     if (!aosl_mpq_invalid(s_app.mpq)) {
         aosl_mpq_destroy_wait(s_app.mpq);
         s_app.mpq = AOSL_MPQ_INVALID;
@@ -931,7 +931,7 @@ static int start_services(void) {
     /* ---- 7. Create the audio sender MPQ ----
      * Use aosl_mpq_create() instead of aosl_main_start(): the latter
      * registers an atexit() hook that re-runs aosl_main_exit_wait() after
-     * main() returns, which aborts once aosl_dtor() has finalized AOSL.
+     * main() returns, which can run after the final aosl_dtor() has released AOSL.
      * Creating the queue explicitly keeps teardown fully in our control. */
     AOSL_LOG_NTC("starting MPQ loop...");
     s_app.mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MPQ_STACK_SIZE, 1000, "mybot_mpq", mpq_init,
@@ -1063,7 +1063,7 @@ static void on_wifi_event(mybot_wifi_event_t event, void *user_data) {
  * ---------------------------------------------------------- */
 
 int mybot_start(const mybot_config_t *cfg) {
-    if (s_app.aosl_active) {
+    if (aosl_atomic_read(&s_app.aosl_ref_held)) {
         AOSL_LOG_ERR("mybot_start: application is already active");
         return -1;
     }
@@ -1119,7 +1119,7 @@ int mybot_start(const mybot_config_t *cfg) {
     s_app.state_timer = AOSL_MPQ_TIMER_INVALID;
 
     aosl_ctor();
-    s_app.aosl_active = true;
+    aosl_atomic_set(&s_app.aosl_ref_held, true);
 
     if (mybot_lcd_is_registered()) {
         if (mybot_lcd_init() < 0) {
@@ -1189,7 +1189,7 @@ void mybot_app_pair(void) {
 
 void mybot_stop(void) {
     /* Keep stop idempotent without touching AOSL after a previous stop. */
-    if (!s_app.aosl_active) {
+    if (!aosl_atomic_read(&s_app.aosl_ref_held)) {
         return;
     }
 
@@ -1237,19 +1237,21 @@ void mybot_stop(void) {
 
     /* ---- 6. Finalize RTC ----
      * The SDK waits for its callback queue before returning, so no callback can
-     * access pb_ringbuf after this point. It also finalizes AOSL when active. */
-    AOSL_LOG_NTC("app stopped cleanly");
-    s_app.aosl_active = false;
-    bool rtc_finalized_aosl = mybot_rtc_session_fini();
+     * access pb_ringbuf after this point. */
+    mybot_rtc_session_fini();
 
     /* ---- 7. Destroy ring buffers ----
      * The AOSL HAL allocator is independent of the AOSL global lifecycle. */
     destroy_audio_ringbufs();
 
-    /* ---- 8. Finalize AOSL when RTC never owned it ---- */
-    if (!rtc_finalized_aosl) {
-        aosl_dtor();
-    }
-
+    /* ---- 8. Release the application's AOSL reference last ----
+     * Every aosl_ctor() has one matching aosl_dtor(). The RTC SDK owns a
+     * separate reference through agora_rtc_init/fini(), so its fini call never
+     * replaces this release. No AOSL API may be used after this call. */
+    AOSL_LOG_NTC("app stopped cleanly");
     aosl_atomic_set(&s_app.state, MYBOT_STATE_STOPPED);
+    if (aosl_atomic_read(&s_app.aosl_ref_held)) {
+        aosl_dtor();
+        aosl_atomic_set(&s_app.aosl_ref_held, false);
+    }
 }

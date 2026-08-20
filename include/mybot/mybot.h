@@ -107,6 +107,10 @@ typedef enum {
  *
  * @note The caller must call mybot_stop() before exiting the process, and
  *       may call mybot_start() again after mybot_stop() returns.
+ * @note mybot_start() acquires one application reference to the process-wide
+ *       AOSL runtime. The matching reference is released by mybot_stop();
+ *       applications that use AOSL directly must maintain their own ctor/dtor
+ *       pair for the duration of that use.
  * @note Call from the main application thread, not from a platform event
  *       callback.
  */
@@ -163,6 +167,10 @@ MYBOT_API void mybot_request_exit(void);
  * Idempotent: safe to call when the application is not running, after a
  * failed mybot_start(), or repeatedly. After it returns, the application
  * returns to MYBOT_STATE_STOPPED and may be started again.
+ *
+ * RTC shutdown releases the Agora SDK's independent AOSL reference first;
+ * mybot releases its application reference last, after all application-owned
+ * workers and buffers have been destroyed.
  *
  * @warning Blocks until shutdown completes, so it must be called from the
  *          main application thread — never from inside a platform event
