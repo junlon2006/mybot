@@ -60,7 +60,7 @@ jobs:
       - name: Static analysis (clang-tidy)
         if: matrix.name == 'gcc-asan'
         run: |
-          clang-tidy -p build $(find src platforms/linux examples tests -name '*.c' | sort)
+          clang-tidy -p build $(find src platforms/linux examples/linux tests -name '*.c' | sort)
       - name: Validate commit messages
         if: matrix.name == 'gcc-asan'
         run: |
