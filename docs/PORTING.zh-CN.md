@@ -117,6 +117,12 @@ Linux 参考实现立即上报已连接，不是真正的 APSTA 参考实现。
 否则回退到媒体音量软件增益；音量事件为可选。事件可以是异步的。Destroy 必须停止输入源
 并等待所有处理器。使用 `mybot_key_register()` 注册。
 
+对于单个硬件切换键，处理按键时查询线程安全的 `mybot_get_state()`：仅在
+`MYBOT_STATE_READY` 时发出 `MYBOT_KEY_EVENT_CONVERSATION_START`，仅在
+`MYBOT_STATE_IN_CONVERSATION` 时发出 `MYBOT_KEY_EVENT_CONVERSATION_STOP`。配网、启动、
+断网、失败和停止状态均忽略切换键。不要根据 LCD 推断会话状态，也不要在平台侧维护第二份
+状态；运行期断网会报告 `MYBOT_STATE_WIFI_DISCONNECTED`，SDK 会在本地结束会话。
+
 ### LCD（可选）
 
 存在显示设备时实现 `mybot_lcd_ops_t`。渲染接收语义内容，可能从不同 SDK 线程调用；SDK
@@ -208,6 +214,12 @@ mybot_stop();
 引用。`agora_rtc_init()` / `agora_rtc_fini()` 管理 SDK 独立的一份引用。宿主若直接使用
 AOSL，必须自行配对 `aosl_ctor()` 与 `aosl_dtor()`，并在所有 AOSL 用户停止前保持该引用。
 
+`mybot_get_state()` 是线程安全的应用层状态查询接口。设备服务接受会话后返回
+`MYBOT_STATE_IN_CONVERSATION`，正常拆除后回到 `MYBOT_STATE_READY`。运行期网络丢失时，
+`MYBOT_STATE_WIFI_DISCONNECTED` 优先，重连后回到 `READY`。设备服务生命周期状态
+（`unprovisioned`、`pairing`、`awaiting_claim`、`runtime`、`in_conversation`）属于 SDK
+内部状态机，平台不应自行重建。
+
 ## 第 7 步：交叉编译
 
 ```bash
@@ -231,6 +243,8 @@ cmake --build build-target -j
 - 短 I/O 有进展，stop 能在设备丢失时解除阻塞。
 - `destroy` 返回后没有按键或唤醒词回调运行；LCD 不保留借用的内容。
 - 部分启动失败与重复 start/stop 释放全部资源。
+- 正常会话期间 `mybot_get_state()` 依次报告 `READY -> IN_CONVERSATION -> READY`；通话中断网
+  时报告 `WIFI_DISCONNECTED`，重连后回到 `READY`，停止和重新配对过程不得死锁。
 - 真实设备完成配网、配对、RTC 加入、双向音频、挂断与重启。
 - 日志与存储不暴露 token。
 

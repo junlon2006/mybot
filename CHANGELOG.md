@@ -4,6 +4,13 @@ This project follows Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Add `MYBOT_STATE_IN_CONVERSATION = 7` to the public `mybot_state_t` enum. After the device service
+  accepts a conversation, `mybot_get_state()` reports this state until normal teardown returns to
+  `MYBOT_STATE_READY`; `MYBOT_STATE_WIFI_DISCONNECTED` takes precedence during runtime connectivity
+  loss. Existing state values remain unchanged.
+
 ### Changed
 
 - Update the AOSL lifecycle integration for the reference-counted `aosl_ctor()` / `aosl_dtor()`

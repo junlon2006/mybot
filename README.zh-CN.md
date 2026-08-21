@@ -37,8 +37,11 @@
   任何 OS 或外设 API；理论上可移植到 Linux、RTOS、裸机等任意平台。
 - **APSTA 配网**：非阻塞启动，通过 Wi-Fi 事件驱动应用状态机推进。
 - **配对与认证**：配对码 → 设备认领 → 长期凭证持久化，认证失效时自动重新配对。
-- **会话状态机**：`unprovisioned / pairing / awaiting_claim / runtime / in_conversation`
-  五态驱动设备服务端交互。
+- **会话状态机**：`unprovisioned / pairing / awaiting_claim / runtime / in_conversation` 五态
+  设备服务生命周期驱动设备服务端交互。
+- **应用生命周期状态**：`mybot_get_state()` 暴露启动、网络、停止与会话状态。设备服务接受会话
+  后返回 `MYBOT_STATE_IN_CONVERSATION`；正常拆除后回到 `MYBOT_STATE_READY`；网络丢失时
+  `MYBOT_STATE_WIFI_DISCONNECTED` 优先。
 - **全双工语音 · 支持打断**：上行与下行同时进行；AI 回复期间用户可随时说话打断，
   麦克风持续上行，云端 Agent 感知新输入并即时响应。
 - **全双工语音交互 · Agora AI 能力**：基于 Agora RTSA，支持云端 AEC、AI QoS 与可选
@@ -277,8 +280,10 @@ flowchart TB
 
 - **公共 API**（[include/mybot/mybot.h](include/mybot/mybot.h)）：应用生命周期与状态
   查询（`mybot_start` / `mybot_is_running` / `mybot_get_state` / `mybot_request_exit` /
-  `mybot_stop`），非阻塞启动。会话与配对动作由平台按键 / 唤醒词事件触发，由 SDK 核心
-  内部处理。
+  `mybot_stop`），非阻塞启动。按键或 UI 应通过 `mybot_get_state()` 判断动作：
+  `MYBOT_STATE_READY` 时可开始会话，`MYBOT_STATE_IN_CONVERSATION` 时可停止会话。LCD
+  仅用于显示，不是生命周期状态来源。会话与配对动作由平台按键 / 唤醒词事件触发，由 SDK
+  核心内部处理。
 - **SDK 核心**（[src/](src/)）：启动编排、设备状态机、设备服务 HTTP 客户端、Agora
   RTSA 会话封装、音频环形缓冲与可选本地唤醒词。核心代码不直接触碰任何 OS 或外设 API。
 - **基础服务层**：AOSL 提供线程 / MPQ / 定时器 / 日志等可移植能力；平台 `ops` 契约

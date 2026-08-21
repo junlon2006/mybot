@@ -38,6 +38,10 @@ x86_64 Linux 参考构建（GCC 13，默认优化），**仅供参考**——请
 - 控制面状态（应用、设备生命周期、RTC 会话）均为静态分配；核心没有按会话的堆分配，除上述
   HTTP/JSON 临时缓冲外。
 
+公共应用状态通过线程安全的 `mybot_get_state()` 查询。设备服务接受会话后返回
+`MYBOT_STATE_IN_CONVERSATION`，直到正常拆除后回到 `MYBOT_STATE_READY`。运行期网络丢失时
+`MYBOT_STATE_WIFI_DISCONNECTED` 优先；设备服务生命周期状态机仍属于 SDK 内部实现。
+
 ## 线程与栈
 
 | MPQ 线程 | 职责 | 栈 |
