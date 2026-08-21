@@ -534,8 +534,7 @@ static void dev_on_conversation_stop(void) {
 
 static void render_device_state(mybot_device_state_t state) {
     mybot_state_t app_state = mybot_get_state();
-    if ((state == MYBOT_DEVICE_STATE_IN_CONVERSATION &&
-         app_state != MYBOT_STATE_IN_CONVERSATION) ||
+    if ((state == MYBOT_DEVICE_STATE_IN_CONVERSATION && app_state != MYBOT_STATE_IN_CONVERSATION) ||
         (state != MYBOT_DEVICE_STATE_IN_CONVERSATION && app_state != MYBOT_STATE_READY)) {
         return;
     }
