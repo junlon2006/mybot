@@ -17,6 +17,8 @@
 #define MYBOT_PAIR_RETRY_MAX_TICKS 600
 #define MYBOT_RTC_TOKEN_RETRY_INITIAL_TICKS 10
 #define MYBOT_RTC_TOKEN_RETRY_MAX_TICKS 100
+#define MYBOT_POLL_INTERVAL_MIN_SECONDS 3
+#define MYBOT_POLL_INTERVAL_MAX_SECONDS 60
 
 typedef struct {
     uint32_t version;
@@ -120,6 +122,16 @@ static void set_state(mybot_device_state_t new_state) {
 
 static bool api_rejected_device_auth(int ret) {
     return ret == 401 || ret == 403 || ret == 409;
+}
+
+static int clamp_poll_interval(int seconds) {
+    if (seconds < MYBOT_POLL_INTERVAL_MIN_SECONDS) {
+        return MYBOT_POLL_INTERVAL_MIN_SECONDS;
+    }
+    if (seconds > MYBOT_POLL_INTERVAL_MAX_SECONDS) {
+        return MYBOT_POLL_INTERVAL_MAX_SECONDS;
+    }
+    return seconds;
 }
 
 static int persist_device_auth(void) {
@@ -226,9 +238,7 @@ static void action_create_pair_code(void) {
 
     /* Save pair token and poll settings */
     strncpy(s_state.pair_token, resp.pair_token, sizeof(s_state.pair_token) - 1);
-    /* Enforce a minimum 3 s poll interval even if the server omits or
-     * undershoots poll_after_seconds (otherwise the device would busy-poll). */
-    s_state.pair_poll_interval = resp.poll_after_seconds >= 3 ? resp.poll_after_seconds : 3;
+    s_state.pair_poll_interval = clamp_poll_interval(resp.poll_after_seconds);
     s_state.pair_tick_counter = 0;
 
     /* Clear any old device token */
@@ -276,7 +286,7 @@ static void action_poll_binding_pair(void) {
     AOSL_LOG_NTC("bind poll -> status=%s", resp.status);
 
     if (strcmp(resp.status, "pending") == 0) {
-        s_state.pair_poll_interval = resp.poll_after_seconds >= 3 ? resp.poll_after_seconds : 3;
+        s_state.pair_poll_interval = clamp_poll_interval(resp.poll_after_seconds);
         /* Stay in awaiting_claim. */
     } else if (strcmp(resp.status, "bound") == 0) {
         if (resp.device_token[0]) {
@@ -292,7 +302,7 @@ static void action_poll_binding_pair(void) {
         }
         AOSL_LOG_NTC("device credential persisted");
         set_state(MYBOT_DEVICE_STATE_RUNTIME);
-        s_state.runtime_poll_interval = resp.poll_after_seconds > 0 ? resp.poll_after_seconds : 30;
+        s_state.runtime_poll_interval = clamp_poll_interval(resp.poll_after_seconds);
         s_state.runtime_tick_counter = 0;
     } else if (strcmp(resp.status, "expired") == 0 || strcmp(resp.status, "failed") == 0) {
         AOSL_LOG_NTC("pairing status %s, re-pairing", resp.status);
@@ -350,7 +360,7 @@ static void action_poll_binding_runtime(void) {
     }
 
     if (strcmp(resp.status, "bound") == 0) {
-        s_state.runtime_poll_interval = resp.poll_after_seconds > 0 ? resp.poll_after_seconds : 30;
+        s_state.runtime_poll_interval = clamp_poll_interval(resp.poll_after_seconds);
     } else if (strcmp(resp.status, "unbound") == 0) {
         AOSL_LOG_NTC("device unbound by user");
         invalidate_runtime_binding();

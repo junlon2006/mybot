@@ -358,6 +358,13 @@ static void on_remote_audio(uint32_t uid, const void *data, size_t len) {
         return;
     }
 
+    /* Pairing announcements have priority over RTC downlink audio. While an
+     * announcement is active, the playback thread is the sole producer of the
+     * playback ring buffer; dropping RTC frames preserves its SPSC contract. */
+    if (mybot_announce_is_active()) {
+        return;
+    }
+
     if (mybot_ringbuf_write(s_app.pb_ringbuf, (const char *)data, (int)len) < 0) {
         AOSL_LOG_WRN("pb ringbuf full, dropped");
     }

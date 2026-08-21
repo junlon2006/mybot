@@ -31,6 +31,10 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
+- Clamp server-provided device-service polling intervals to 3..60 seconds and saturate oversized JSON
+  integers before conversion, preventing timer overflow and request storms.
+- Drop RTC downlink audio while a pairing announcement is active, preserving the playback ring
+  buffer's single-producer/single-consumer access and giving announcements priority.
 - Remove the HTTP response parser's POSIX `strncasecmp()` dependency by using
   an ASCII-only case-insensitive comparison, preserving mixed-case header support on non-POSIX platforms.
 

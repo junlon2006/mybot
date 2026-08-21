@@ -71,8 +71,9 @@ additional internal threads whose stacks are vendor-managed.
   i.e. 960 samples / 1920 bytes per frame).
 - Platform `read` / `write` calls must bound their blocking (the Linux ALSA implementation polls
   with a 50 ms timeout) so workers can observe shutdown and exit promptly.
-- The state machine ticks every 100 ms; device-service polling is server-driven with a 3 s minimum
-  during pairing and a 30 s default in runtime.
+- The state machine ticks every 100 ms; device-service polling is server-driven, with each
+  `poll_after_seconds` hint clamped to 3..60 s. Runtime polling starts at a 30 s default until the
+  first binding-status response is received.
 - HTTP requests have a 5 s total deadline.
 
 ## Power management
@@ -88,8 +89,8 @@ true, worker threads and timers keep running. The power levers belong to the int
 - **Audio path**: gate the codec/amplifier in the audio implementations; the SDK owns volume control — a
   registered device-volume implementation (hardware hook) is the primary path, with a software media
   gain as fallback.
-- **Polling**: intervals are server-driven (3 s minimum pairing, 30 s default runtime); agree on
-  relaxed intervals with the server if idle power matters.
+- **Polling**: intervals are server-driven and clamped to 3..60 s (30 s initial runtime default);
+  agree on relaxed intervals with the server if idle power matters.
 
 When `MYBOT_WAKE_WORDS=ON`, the platform local-ASR implementation runs on the capture MPQ and must be
 power-aware (it is the natural place to keep only the microphone path alive while idle).

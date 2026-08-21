@@ -59,6 +59,7 @@ static mybot_device_lifecycle_callbacks_t s_device_callbacks;
 static mybot_device_state_t s_device_state = MYBOT_DEVICE_STATE_RUNTIME;
 static bool s_device_start_requested;
 static bool s_device_network_available = true;
+static bool s_announce_active;
 
 static mybot_rtc_session_callbacks_t s_rtc_callbacks;
 static bool s_rtc_initialized;
@@ -265,7 +266,10 @@ void mybot_announce_stop(void) {
 }
 
 bool mybot_announce_is_active(void) {
-    return false;
+    mock_lock();
+    bool active = s_announce_active;
+    mock_unlock();
+    return active;
 }
 
 int mybot_announce_read_pcm(int16_t *dst, int max_frames) {
@@ -741,6 +745,18 @@ int main(void) {
     for (int i = 0; i < TEST_FRAME_SAMPLES; i++) {
         reference_frame[i] = TEST_REF_SAMPLE;
     }
+
+    mock_lock();
+    s_announce_active = true;
+    mock_unlock();
+    int playback_writes_before_announcement = read_counter(&s_playback_write_calls);
+    emit_remote_audio(reference_frame, sizeof(reference_frame));
+    aosl_hal_msleep(100);
+    assert(read_counter(&s_playback_write_calls) == playback_writes_before_announcement);
+
+    mock_lock();
+    s_announce_active = false;
+    mock_unlock();
     emit_remote_audio(reference_frame, sizeof(reference_frame));
     assert(wait_for_counter(&s_playback_write_calls, 1, 1000));
     assert(wait_for_audio_frame(TEST_REF_SAMPLE, 2000));

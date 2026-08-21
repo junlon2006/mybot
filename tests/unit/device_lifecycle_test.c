@@ -7,6 +7,7 @@
 #include <api/aosl.h>
 
 #include <assert.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -22,7 +23,9 @@ static char s_binding_status[16];
 static char s_binding_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
 static int s_pair_result;
 static int s_pair_call_count;
+static int s_pair_poll_after_seconds = 3;
 static int s_start_result;
+static int s_binding_poll_after_seconds = 1;
 static bool s_start_missing_conversation_id;
 static bool s_disconnect_during_start;
 static int s_start_call_count;
@@ -105,7 +108,7 @@ int mybot_device_client_create_pair_code(const char *base_url, const char *devic
     memset(resp, 0, sizeof(*resp));
     strcpy(resp->code, "123456");
     strcpy(resp->pair_token, "pair-token");
-    resp->poll_after_seconds = 3;
+    resp->poll_after_seconds = s_pair_poll_after_seconds;
     return 0;
 }
 
@@ -118,7 +121,7 @@ int mybot_device_client_get_binding_status(const char *base_url, const char *dev
     memset(resp, 0, sizeof(*resp));
     snprintf(resp->status, sizeof(resp->status), "%s", s_binding_status);
     snprintf(resp->device_token, sizeof(resp->device_token), "%s", s_binding_token);
-    resp->poll_after_seconds = 1;
+    resp->poll_after_seconds = s_binding_poll_after_seconds;
     return s_binding_result;
 }
 
@@ -236,6 +239,32 @@ int main(void) {
     assert(s_pair_call_count == pair_calls_before_failed + 1);
     assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
 
+    /* Server hints below the supported range are clamped to three seconds. */
+    s_pair_poll_after_seconds = 0;
+    strcpy(s_binding_status, "pending");
+    int binding_calls_before_min_poll = s_binding_call_count;
+    begin_pairing();
+    tick_many(29);
+    assert(s_binding_call_count == binding_calls_before_min_poll);
+    mybot_device_lifecycle_tick();
+    assert(s_binding_call_count == binding_calls_before_min_poll + 1);
+    tick_many(29);
+    assert(s_binding_call_count == binding_calls_before_min_poll + 1);
+    mybot_device_lifecycle_tick();
+    assert(s_binding_call_count == binding_calls_before_min_poll + 2);
+    s_pair_poll_after_seconds = 3;
+
+    /* Large server hints are capped at one minute instead of overflowing the
+     * 100 ms tick conversion or causing a request on every tick. */
+    s_pair_poll_after_seconds = INT_MAX;
+    int binding_calls_before_max_poll = s_binding_call_count;
+    begin_pairing();
+    tick_many(599);
+    assert(s_binding_call_count == binding_calls_before_max_poll);
+    mybot_device_lifecycle_tick();
+    assert(s_binding_call_count == binding_calls_before_max_poll + 1);
+    s_pair_poll_after_seconds = 3;
+
     strcpy(s_binding_status, "bound");
     strcpy(s_binding_token, "device-token");
     begin_pairing();
@@ -247,6 +276,25 @@ int main(void) {
     assert(mybot_device_lifecycle_init("http://server", "device-1", NULL, NULL, NULL) == 0);
     assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_RUNTIME);
     assert(strcmp(mybot_device_lifecycle_get_token(), "device-token") == 0);
+
+    s_binding_poll_after_seconds = INT_MAX;
+    int runtime_binding_calls_before_max_poll = s_binding_call_count;
+    tick_many(299);
+    assert(s_binding_call_count == runtime_binding_calls_before_max_poll);
+    mybot_device_lifecycle_tick();
+    assert(s_binding_call_count == runtime_binding_calls_before_max_poll + 1);
+    assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_RUNTIME);
+
+    int runtime_binding_calls_after_max_poll = s_binding_call_count;
+    tick_many(599);
+    assert(s_binding_call_count == runtime_binding_calls_after_max_poll);
+    mybot_device_lifecycle_tick();
+    assert(s_binding_call_count == runtime_binding_calls_after_max_poll + 1);
+    s_binding_poll_after_seconds = 1;
+
+    /* Reinitialization restores the default runtime interval for the next
+     * scenario. */
+    assert(mybot_device_lifecycle_init("http://server", "device-1", NULL, NULL, NULL) == 0);
 
     s_binding_result = 401;
     tick_many(300);
@@ -399,7 +447,7 @@ int main(void) {
     assert(s_conversation_stop_count == conversation_stop_callbacks);
 
     strcpy(s_binding_status, "unbound");
-    tick_many(10);
+    tick_many(30);
     assert(s_binding_call_count == conversation_binding_calls + 2);
     assert(mybot_device_lifecycle_get_state() == MYBOT_DEVICE_STATE_UNPROVISIONED);
     assert(s_conversation_stop_count == conversation_stop_callbacks + 1);
