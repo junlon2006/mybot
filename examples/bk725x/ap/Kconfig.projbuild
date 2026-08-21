@@ -1,0 +1,10 @@
+menu "mybot Configuration"
+    config LDO3V3_ENABLE
+        bool "Enabel LDO_3V3"
+        default n
+
+    config HARDWARE_SPEAKER_VER
+        int "select HARDWARE_SPEAKER_VER"
+        range 0 8
+        default 0
+endmenu

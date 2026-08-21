@@ -6,6 +6,9 @@ This project follows Semantic Versioning.
 
 ### Added
 
+- Add the BK725x platform port under `platforms/bk725x` and synchronize the complete BK7258
+  reference project under `examples/bk725x`, with the full firmware implementation maintained at
+  <https://github.com/junlon2006/mybot-bk7258>.
 - Add `MYBOT_STATE_IN_CONVERSATION = 7` to the public `mybot_state_t` enum. After the device service
   accepts a conversation, `mybot_get_state()` reports this state until normal teardown returns to
   `MYBOT_STATE_READY`; `MYBOT_STATE_WIFI_DISCONNECTED` takes precedence during runtime connectivity
@@ -13,6 +16,8 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- Limit host clang-format checks to the SDK core, Linux platform, Linux example, and tests; BK725x
+  Armino sources are validated by the BK firmware build environment instead.
 - Update the AOSL lifecycle integration for the reference-counted `aosl_ctor()` / `aosl_dtor()`
   API: mybot and Agora RTC now hold independent runtime references, and mybot releases its
   application reference only after RTC callbacks, workers and buffers have been torn down.

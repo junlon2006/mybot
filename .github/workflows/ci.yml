@@ -45,7 +45,7 @@ jobs:
       - name: Format check
         if: matrix.name == 'gcc-asan'
         run: |
-          find include src platforms examples tests -type f \
+          find include src platforms/linux examples/linux tests -type f \
             \( -name '*.c' -o -name '*.h' \) \
             -exec clang-format --dry-run --Werror {} +
       - name: Static analysis (cppcheck)
