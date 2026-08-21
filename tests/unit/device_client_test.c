@@ -7,6 +7,7 @@
 #include <api/aosl.h>
 
 #include <assert.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,6 +49,9 @@ static const char s_missing_renew_token_response_body[] =
     "{\"data\":{\"rtc\":{\"app_id\":\"app-1\",\"channel\":\"channel-1\","
     "\"uid\":\"device-uid\"}}}";
 
+static const char s_large_binding_poll_response_body[] =
+    "{\"data\":{\"status\":\"bound\",\"poll_after_seconds\":9223372036854775807}}";
+
 static int mock_http_response(mybot_http_client_response_t *resp) {
     assert(s_response_body != NULL);
     size_t response_len = strlen(s_response_body);
@@ -79,9 +83,8 @@ int mybot_http_client_get_ex(const char *url, const char *extra_headers,
                              mybot_http_client_response_t *resp) {
     (void)url;
     (void)extra_headers;
-    (void)resp;
     s_get_ex_call_count++;
-    return -1;
+    return mock_http_response(resp);
 }
 
 int mybot_http_client_post_ex(const char *url, const char *content_type, const char *body,
@@ -185,6 +188,11 @@ int main(void) {
     assert(mybot_device_client_get_binding_status("http://server", "device-1",
                                                   "Pair token\nX-Injected: yes", &binding) < 0);
     assert(s_get_ex_call_count == 0);
+
+    s_response_body = s_large_binding_poll_response_body;
+    assert(mybot_device_client_get_binding_status("http://server", "device-1", "Pair token",
+                                                  &binding) == 0);
+    assert(binding.poll_after_seconds == INT_MAX);
 
     s_response_body = s_missing_id_response_body;
     assert(mybot_device_client_start_conversation("http://server", "device-1", "token", NULL,

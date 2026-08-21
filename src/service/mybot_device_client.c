@@ -6,6 +6,7 @@
 
 #include <api/aosl_log.h>
 
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -95,7 +96,13 @@ static int copy_required_json_string(const mybot_json_t *object, const char *nam
 static void copy_json_integer(const mybot_json_t *object, const char *name, int *destination) {
     int64_t value;
     if (mybot_json_get_integer(mybot_json_get_object_item(object, name), &value)) {
-        *destination = (int)value;
+        if (value > INT_MAX) {
+            *destination = INT_MAX;
+        } else if (value < INT_MIN) {
+            *destination = INT_MIN;
+        } else {
+            *destination = (int)value;
+        }
     }
 }
 
