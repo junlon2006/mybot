@@ -31,6 +31,8 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
+- Drop RTC downlink audio while a pairing announcement is active, preserving the playback ring
+  buffer's single-producer/single-consumer access and giving announcements priority.
 - Remove the HTTP response parser's POSIX `strncasecmp()` dependency by using
   an ASCII-only case-insensitive comparison, preserving mixed-case header support on non-POSIX platforms.
 
