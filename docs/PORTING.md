@@ -130,6 +130,13 @@ real hardware volume when a device volume implementation is active, otherwise th
 gain; emitting volume events is optional. Events may be asynchronous. Destroy must stop the
 source and wait for all handlers. Register with `mybot_key_register()`.
 
+For a single hardware toggle button, query the thread-safe `mybot_get_state()` when handling the
+button: emit `MYBOT_KEY_EVENT_CONVERSATION_START` only from `MYBOT_STATE_READY`, and emit
+`MYBOT_KEY_EVENT_CONVERSATION_STOP` only from `MYBOT_STATE_IN_CONVERSATION`. Ignore the toggle in
+provisioning, startup, disconnected, failed, and stopping states. Do not infer conversation state
+from the LCD or maintain a second platform-side state; runtime connectivity loss is reported as
+`MYBOT_STATE_WIFI_DISCONNECTED` and the SDK ends the conversation locally.
+
 ### LCD (optional)
 
 Implement `mybot_lcd_ops_t` when a display exists. Render receives semantic content and can be
@@ -231,6 +238,13 @@ and the RTC callback queue have been torn down. `agora_rtc_init()` / `agora_rtc_
 separate SDK reference. A host that uses AOSL directly must pair its own `aosl_ctor()` and
 `aosl_dtor()` calls and keep that reference until all of its AOSL users have stopped.
 
+`mybot_get_state()` is the thread-safe application-level state query. It reports
+`MYBOT_STATE_IN_CONVERSATION` after the device service accepts a conversation and returns to
+`MYBOT_STATE_READY` after normal teardown. If runtime connectivity is lost,
+`MYBOT_STATE_WIFI_DISCONNECTED` takes precedence until reconnect. The device-service lifecycle
+states (`unprovisioned`, `pairing`, `awaiting_claim`, `runtime`, and `in_conversation`) are an
+internal state machine and must not be reconstructed by the platform.
+
 ## Step 7: Cross-compile
 
 ```bash
@@ -254,6 +268,9 @@ Verify endianness, pointer width, libc, compiler and floating-point ABI against 
 - Short I/O makes progress and stop unblocks device loss.
 - No key or wake-word callback runs after destroy returns; LCD does not retain borrowed content.
 - Partial startup failure and repeated start/stop release all resources.
+- `mybot_get_state()` reports `READY -> IN_CONVERSATION -> READY` for a normal conversation;
+  a conversation interrupted by Wi-Fi loss reports `WIFI_DISCONNECTED` and returns to `READY` after
+  reconnect, without deadlock during stop or re-pair.
 - A real device completes provisioning, pairing, RTC join, bidirectional audio, hangup and reboot.
 - Logs and storage do not expose tokens.
 

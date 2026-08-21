@@ -43,8 +43,12 @@ RTOS, or a bare-metal MCU.
 - **APSTA provisioning**: Non-blocking startup; Wi-Fi events drive the application state machine.
 - **Pairing and authentication**: Pair code → device claim → persisted long-lived credential, with
   automatic re-pairing when authentication is rejected.
-- **Conversation state machine**: Five states — `unprovisioned / pairing / awaiting_claim / runtime
-  / in_conversation` — drive the device-server interaction.
+- **Conversation state machine**: Five device-service lifecycle states — `unprovisioned / pairing /
+  awaiting_claim / runtime / in_conversation` — drive the device-server interaction.
+- **Application lifecycle state**: `mybot_get_state()` exposes startup, connectivity, shutdown, and
+  conversation state. After the device service accepts a conversation it returns
+  `MYBOT_STATE_IN_CONVERSATION`; normal teardown returns to `MYBOT_STATE_READY`, while
+  `MYBOT_STATE_WIFI_DISCONNECTED` takes precedence when connectivity is lost.
 - **Full-duplex voice · barge-in**: Uplink and downlink run simultaneously; the user can interrupt
   the AI mid-reply at any time, and the microphone keeps streaming so the cloud agent hears and
   responds to new input.
@@ -308,8 +312,10 @@ Layer notes:
 
 - **Public API** ([include/mybot/mybot.h](include/mybot/mybot.h)): application lifecycle and
   state queries (`mybot_start` / `mybot_is_running` / `mybot_get_state` / `mybot_request_exit` /
-  `mybot_stop`); non-blocking startup. Conversation and pairing actions are triggered by platform
-  key / wake-word events and handled inside the SDK core.
+  `mybot_stop`); non-blocking startup. Use `mybot_get_state()` for key or UI decisions:
+  `MYBOT_STATE_READY` can start a conversation and `MYBOT_STATE_IN_CONVERSATION` can stop one.
+  LCD output is only a rendering result, not a source of lifecycle state. Conversation and pairing
+  actions are triggered by platform key / wake-word events and handled inside the SDK core.
 - **SDK core** ([src/](src/)): startup orchestration, the device state machine, the device-service
   HTTP client, the Agora RTSA session wrapper, audio ring buffers, and the optional local
   wake-word engine. Core code never touches any OS or peripheral API directly.

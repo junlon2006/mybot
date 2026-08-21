@@ -532,20 +532,12 @@ static void dev_on_conversation_stop(void) {
     AOSL_LOG_NTC("==== CONVERSATION ENDED ====");
 }
 
-static void dev_on_state_changed(mybot_device_state_t state) {
+static void render_device_state(mybot_device_state_t state) {
     mybot_state_t app_state = mybot_get_state();
-    if (app_state == MYBOT_STATE_STOPPING || app_state == MYBOT_STATE_FAILED ||
-        app_state == MYBOT_STATE_WIFI_DISCONNECTED) {
+    if ((state == MYBOT_DEVICE_STATE_IN_CONVERSATION &&
+         app_state != MYBOT_STATE_IN_CONVERSATION) ||
+        (state != MYBOT_DEVICE_STATE_IN_CONVERSATION && app_state != MYBOT_STATE_READY)) {
         return;
-    }
-
-    /* Stop the pairing-code voice announcement once the device leaves
-     * awaiting_claim (claimed, re-pairing, or offline transitions). The
-     * playback thread drops any still-buffered announcement tail so a
-     * claim/conversation does not start with stale audio. */
-    if (state != MYBOT_DEVICE_STATE_AWAITING_CLAIM) {
-        mybot_announce_stop();
-        aosl_atomic_set(&s_app.announce_clear_pb, true);
     }
 
     switch (state) {
@@ -563,6 +555,31 @@ static void dev_on_state_changed(mybot_device_state_t state) {
         lcd_show_screen(MYBOT_LCD_SCREEN_IN_CONVERSATION);
         break;
     }
+}
+
+static void dev_on_state_changed(mybot_device_state_t state) {
+    mybot_state_t expected_state = state == MYBOT_DEVICE_STATE_IN_CONVERSATION
+                                       ? MYBOT_STATE_READY
+                                       : MYBOT_STATE_IN_CONVERSATION;
+    mybot_state_t next_state = state == MYBOT_DEVICE_STATE_IN_CONVERSATION
+                                   ? MYBOT_STATE_IN_CONVERSATION
+                                   : MYBOT_STATE_READY;
+    mybot_state_t previous_state =
+        (mybot_state_t)aosl_atomic_cmpxchg(&s_app.state, expected_state, next_state);
+    if (previous_state != expected_state && previous_state != next_state) {
+        return;
+    }
+
+    /* Stop the pairing-code voice announcement once the device leaves
+     * awaiting_claim (claimed, re-pairing, or offline transitions). The
+     * playback thread drops any still-buffered announcement tail so a
+     * claim/conversation does not start with stale audio. */
+    if (state != MYBOT_DEVICE_STATE_AWAITING_CLAIM) {
+        mybot_announce_stop();
+        aosl_atomic_set(&s_app.announce_clear_pb, true);
+    }
+
+    render_device_state(state);
 }
 
 static void key_adjust_volume(int delta) {
@@ -987,7 +1004,7 @@ static void handle_wifi_event(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
     }
 
     if (wifi_event == MYBOT_WIFI_EVENT_STA_DISCONNECTED) {
-        if (app_state == MYBOT_STATE_READY) {
+        if (app_state == MYBOT_STATE_READY || app_state == MYBOT_STATE_IN_CONVERSATION) {
             mybot_device_lifecycle_set_network_available(false);
             aosl_atomic_set(&s_app.state, MYBOT_STATE_WIFI_DISCONNECTED);
             AOSL_LOG_WRN("Wi-Fi disconnected; pausing device-service activity");
@@ -1014,7 +1031,7 @@ static void handle_wifi_event(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
         mybot_device_lifecycle_set_network_available(true);
         aosl_atomic_set(&s_app.state, MYBOT_STATE_READY);
         AOSL_LOG_NTC("Wi-Fi reconnected; resuming device-service activity");
-        dev_on_state_changed(mybot_device_lifecycle_get_state());
+        render_device_state(mybot_device_lifecycle_get_state());
         return;
     }
 
@@ -1036,7 +1053,7 @@ static void handle_wifi_event(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
 
     if (aosl_atomic_cmpxchg(&s_app.state, MYBOT_STATE_STARTING_SERVICES, MYBOT_STATE_READY) ==
         MYBOT_STATE_STARTING_SERVICES) {
-        dev_on_state_changed(mybot_device_lifecycle_get_state());
+        render_device_state(mybot_device_lifecycle_get_state());
     }
 }
 
@@ -1174,14 +1191,15 @@ void mybot_app_start_conversation(void) {
 }
 
 void mybot_app_stop_conversation(void) {
-    if (mybot_get_state() != MYBOT_STATE_READY) {
+    if (mybot_get_state() != MYBOT_STATE_IN_CONVERSATION) {
         return;
     }
     mybot_device_lifecycle_request_stop();
 }
 
 void mybot_app_pair(void) {
-    if (mybot_get_state() != MYBOT_STATE_READY) {
+    mybot_state_t state = mybot_get_state();
+    if (state != MYBOT_STATE_READY && state != MYBOT_STATE_IN_CONVERSATION) {
         return;
     }
     mybot_device_lifecycle_request_pair();
