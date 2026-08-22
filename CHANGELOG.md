@@ -18,9 +18,10 @@ This project follows Semantic Versioning.
 
 - Limit host clang-format and clang-tidy checks to the SDK core, Linux platform, Linux example, and
   tests; BK725x Armino sources are validated by the BK firmware build environment instead.
-- Update the AOSL lifecycle integration for the reference-counted `aosl_ctor()` / `aosl_dtor()`
-  API: mybot and Agora RTC now hold independent runtime references, and mybot releases its
-  application reference only after RTC callbacks, workers and buffers have been torn down.
+- Update the pinned AOSL submodule to upstream commit `84e0860`, which adds reference-counted
+  `aosl_ctor()` / `aosl_dtor()` lifecycle management. mybot and Agora RTC now hold independent
+  runtime references, and mybot releases its application reference only after RTC callbacks,
+  workers and buffers have been torn down.
 - Promote application informational logs to the AOSL NOTICE level, set the Linux example's
   runtime log threshold accordingly, and initialize the Agora RTSA SDK at its default NOTICE
   threshold, keeping application lifecycle messages visible while suppressing lower-priority
