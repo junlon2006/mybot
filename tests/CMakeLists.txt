@@ -57,6 +57,13 @@ mybot_add_test(mybot_key_service_test unit/key_service_test.c ../src/platform/my
 mybot_add_test(mybot_lcd_test unit/lcd_test.c ../src/platform/mybot_lcd.c)
 target_link_libraries(mybot_lcd_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
+mybot_add_test(mybot_presenter_test
+    unit/presenter_test.c
+    ../src/core/mybot_presenter.c
+    ../src/platform/mybot_lcd.c
+)
+target_link_libraries(mybot_presenter_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
+
 mybot_add_test(mybot_wifi_test
     unit/wifi_provisioning_test.c
     ../src/platform/mybot_wifi.c
@@ -83,6 +90,9 @@ target_link_libraries(mybot_rtc_session_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LI
 mybot_add_test(mybot_app_test
     unit/app_test.c
     ../src/core/mybot_app.c
+    ../src/core/mybot_presenter.c
+    ../src/media/mybot_media_pipeline.c
+    ../src/rtc/mybot_conversation.c
     ../src/support/mybot_ringbuf.c
 )
 target_compile_definitions(mybot_app_test PRIVATE ${MYBOT_TEST_FEATURE_DEFINITIONS})

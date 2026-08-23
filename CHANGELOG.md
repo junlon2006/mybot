@@ -20,6 +20,8 @@ This project follows Semantic Versioning.
   and wake-word runtime state into caller-owned internal contexts. Public APIs retain the default
   process-wide compatibility facade, while active implementation state no longer lives in module
   globals.
+- Split `mybot_app.c` orchestration into dedicated media-pipeline, RTC-conversation, and LCD
+  presenter modules without changing the public API.
 - Limit host clang-format and clang-tidy checks to the SDK core, Linux platform, Linux example, and
   tests; BK725x Armino sources are validated by the BK firmware build environment instead.
 - Update the pinned AOSL submodule to upstream commit `84e0860`, which adds reference-counted
@@ -36,6 +38,8 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
+- Simplify device-service URL scheme validation into direct branches, eliminating a duplicate-condition
+  cppcheck warning across HTTPS and development HTTP build configurations.
 - Clamp server-provided device-service polling intervals to 3..60 seconds and saturate oversized JSON
   integers before conversion, preventing timer overflow and request storms.
 - Drop RTC downlink audio while a pairing announcement is active, preserving the playback ring
