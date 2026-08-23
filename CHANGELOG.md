@@ -38,6 +38,8 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
+- Simplify device-service URL scheme validation into direct branches, eliminating a duplicate-condition
+  cppcheck warning across HTTPS and development HTTP build configurations.
 - Clamp server-provided device-service polling intervals to 3..60 seconds and saturate oversized JSON
   integers before conversion, preventing timer overflow and request storms.
 - Drop RTC downlink audio while a pairing announcement is active, preserving the playback ring

@@ -374,23 +374,21 @@ static bool config_is_valid(const mybot_config_t *cfg) {
 }
 
 static bool server_scheme_is_supported(const char *server_base) {
-    bool use_https = strncmp(server_base, "https://", 8) == 0;
-    bool use_http = strncmp(server_base, "http://", 7) == 0;
+    if (strncmp(server_base, "https://", 8) == 0) {
 #if MYBOT_ENABLE_HTTPS
-    if (use_https && !mybot_https_is_registered()) {
-        return false;
-    }
+        return mybot_https_is_registered();
 #else
-    if (use_https) {
         return false;
-    }
 #endif
-#if !MYBOT_ALLOW_INSECURE_HTTP
-    if (use_http) {
+    }
+    if (strncmp(server_base, "http://", 7) == 0) {
+#if MYBOT_ALLOW_INSECURE_HTTP
+        return true;
+#else
         return false;
-    }
 #endif
-    return use_https || use_http;
+    }
+    return false;
 }
 
 int mybot_start(const mybot_config_t *cfg) {
