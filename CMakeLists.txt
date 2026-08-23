@@ -138,6 +138,7 @@ add_library(mybot_sdk STATIC
     src/core/mybot_app.c
     src/core/mybot_device_lifecycle.c
     src/core/mybot_presenter.c
+    src/core/mybot_state_model.c
     src/core/mybot_version.c
     src/media/mybot_audio.c
     src/media/mybot_media_pipeline.c

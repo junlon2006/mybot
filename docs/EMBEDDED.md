@@ -42,10 +42,10 @@ target-architecture package (the bundled archive is x86_64 Linux only).
 - Control-plane state (app, device lifecycle, RTC session) is statically allocated; there are no
   per-conversation heap allocations in the core besides the HTTP/JSON temporaries above.
 
-The public application state is read with the thread-safe `mybot_get_state()` API. After the device
-service accepts a conversation it reports `MYBOT_STATE_IN_CONVERSATION` until normal teardown returns
-to `MYBOT_STATE_READY`. `MYBOT_STATE_WIFI_DISCONNECTED` takes precedence during runtime connectivity
-loss; the device-service lifecycle state machine remains internal.
+The thread-safe application state model stores runtime phase, connectivity, and the device-lifecycle
+projection in one atomic snapshot. `mybot_get_state()` derives the public state from that snapshot:
+`MYBOT_STATE_WIFI_DISCONNECTED` takes precedence while offline, otherwise an accepted conversation
+reports `MYBOT_STATE_IN_CONVERSATION` until normal teardown returns to `MYBOT_STATE_READY`.
 
 ## Threads and stacks
 

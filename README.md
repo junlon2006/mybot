@@ -266,6 +266,8 @@ flowchart TB
 
     subgraph core["SDK core · src/"]
         app_c["mybot_app<br/>startup orchestration · event dispatch · threads"]
+        app_state["Application state model<br/>phase · connectivity · device projection"]
+        presenter["LCD presenter<br/>state projection · semantic screens"]
         state_m["Device state machine<br/>pairing · claim · conversation lifecycle"]
         svc_c["Device-service client<br/>pair / claim / conversation polling"]
         rtc_c["RTC session<br/>Agora RTSA wrapper"]
@@ -290,13 +292,18 @@ flowchart TB
 
     host_app --> api_h
     api_h --> app_c
+    api_h --> app_state
     app_c --> state_m
+    app_c --> app_state
+    state_m --> app_state
+    app_state --> presenter
     app_c --> media_c
     state_m --> svc_c
     svc_c --> rtc_c
     rtc_c <--> media_c
     app_c --> aosl
     app_c --> ops
+    presenter --> ops
     svc_c --> aosl
     rtc_c --> aosl
     media_c --> aosl
@@ -315,7 +322,9 @@ Layer notes:
   `mybot_stop`); non-blocking startup. Use `mybot_get_state()` for key or UI decisions:
   `MYBOT_STATE_READY` can start a conversation and `MYBOT_STATE_IN_CONVERSATION` can stop one.
   LCD output is only a rendering result, not a source of lifecycle state. Conversation and pairing
-  actions are triggered by platform key / wake-word events and handled inside the SDK core.
+  actions are triggered by platform key / wake-word events and handled inside the SDK core. Wi-Fi
+  and device-lifecycle events update one atomic state-model snapshot; `mybot_get_state()` and the LCD
+  presenter derive their views from that same snapshot.
 - **SDK core** ([src/](src/)): startup orchestration, the device state machine, the device-service
   HTTP client, the Agora RTSA session wrapper, audio ring buffers, and the optional local
   wake-word engine. Core code never touches any OS or peripheral API directly.

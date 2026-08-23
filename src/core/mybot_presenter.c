@@ -37,9 +37,11 @@ void mybot_presenter_show_pair_code(mybot_presenter_t *presenter, const char *co
     }
 }
 
-void mybot_presenter_render_device_state(mybot_presenter_t *presenter,
-                                         mybot_device_state_t device_state,
-                                         mybot_state_t app_state) {
+void mybot_presenter_render_state(mybot_presenter_t *presenter,
+                                  const mybot_state_model_t *state_model) {
+    mybot_state_view_t state = mybot_state_model_get_view(state_model);
+    mybot_device_state_t device_state = state.device_state;
+    mybot_state_t app_state = state.app_state;
     if ((device_state == MYBOT_DEVICE_STATE_IN_CONVERSATION &&
          app_state != MYBOT_STATE_IN_CONVERSATION) ||
         (device_state != MYBOT_DEVICE_STATE_IN_CONVERSATION && app_state != MYBOT_STATE_READY)) {

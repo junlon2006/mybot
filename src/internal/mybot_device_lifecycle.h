@@ -3,6 +3,7 @@
 #define MYBOT_DEVICE_LIFECYCLE_H_
 
 #include "mybot_device_client.h"
+#include "mybot_device_state.h"
 #include "mybot_kv_store_internal.h"
 
 #include <api/aosl_atomic.h>
@@ -13,17 +14,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/* ----------------------------------------------------------
- * Device lifecycle states
- * ---------------------------------------------------------- */
-typedef enum {
-    MYBOT_DEVICE_STATE_UNPROVISIONED,   /* no device_token, need pairing */
-    MYBOT_DEVICE_STATE_PAIRING,         /* requesting a pair code */
-    MYBOT_DEVICE_STATE_AWAITING_CLAIM,  /* waiting for the device to be claimed */
-    MYBOT_DEVICE_STATE_RUNTIME,         /* have device_token, idle */
-    MYBOT_DEVICE_STATE_IN_CONVERSATION, /* active RTC call */
-} mybot_device_state_t;
 
 /* Conversation parameters (from server response) */
 typedef struct {
