@@ -13,6 +13,8 @@
 #define MOCK_PROMPT_FRAMES 100
 #define MOCK_DIGIT_FRAMES 20
 
+static mybot_announce_t s_announce;
+
 static int16_t s_prompt[MOCK_PROMPT_FRAMES];
 static int16_t s_digits[10][MOCK_DIGIT_FRAMES];
 static bool s_digit_available[10];
@@ -111,7 +113,7 @@ static int read_all(int16_t *out, int max_frames) {
     int16_t chunk[64];
     while (total < max_frames) {
         int want = max_frames - total < 64 ? max_frames - total : 64;
-        int n = mybot_announce_read_pcm(chunk, want);
+        int n = mybot_announce_read_pcm(&s_announce, chunk, want);
         if (n == 0) {
             break;
         }
@@ -129,60 +131,60 @@ static void expect_value(const int16_t *buf, int start, int count, int16_t value
 
 static void test_not_registered(void) {
     assert(!mybot_announce_is_registered());
-    assert(mybot_announce_play_pair_code("42") == -1);
-    assert(!mybot_announce_is_active());
+    assert(mybot_announce_play_pair_code(&s_announce, "42") == -1);
+    assert(!mybot_announce_is_active(&s_announce));
     int16_t tmp[8];
-    assert(mybot_announce_read_pcm(tmp, 8) == 0);
+    assert(mybot_announce_read_pcm(&s_announce, tmp, 8) == 0);
 }
 
 static void test_prompt_then_digits(void) {
     assert(mybot_announce_register(&s_mock_ops) == 0);
-    assert(mybot_announce_init() == 0);
+    assert(mybot_announce_init(&s_announce) == 0);
 
-    assert(mybot_announce_play_pair_code("42") == 0);
+    assert(mybot_announce_play_pair_code(&s_announce, "42") == 0);
     int16_t buf[256];
     int total = read_all(buf, 256);
     assert(total == MOCK_PROMPT_FRAMES + 2 * MOCK_DIGIT_FRAMES);
     expect_value(buf, 0, MOCK_PROMPT_FRAMES, 1000);
     expect_value(buf, MOCK_PROMPT_FRAMES, MOCK_DIGIT_FRAMES, 1004);
     expect_value(buf, MOCK_PROMPT_FRAMES + MOCK_DIGIT_FRAMES, MOCK_DIGIT_FRAMES, 1002);
-    assert(!mybot_announce_is_active());
-    assert(mybot_announce_read_pcm(buf, 1) == 0);
+    assert(!mybot_announce_is_active(&s_announce));
+    assert(mybot_announce_read_pcm(&s_announce, buf, 1) == 0);
 }
 
 static void test_non_digit_and_empty_code(void) {
     /* Non-digits are skipped; only the prompt plays for an empty code. */
-    assert(mybot_announce_play_pair_code("4a2") == 0);
+    assert(mybot_announce_play_pair_code(&s_announce, "4a2") == 0);
     int16_t buf[256];
     assert(read_all(buf, 256) == MOCK_PROMPT_FRAMES + 2 * MOCK_DIGIT_FRAMES);
     expect_value(buf, MOCK_PROMPT_FRAMES, MOCK_DIGIT_FRAMES, 1004);
     expect_value(buf, MOCK_PROMPT_FRAMES + MOCK_DIGIT_FRAMES, MOCK_DIGIT_FRAMES, 1002);
 
-    assert(mybot_announce_play_pair_code("") == 0);
+    assert(mybot_announce_play_pair_code(&s_announce, "") == 0);
     assert(read_all(buf, 256) == MOCK_PROMPT_FRAMES);
 }
 
 static void test_stop_midway(void) {
-    assert(mybot_announce_play_pair_code("42") == 0);
+    assert(mybot_announce_play_pair_code(&s_announce, "42") == 0);
     int16_t buf[64];
-    assert(mybot_announce_read_pcm(buf, 50) == 50);
-    assert(mybot_announce_is_active());
-    mybot_announce_stop();
-    assert(!mybot_announce_is_active());
-    assert(mybot_announce_read_pcm(buf, 8) == 0);
+    assert(mybot_announce_read_pcm(&s_announce, buf, 50) == 50);
+    assert(mybot_announce_is_active(&s_announce));
+    mybot_announce_stop(&s_announce);
+    assert(!mybot_announce_is_active(&s_announce));
+    assert(mybot_announce_read_pcm(&s_announce, buf, 8) == 0);
 
     /* The implementation stays usable after a stop. */
-    assert(mybot_announce_play_pair_code("1") == 0);
+    assert(mybot_announce_play_pair_code(&s_announce, "1") == 0);
     int16_t buf2[256];
     assert(read_all(buf2, 256) == MOCK_PROMPT_FRAMES + MOCK_DIGIT_FRAMES);
     expect_value(buf2, MOCK_PROMPT_FRAMES, MOCK_DIGIT_FRAMES, 1001);
 }
 
 static void test_replay_replaces(void) {
-    assert(mybot_announce_play_pair_code("42") == 0);
+    assert(mybot_announce_play_pair_code(&s_announce, "42") == 0);
     int16_t tmp[16];
-    assert(mybot_announce_read_pcm(tmp, 10) == 10);
-    assert(mybot_announce_play_pair_code("7") == 0);
+    assert(mybot_announce_read_pcm(&s_announce, tmp, 10) == 10);
+    assert(mybot_announce_play_pair_code(&s_announce, "7") == 0);
 
     int16_t buf[256];
     assert(read_all(buf, 256) == MOCK_PROMPT_FRAMES + MOCK_DIGIT_FRAMES);
@@ -192,13 +194,13 @@ static void test_replay_replaces(void) {
 
 static void test_missing_sounds(void) {
     s_prompt_available = false;
-    assert(mybot_announce_play_pair_code("42") == -1);
-    assert(!mybot_announce_is_active());
+    assert(mybot_announce_play_pair_code(&s_announce, "42") == -1);
+    assert(!mybot_announce_is_active(&s_announce));
     s_prompt_available = true;
 
     /* A missing digit is skipped; the remaining digits still play. */
     s_digit_available[2] = false;
-    assert(mybot_announce_play_pair_code("42") == 0);
+    assert(mybot_announce_play_pair_code(&s_announce, "42") == 0);
     int16_t buf[256];
     assert(read_all(buf, 256) == MOCK_PROMPT_FRAMES + MOCK_DIGIT_FRAMES);
     expect_value(buf, MOCK_PROMPT_FRAMES, MOCK_DIGIT_FRAMES, 1004);
@@ -208,7 +210,7 @@ static void test_missing_sounds(void) {
 static void test_long_code_truncated(void) {
     /* 17 digits exceed the 16-digit queue cap; trailing digits are dropped
      * with a warning and the first 16 still play. */
-    assert(mybot_announce_play_pair_code("01234567890123456") == 0);
+    assert(mybot_announce_play_pair_code(&s_announce, "01234567890123456") == 0);
     int16_t buf[512];
     assert(read_all(buf, 512) == MOCK_PROMPT_FRAMES + 16 * MOCK_DIGIT_FRAMES);
     expect_value(buf, MOCK_PROMPT_FRAMES + 15 * MOCK_DIGIT_FRAMES, MOCK_DIGIT_FRAMES, 1005);
@@ -226,7 +228,7 @@ int main(void) {
     test_missing_sounds();
     test_long_code_truncated();
 
-    mybot_announce_deinit();
+    mybot_announce_deinit(&s_announce);
     aosl_dtor();
     printf("announce_test: all tests passed\n");
     return 0;

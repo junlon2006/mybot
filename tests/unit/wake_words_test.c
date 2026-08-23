@@ -69,6 +69,7 @@ static void on_wake_word(const char *wake_word, void *user_data) {
 }
 
 int main(void) {
+    mybot_wake_words_t wake_words = {0};
     const mybot_wake_words_ops_t incomplete_ops = {0};
     const mybot_wake_words_ops_t fake_ops = {
         .name = "fake",
@@ -81,30 +82,30 @@ int main(void) {
     assert(!mybot_wake_words_is_registered());
     assert(mybot_wake_words_register(NULL) < 0);
     assert(mybot_wake_words_register(&incomplete_ops) < 0);
-    assert(mybot_wake_words_process(pcm, 960) < 0);
-    assert(mybot_wake_words_init(16000, 1, 16, on_wake_word, &s_handler_count) < 0);
+    assert(mybot_wake_words_process(&wake_words, pcm, 960) < 0);
+    assert(mybot_wake_words_init(&wake_words, 16000, 1, 16, on_wake_word, &s_handler_count) < 0);
 
     assert(mybot_wake_words_register(&fake_ops) == 0);
     assert(mybot_wake_words_is_registered());
-    assert(mybot_wake_words_init(0, 1, 16, on_wake_word, &s_handler_count) < 0);
-    assert(mybot_wake_words_init(16000, 0, 16, on_wake_word, &s_handler_count) < 0);
-    assert(mybot_wake_words_init(16000, 1, 0, on_wake_word, &s_handler_count) < 0);
-    assert(mybot_wake_words_init(16000, 1, 16, NULL, NULL) < 0);
+    assert(mybot_wake_words_init(&wake_words, 0, 1, 16, on_wake_word, &s_handler_count) < 0);
+    assert(mybot_wake_words_init(&wake_words, 16000, 0, 16, on_wake_word, &s_handler_count) < 0);
+    assert(mybot_wake_words_init(&wake_words, 16000, 1, 0, on_wake_word, &s_handler_count) < 0);
+    assert(mybot_wake_words_init(&wake_words, 16000, 1, 16, NULL, NULL) < 0);
 
     s_init_fails = true;
-    assert(mybot_wake_words_init(16000, 1, 16, on_wake_word, &s_handler_count) < 0);
+    assert(mybot_wake_words_init(&wake_words, 16000, 1, 16, on_wake_word, &s_handler_count) < 0);
     s_init_fails = false;
-    assert(mybot_wake_words_init(16000, 1, 16, on_wake_word, &s_handler_count) == 0);
+    assert(mybot_wake_words_init(&wake_words, 16000, 1, 16, on_wake_word, &s_handler_count) == 0);
     assert(s_init_count == 2);
-    assert(mybot_wake_words_init(16000, 1, 16, on_wake_word, &s_handler_count) < 0);
+    assert(mybot_wake_words_init(&wake_words, 16000, 1, 16, on_wake_word, &s_handler_count) < 0);
     assert(mybot_wake_words_register(&fake_ops) < 0);
 
-    assert(mybot_wake_words_process(NULL, 960) < 0);
-    assert(mybot_wake_words_process(pcm, 0) < 0);
-    assert(mybot_wake_words_process(pcm, -1) < 0);
+    assert(mybot_wake_words_process(&wake_words, NULL, 960) < 0);
+    assert(mybot_wake_words_process(&wake_words, pcm, 0) < 0);
+    assert(mybot_wake_words_process(&wake_words, pcm, -1) < 0);
 
     s_emit_detection = true;
-    assert(mybot_wake_words_process(pcm, 960) == 0);
+    assert(mybot_wake_words_process(&wake_words, pcm, 960) == 0);
     assert(s_process_count == 1);
     assert(s_last_pcm == pcm);
     assert(s_last_frames == 960);
@@ -113,14 +114,14 @@ int main(void) {
 
     s_emit_detection = false;
     s_process_result = -7;
-    assert(mybot_wake_words_process(pcm, 320) == -7);
+    assert(mybot_wake_words_process(&wake_words, pcm, 320) == -7);
     assert(s_process_count == 2);
     assert(s_last_frames == 320);
 
-    mybot_wake_words_deinit();
-    mybot_wake_words_deinit();
+    mybot_wake_words_deinit(&wake_words);
+    mybot_wake_words_deinit(&wake_words);
     assert(s_destroy_count == 1);
     assert(s_fake.handler == NULL);
-    assert(mybot_wake_words_process(pcm, 960) < 0);
+    assert(mybot_wake_words_process(&wake_words, pcm, 960) < 0);
     return 0;
 }

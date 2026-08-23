@@ -16,7 +16,8 @@
 #define PROMPT_FRAMES 200
 #define DIGIT_FRAMES 30
 
-static char s_base_dir[512];    /* /tmp/mybot_announce_file_test_<pid> */
+static char s_base_dir[512]; /* /tmp/mybot_announce_file_test_<pid> */
+static mybot_announce_t s_announce;
 static char s_assets_dir[640];  /* .../assets */
 static char s_locales_dir[768]; /* .../assets/locales */
 static char s_locale_dir[896];  /* .../assets/locales/zh-CN */
@@ -33,7 +34,7 @@ static int read_all(int16_t *out, int max_frames) {
     int16_t chunk[64];
     while (total < max_frames) {
         int want = max_frames - total < 64 ? max_frames - total : 64;
-        int n = mybot_announce_read_pcm(chunk, want);
+        int n = mybot_announce_read_pcm(&s_announce, chunk, want);
         if (n == 0) {
             break;
         }
@@ -73,10 +74,10 @@ int main(void) {
     aosl_ctor();
     assert(linux_announce_platform_register() == 0);
     assert(mybot_announce_is_registered());
-    assert(mybot_announce_init() == 0);
+    assert(mybot_announce_init(&s_announce) == 0);
 
     /* Prompt then digit 5, in order. */
-    assert(mybot_announce_play_pair_code("5") == 0);
+    assert(mybot_announce_play_pair_code(&s_announce, "5") == 0);
     int16_t buf[256];
     assert(read_all(buf, 256) == PROMPT_FRAMES + DIGIT_FRAMES);
     for (int i = 0; i < PROMPT_FRAMES; i++) {
@@ -87,7 +88,7 @@ int main(void) {
     }
 
     /* A missing digit file is skipped; the prompt still plays. */
-    assert(mybot_announce_play_pair_code("9") == 0);
+    assert(mybot_announce_play_pair_code(&s_announce, "9") == 0);
     assert(read_all(buf, 256) == PROMPT_FRAMES);
     assert(buf[0] == prompt[0]);
     assert(buf[PROMPT_FRAMES - 1] == prompt[PROMPT_FRAMES - 1]);
@@ -95,10 +96,10 @@ int main(void) {
     /* A missing prompt aborts the whole announcement. */
     snprintf(path, sizeof(path), "%s/prompt.pcm", s_locale_dir);
     assert(remove(path) == 0);
-    assert(mybot_announce_play_pair_code("5") == -1);
-    assert(!mybot_announce_is_active());
+    assert(mybot_announce_play_pair_code(&s_announce, "5") == -1);
+    assert(!mybot_announce_is_active(&s_announce));
 
-    mybot_announce_deinit();
+    mybot_announce_deinit(&s_announce);
     aosl_dtor();
 
     unsetenv("MYBOT_ASSETS_DIR");

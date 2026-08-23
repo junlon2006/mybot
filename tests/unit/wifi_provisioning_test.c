@@ -70,6 +70,7 @@ static void on_event(mybot_wifi_event_t event, void *user_data) {
 }
 
 int main(void) {
+    mybot_wifi_t wifi = {0};
     const mybot_wifi_ops_t incomplete_ops = {0};
     const mybot_wifi_ops_t fake_ops = {
         .name = "fake",
@@ -81,11 +82,11 @@ int main(void) {
     assert(mybot_wifi_register(NULL) < 0);
     assert(mybot_wifi_register(&incomplete_ops) < 0);
     assert(mybot_wifi_register(&fake_ops) == 0);
-    assert(mybot_wifi_init(NULL, on_event, &s_event_count) < 0);
-    assert(mybot_wifi_init("device-001", NULL, &s_event_count) < 0);
+    assert(mybot_wifi_init(&wifi, NULL, on_event, &s_event_count) < 0);
+    assert(mybot_wifi_init(&wifi, "device-001", NULL, &s_event_count) < 0);
 
     s_initial_event = MYBOT_WIFI_EVENT_STA_CONNECTED;
-    assert(mybot_wifi_init("device-001", on_event, &s_event_count) == 0);
+    assert(mybot_wifi_init(&wifi, "device-001", on_event, &s_event_count) == 0);
     assert(s_init_count == 1);
     assert(aosl_atomic_read(&s_event_count) == 1);
     assert(aosl_atomic_read(&s_last_event) == MYBOT_WIFI_EVENT_STA_CONNECTED);
@@ -98,14 +99,14 @@ int main(void) {
     assert(aosl_atomic_read(&s_event_count) == 3);
     assert(aosl_atomic_read(&s_last_event) == MYBOT_WIFI_EVENT_STA_CONNECTED);
 
-    mybot_wifi_deinit();
-    mybot_wifi_deinit();
+    mybot_wifi_deinit(&wifi);
+    mybot_wifi_deinit(&wifi);
     assert(s_destroy_count == 1);
 
     s_initial_event = MYBOT_WIFI_EVENT_FAILED;
     s_emit_async = true;
     intptr_t previous_event_count = aosl_atomic_read(&s_event_count);
-    assert(mybot_wifi_init("device-001", on_event, &s_event_count) == 0);
+    assert(mybot_wifi_init(&wifi, "device-001", on_event, &s_event_count) == 0);
     assert(s_init_count == 2);
 
     for (int i = 0; i < 1000 && aosl_atomic_read(&s_event_count) == previous_event_count; ++i) {
@@ -114,7 +115,7 @@ int main(void) {
     assert(aosl_atomic_read(&s_event_count) == previous_event_count + 1);
     assert(aosl_atomic_read(&s_last_event) == MYBOT_WIFI_EVENT_FAILED);
 
-    mybot_wifi_deinit();
+    mybot_wifi_deinit(&wifi);
     assert(s_destroy_count == 2);
 
     aosl_dtor();

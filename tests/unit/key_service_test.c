@@ -37,6 +37,7 @@ static void on_key(mybot_key_event_t event, void *user_data) {
 }
 
 int main(void) {
+    mybot_key_t key = {0};
     const mybot_key_ops_t incomplete_ops = {0};
     const mybot_key_ops_t fake_ops = {
         .name = "fake",
@@ -47,8 +48,8 @@ int main(void) {
     assert(mybot_key_register(NULL) < 0);
     assert(mybot_key_register(&incomplete_ops) < 0);
     assert(mybot_key_register(&fake_ops) == 0);
-    assert(mybot_key_init(NULL, NULL) < 0);
-    assert(mybot_key_init(on_key, &s_handler_count) == 0);
+    assert(mybot_key_init(&key, NULL, NULL) < 0);
+    assert(mybot_key_init(&key, on_key, &s_handler_count) == 0);
     assert(mybot_key_register(&fake_ops) < 0);
     s_fake.emit(MYBOT_KEY_EVENT_PAIR, s_fake.user_data);
     assert(s_handler_count == 1);
@@ -57,8 +58,8 @@ int main(void) {
     assert(s_handler_count == 2);
     assert(s_last_event == MYBOT_KEY_EVENT_VOLUME_UP);
 
-    mybot_key_deinit();
-    mybot_key_deinit();
+    mybot_key_deinit(&key);
+    mybot_key_deinit(&key);
     assert(s_destroy_count == 1);
     assert(s_fake.emit == NULL);
     return 0;

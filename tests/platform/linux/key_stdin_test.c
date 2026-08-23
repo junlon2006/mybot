@@ -35,6 +35,7 @@ static void wait_for_event_count(int count) {
 }
 
 int main(void) {
+    mybot_key_t key = {0};
     int pipe_fds[2];
     assert(pipe(pipe_fds) == 0);
 
@@ -45,7 +46,7 @@ int main(void) {
 
     aosl_ctor();
     assert(linux_key_platform_register_stdin() == 0);
-    assert(mybot_key_init(on_key, &s_event_count) == 0);
+    assert(mybot_key_init(&key, on_key, &s_event_count) == 0);
 
     assert(write(pipe_fds[1], "p", 1) == 1);
     wait_for_event();
@@ -62,7 +63,7 @@ int main(void) {
     assert(aosl_atomic_read(&s_event_count) == 3);
     assert(aosl_atomic_read(&s_last_event) == MYBOT_KEY_EVENT_VOLUME_DOWN);
 
-    mybot_key_deinit();
+    mybot_key_deinit(&key);
     assert(fcntl(STDIN_FILENO, F_GETFD) >= 0);
     assert(write(pipe_fds[1], "s", 1) == 1);
     aosl_hal_msleep(20);

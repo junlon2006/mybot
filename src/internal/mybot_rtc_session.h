@@ -6,6 +6,9 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#include <api/aosl_atomic.h>
+#include <hal/aosl_hal_thread.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -29,14 +32,26 @@ typedef struct {
      *  @param data     PCM buffer (16-bit, 16 kHz, mono)
      *  @param len      buffer length in bytes
      */
-    void (*on_remote_audio)(uint32_t uid, const void *data, size_t len);
+    void (*on_remote_audio)(uint32_t uid, const void *data, size_t len, void *user_data);
 
     /** Called when the SDK asks the application to renew the channel token. */
-    void (*on_token_will_expire)(void);
+    void (*on_token_will_expire)(void *user_data);
 
     /** Called when state changes. */
-    void (*on_state_changed)(mybot_rtc_state_t state);
+    void (*on_state_changed)(mybot_rtc_state_t state, void *user_data);
+
+    /** Opaque owner context passed to every callback. */
+    void *user_data;
 } mybot_rtc_session_callbacks_t;
+
+/** Caller-owned state for one RTC session instance. */
+typedef struct {
+    aosl_atomic_t state;
+    mybot_rtc_session_callbacks_t cbs;
+    uint32_t conn_id;
+    aosl_atomic_t initialized;
+    aosl_mutex_t lock;
+} mybot_rtc_session_t;
 
 /* ----------------------------------------------------------
  * RTC Session API
@@ -47,7 +62,8 @@ typedef struct {
  *  @param cbs     callbacks (may be NULL)
  *  @return 0 on success, -1 on error.
  */
-int mybot_rtc_session_init(const char *app_id, mybot_rtc_session_callbacks_t *cbs);
+int mybot_rtc_session_init(mybot_rtc_session_t *session, const char *app_id,
+                           const mybot_rtc_session_callbacks_t *cbs);
 
 /** Join a channel with a string user account.
  *  @param channel      channel name
@@ -55,13 +71,14 @@ int mybot_rtc_session_init(const char *app_id, mybot_rtc_session_callbacks_t *cb
  *  @param user_account user account string (max 255 bytes)
  *  @return 0 on success, -1 on error.
  */
-int mybot_rtc_session_join(const char *channel, const char *token, const char *user_account);
+int mybot_rtc_session_join(mybot_rtc_session_t *session, const char *channel, const char *token,
+                           const char *user_account);
 
 /** Leave the current channel. */
-int mybot_rtc_session_leave(void);
+int mybot_rtc_session_leave(mybot_rtc_session_t *session);
 
 /** Finalize the RTC session. Safe to call when it is not initialized. */
-void mybot_rtc_session_fini(void);
+void mybot_rtc_session_fini(mybot_rtc_session_t *session);
 
 /** Send PCM audio data to the channel.
  *  @param data  PCM buffer (16-bit, 16 kHz mic). With Cloud AEC enabled, the
@@ -70,19 +87,19 @@ void mybot_rtc_session_fini(void);
  *  @param len   complete payload length in bytes
  *  @return 0 on success, -1 on error.
  */
-int mybot_rtc_session_send_audio(const void *data, size_t len);
+int mybot_rtc_session_send_audio(mybot_rtc_session_t *session, const void *data, size_t len);
 
 /** Apply a renewed token to the active RTC connection.
  *  @param token renewed RTC token
  *  @return 0 on success, -1 on error.
  */
-int mybot_rtc_session_renew_token(const char *token);
+int mybot_rtc_session_renew_token(mybot_rtc_session_t *session, const char *token);
 
 /** Get current session state. */
-mybot_rtc_state_t mybot_rtc_session_get_state(void);
+mybot_rtc_state_t mybot_rtc_session_get_state(const mybot_rtc_session_t *session);
 
 /** Check if the session is connected. */
-bool mybot_rtc_session_is_connected(void);
+bool mybot_rtc_session_is_connected(const mybot_rtc_session_t *session);
 
 #ifdef __cplusplus
 }

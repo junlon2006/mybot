@@ -16,6 +16,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+static mybot_kv_store_t s_store;
 static int s_fsync_count;
 
 int __real_fsync(int fd);
@@ -52,7 +53,7 @@ static void expect_file(const char *path, const char *expected) {
 static void expect_value(const char *key, const char *expected) {
     char value[64];
     size_t len = 0;
-    assert(mybot_kv_store_get(key, value, sizeof(value), &len) == 0);
+    assert(mybot_kv_store_get(&s_store, key, value, sizeof(value), &len) == 0);
     assert(len == strlen(expected));
     assert(memcmp(value, expected, len) == 0);
 }
@@ -77,48 +78,48 @@ int main(void) {
 
     assert(setenv("MYBOT_KV_STORE_DIR", store, 1) == 0);
     assert(linux_kv_store_platform_register_file() == 0);
-    assert(mybot_kv_store_init() == 0);
+    assert(mybot_kv_store_init(&s_store) == 0);
 
     s_fsync_count = 0;
-    assert(mybot_kv_store_set("device_auth", "first", 5) == 0);
+    assert(mybot_kv_store_set(&s_store, "device_auth", "first", 5) == 0);
     assert(s_fsync_count >= 2);
     expect_value("device_auth", "first");
 
-    mybot_kv_store_deinit();
-    assert(mybot_kv_store_init() == 0);
+    mybot_kv_store_deinit(&s_store);
+    assert(mybot_kv_store_init(&s_store) == 0);
     expect_value("device_auth", "first");
 
-    assert(mybot_kv_store_erase("device_auth") == 0);
+    assert(mybot_kv_store_erase(&s_store, "device_auth") == 0);
     write_file(victim, "do-not-touch");
     assert(symlink(victim, key_path) == 0);
-    assert(mybot_kv_store_set("device_auth", "attacker", 8) < 0);
+    assert(mybot_kv_store_set(&s_store, "device_auth", "attacker", 8) < 0);
     char value[64];
     size_t value_len = 0;
-    assert(mybot_kv_store_get("device_auth", value, sizeof(value), &value_len) < 0);
-    assert(mybot_kv_store_erase("device_auth") < 0);
+    assert(mybot_kv_store_get(&s_store, "device_auth", value, sizeof(value), &value_len) < 0);
+    assert(mybot_kv_store_erase(&s_store, "device_auth") < 0);
     expect_file(victim, "do-not-touch");
     assert(unlink(key_path) == 0);
 
     assert(symlink(victim, legacy_temp) == 0);
     s_fsync_count = 0;
-    assert(mybot_kv_store_set("device_auth", "second", 6) == 0);
+    assert(mybot_kv_store_set(&s_store, "device_auth", "second", 6) == 0);
     assert(s_fsync_count >= 2);
     expect_value("device_auth", "second");
     expect_file(victim, "do-not-touch");
 
     s_fsync_count = 0;
-    assert(mybot_kv_store_erase("device_auth") == 0);
+    assert(mybot_kv_store_erase(&s_store, "device_auth") == 0);
     assert(s_fsync_count >= 1);
-    mybot_kv_store_deinit();
-    assert(mybot_kv_store_init() == 0);
-    assert(mybot_kv_store_get("device_auth", value, sizeof(value), &value_len) ==
+    mybot_kv_store_deinit(&s_store);
+    assert(mybot_kv_store_init(&s_store) == 0);
+    assert(mybot_kv_store_get(&s_store, "device_auth", value, sizeof(value), &value_len) ==
            MYBOT_ERR_NOT_FOUND);
-    mybot_kv_store_deinit();
+    mybot_kv_store_deinit(&s_store);
 
     assert(mkdir(real_store, 0700) == 0);
     assert(symlink(real_store, linked_store) == 0);
     assert(setenv("MYBOT_KV_STORE_DIR", linked_store, 1) == 0);
-    assert(mybot_kv_store_init() < 0);
+    assert(mybot_kv_store_init(&s_store) < 0);
 
     assert(unlink(linked_store) == 0);
     assert(unlink(legacy_temp) == 0);
