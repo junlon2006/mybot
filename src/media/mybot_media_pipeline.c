@@ -344,6 +344,20 @@ void mybot_media_pipeline_stop(mybot_media_pipeline_t *pipeline) {
     }
     mybot_media_pipeline_request_stop(pipeline);
 
+    const mybot_audio_capture_ops_t *cap_ops = mybot_audio_get_capture(&pipeline->audio);
+    const mybot_audio_playback_ops_t *pb_ops = mybot_audio_get_playback(&pipeline->audio);
+
+    /* Interrupt both device directions before waiting for any worker. A platform read/write may
+     * be blocked inside its worker and relies on stop() being called from this shutdown thread. */
+    if (pipeline->cap_started && cap_ops) {
+        (void)cap_ops->stop(pipeline->cap_ctx);
+        pipeline->cap_started = false;
+    }
+    if (pipeline->pb_started && pb_ops) {
+        (void)pb_ops->stop(pipeline->pb_ctx);
+        pipeline->pb_started = false;
+    }
+
     if (!aosl_mpq_invalid(pipeline->send_mpq)) {
         aosl_mpq_destroy_wait(pipeline->send_mpq);
         pipeline->send_mpq = AOSL_MPQ_INVALID;
@@ -365,16 +379,6 @@ void mybot_media_pipeline_stop(mybot_media_pipeline_t *pipeline) {
     }
 #endif
 
-    const mybot_audio_capture_ops_t *cap_ops = mybot_audio_get_capture(&pipeline->audio);
-    const mybot_audio_playback_ops_t *pb_ops = mybot_audio_get_playback(&pipeline->audio);
-    if (pipeline->pb_started && pb_ops) {
-        (void)pb_ops->stop(pipeline->pb_ctx);
-        pipeline->pb_started = false;
-    }
-    if (pipeline->cap_started && cap_ops) {
-        (void)cap_ops->stop(pipeline->cap_ctx);
-        pipeline->cap_started = false;
-    }
     if (pipeline->cap_ctx && cap_ops) {
         cap_ops->destroy(pipeline->cap_ctx);
         pipeline->cap_ctx = NULL;

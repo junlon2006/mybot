@@ -71,8 +71,9 @@ additional internal threads whose stacks are vendor-managed.
 
 - Audio format is fixed at 16 kHz, mono, signed 16-bit; ptime is 20 / 40 / 60 ms (default 60 ms,
   i.e. 960 samples / 1920 bytes per frame).
-- Platform `read` / `write` calls must bound their blocking (the Linux ALSA implementation polls
-  with a 50 ms timeout) so workers can observe shutdown and exit promptly.
+- During shutdown the SDK calls both platform `stop` hooks before waiting for audio workers.
+  Each hook must safely interrupt an in-flight `read` / `write`; bounded I/O timeouts remain a
+  fallback against driver failures (the Linux ALSA implementation polls with a 50 ms timeout).
 - The state machine ticks every 100 ms; device-service polling is server-driven, with each
   `poll_after_seconds` hint clamped to 3..60 s. Runtime polling starts at a 30 s default until the
   first binding-status response is received.
