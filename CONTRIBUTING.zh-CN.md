@@ -12,8 +12,9 @@
 4. 自维护的 C 源码遵循仓库根目录 `.clang-format`，并为每个文件标注 SPDX 许可证头
    （`/* SPDX-License-Identifier: Apache-2.0 */`；cJSON 派生的 `mybot_json` 源码使用 `MIT`）。
    机械重命名或批量编辑后，提交前先执行
-   `find include src platforms examples tests -type f \( -name '*.c' -o -name '*.h' \) -exec
-   clang-format -i {} +`。
+   `find include src platforms/linux examples/linux tests -type f \( -name '*.c' -o -name '*.h'
+   \) -exec clang-format -i {} +`。BK725x Armino 源码使用其固件工具链的格式规则，不属于
+   主机格式检查范围。
 5. 提交 pull request 前先构建并测试（先初始化 AOSL submodule）：
 
        git submodule update --init --recursive

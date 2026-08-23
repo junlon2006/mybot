@@ -75,14 +75,19 @@ typedef struct {
 } mybot_kv_store_ops_t;
 
 /**
- * Register the persistent KV-store implementation for the current platform.
+ * Register KV-store ops through the legacy per-capability API.
  *
  * @param ops KV-store operations table; must remain valid for the process
  *            lifetime
- * @return 0 on success, -1 if ops is invalid or already registered
+ * @return 0 on success; -1 if ops is invalid, the KV store is already registered,
+ *         registration is locked, or descriptor registration is active
  *
- * @note Call exactly once, before mybot_start(). Protect stored device
- *       credentials with appropriate access control or encryption.
+ * @note Compatibility entry point for existing ports. New ports should include
+ *       mybot_platform.h and use mybot_platform_register(). Call before mybot_start().
+ *       The first successful per-capability registration selects legacy mode and
+ *       prevents later descriptor registration; a successful descriptor registration
+ *       likewise prevents this call. Protect stored device credentials with appropriate
+ *       access control or encryption.
  */
 MYBOT_API int mybot_kv_store_register(const mybot_kv_store_ops_t *ops);
 

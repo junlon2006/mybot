@@ -153,10 +153,12 @@ add_subdirectory(third_party/mybot)
 target_link_libraries(device_firmware PRIVATE mybot::sdk)
 ```
 
-平台必须在 `mybot_start()` 之前注册 Wi-Fi、KV、按键、音频采集、音频播放和
-HTTPS 传输实现。LCD 可选；只有 `MYBOT_WAKE_WORDS=ON` 时才必须注册本地 ASR 实现。
-Linux 平台自动注册 OpenSSL 实现；其他平台需实现 `mybot_https_ops_t`。
-完整实现顺序、最小代码、线程约束和验收清单见 [docs/PORTING.md](docs/PORTING.md)。
+平台应在 `mybot_start()` 之前注册一个版本化的 `mybot_platform_descriptor_t`。描述符通过
+能力位统一声明必需与可选能力，并携带 Wi-Fi、KV、按键、音频、HTTPS、LCD、播报、音量
+及唤醒词 `ops`。注册过程会先完整校验描述符再原子提交；`mybot_start()` 也会在创建任何
+平台资源之前校验必需能力，缺失时直接启动失败。各个 `mybot_*_register()` 函数继续作为
+旧版兼容入口保留，但不能与描述符注册混用。完整实现顺序、最小代码、线程约束和验收清单见
+[docs/PORTING.md](docs/PORTING.md)。
 
 最小应用生命周期：
 
@@ -170,8 +172,8 @@ mybot_stop();
 ```
 
 `mybot_start()` 非阻塞：先启动配网，收到网络可用事件后才异步初始化存储、
-按键、音频、设备服务和 RTC。`mybot_stop()` 会等待全部工作线程退出，因此不应从
-平台事件回调内部调用。应用在 `mybot_start()` 内获取一份 AOSL 引用，并在
+按键、音频和设备服务；RTC 仅在会话开始时按需初始化。`mybot_stop()` 会等待全部工作线程
+退出，因此不应从平台事件回调内部调用。应用在 `mybot_start()` 内获取一份 AOSL 引用，并在
 `mybot_stop()` 末尾释放；Agora RTC 在 `agora_rtc_init()` / `agora_rtc_fini()` 中管理
 自己独立的一份 AOSL 引用。宿主若直接使用 AOSL，必须自行配对 `aosl_ctor()` /
 `aosl_dtor()`，只有所有消费者都释放引用后运行时才会最终释放。
@@ -234,6 +236,8 @@ flowchart TB
 
     subgraph core["SDK 核心 · src/"]
         app_c["mybot_app<br/>启动编排 · 事件分发 · 线程管理"]
+        app_state["应用状态模型<br/>阶段 · 连接状态 · 设备状态投影"]
+        presenter["LCD presenter<br/>状态投影 · 语义界面"]
         state_m["设备状态机<br/>配对 · 认领 · 会话生命周期"]
         svc_c["设备服务客户端<br/>配对 / claim / 会话轮询"]
         rtc_c["RTC 会话<br/>Agora RTSA 封装"]
@@ -258,20 +262,25 @@ flowchart TB
 
     host_app --> api_h
     api_h --> app_c
+    api_h --> app_state
     app_c --> state_m
+    app_c --> app_state
+    state_m --> app_state
+    app_state --> presenter
     app_c --> media_c
     state_m --> svc_c
     svc_c --> rtc_c
     rtc_c <--> media_c
     app_c --> aosl
     app_c --> ops
+    presenter --> ops
     svc_c --> aosl
     rtc_c --> aosl
     media_c --> aosl
     ops --> linux_b
     ops --> mcu_b
     svc_c -->|HTTPS 轮询| svc_e
-    rtc_c -->|实时音视频| agora_e
+    rtc_c -->|实时音频| agora_e
     agora_e <--> agent_e
     svc_e -->|调度会话| agent_e
 ```
@@ -283,7 +292,8 @@ flowchart TB
   `mybot_stop`），非阻塞启动。按键或 UI 应通过 `mybot_get_state()` 判断动作：
   `MYBOT_STATE_READY` 时可开始会话，`MYBOT_STATE_IN_CONVERSATION` 时可停止会话。LCD
   仅用于显示，不是生命周期状态来源。会话与配对动作由平台按键 / 唤醒词事件触发，由 SDK
-  核心内部处理。
+  核心内部处理。Wi-Fi 与设备生命周期事件共同更新一个原子状态模型快照；
+  `mybot_get_state()` 与 LCD presenter 都从同一份快照派生各自视图。
 - **SDK 核心**（[src/](src/)）：启动编排、设备状态机、设备服务 HTTP 客户端、Agora
   RTSA 会话封装、音频环形缓冲与可选本地唤醒词。核心代码不直接触碰任何 OS 或外设 API。
 - **基础服务层**：AOSL 提供线程 / MPQ / 定时器 / 日志等可移植能力；平台 `ops` 契约
@@ -382,11 +392,13 @@ mybot/
 cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=ON
 cmake --build build -j
 ctest --test-dir build --output-on-failure
-find include src platforms examples tests -type f \
-  \( -name '*.c' -o -name '*.h' \) -print0 | xargs -0 clang-format --dry-run --Werror
+find include src platforms/linux examples/linux tests -type f \
+  \( -name '*.c' -o -name '*.h' \) \
+  -exec clang-format --dry-run --Werror {} +
 ```
 
-- 自研 C 代码遵循根目录 `.clang-format`；`third_party/` 保持上游内容，不参与格式化检查。
+- 主机检查范围内的 C 代码遵循根目录 `.clang-format`；`third_party/` 保持上游内容，
+  BK725x Armino 源码使用其固件工具链的格式规则。
 - CI（[.github/workflows/ci.yml](.github/workflows/ci.yml)）在每个 push / PR 上执行
   构建、测试与格式检查，提交前请确保本地命令与 CI 一致。
 - CI 使用 GCC 与 Clang 双编译器分别在 ASan、UBSan 下构建，运行 cppcheck 与 clang-tidy

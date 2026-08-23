@@ -271,9 +271,11 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/mybot.pc
 
 configure_file(docs/Doxyfile.in ${CMAKE_CURRENT_BINARY_DIR}/docs/Doxyfile @ONLY)
 
-# AOSL is bundled with the installed package (see THIRD_PARTY_NOTICES.md for
-# its license). Headers merge into include/api and include/hal, matching the
-# build-time include layout.
+# Keep the project license and third-party terms with every installed development package.
+install(FILES LICENSE THIRD_PARTY_NOTICES.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
+
+# AOSL is bundled with the installed package. Headers merge into include/api and include/hal,
+# matching the build-time include layout; its additional terms are installed alongside ours.
 install(DIRECTORY ${AOSL_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         FILES_MATCHING PATTERN "*.h")
 install(DIRECTORY ${AOSL_DIR}/platform/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}

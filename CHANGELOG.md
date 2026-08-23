@@ -18,6 +18,9 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- Align the English and Chinese README lifecycle and architecture guidance, document strict
+  descriptor and legacy registration contracts in the public headers, match local format commands
+  to CI scope, and refresh stale BK725x ownership and generator comments.
 - Refactor application, lifecycle, RTC, audio, storage, connectivity, input, display, announcement,
   and wake-word runtime state into caller-owned internal contexts. Public APIs retain the default
   process-wide compatibility facade, while active implementation state no longer lives in module
@@ -42,6 +45,8 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
+- Install the project `LICENSE` and `THIRD_PARTY_NOTICES.md` with the CMake package alongside the
+  bundled AOSL license, and verify all three documents in the install-consumer integration test.
 - Call both platform audio `stop` hooks before waiting for media workers, allowing a thread-safe
   stop implementation to unblock in-flight capture and playback I/O without shutdown deadlocks.
 - Simplify device-service URL scheme validation into direct branches, eliminating a duplicate-condition
