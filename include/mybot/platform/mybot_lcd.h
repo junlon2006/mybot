@@ -99,13 +99,18 @@ typedef struct {
 } mybot_lcd_ops_t;
 
 /**
- * Register the LCD implementation for the current platform.
+ * Register LCD ops through the legacy per-capability API.
  *
  * @param ops LCD operations table; must remain valid for the process
  *            lifetime
- * @return 0 on success, -1 if ops is invalid or already registered
+ * @return 0 on success; -1 if ops is invalid, the LCD is already registered,
+ *         registration is locked, or descriptor registration is active
  *
- * @note Optional. When used, call exactly once before mybot_start().
+ * @note Optional compatibility entry point for existing ports. New ports should include
+ *       mybot_platform.h and use mybot_platform_register(). Call before mybot_start().
+ *       The first successful per-capability registration selects legacy mode and
+ *       prevents later descriptor registration; a successful descriptor registration
+ *       likewise prevents this call.
  */
 MYBOT_API int mybot_lcd_register(const mybot_lcd_ops_t *ops);
 

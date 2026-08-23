@@ -21,8 +21,8 @@
  * This eliminates the dual-pipeline design where the prompt player
  * created its own independent pipeline that conflicted with the SDK's.
  *
- * The SDK owns its own ring buffer (s_app.pb_ringbuf) for RTC
- * downlink buffering; the shared module only manages the pipeline.
+ * The SDK runtime owns the playback ring buffer used for RTC downlink;
+ * this module only manages the platform playback pipeline.
  * ================================================================ */
 
 static struct {

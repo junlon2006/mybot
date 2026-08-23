@@ -40,6 +40,12 @@ if(NOT install_result EQUAL 0)
     message(FATAL_ERROR "cmake --install failed: ${install_result}")
 endif()
 
+foreach(required_document LICENSE THIRD_PARTY_NOTICES.md aosl-LICENSE)
+    if(NOT EXISTS "${install_prefix}/share/doc/mybot/${required_document}")
+        message(FATAL_ERROR "installed package is missing ${required_document}")
+    endif()
+endforeach()
+
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -S "${MYBOT_SOURCE_DIR}/tests/integration/cmake_install_consumer"
             -B "${consumer_dir}"

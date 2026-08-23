@@ -180,7 +180,8 @@ Register one versioned `mybot_platform_descriptor_t` before `mybot_start()`. It 
 optional capability bits together with the Wi-Fi, KV, key, audio, HTTPS, LCD, announcement, volume,
 and wake-word ops. Registration is validated and committed atomically; `mybot_start()` rejects missing
 required capabilities before creating any platform resources. The individual `mybot_*_register()`
-functions remain available as a compatibility path. For the full implementation order, minimal code,
+functions remain available as a legacy compatibility path, but legacy and descriptor registration
+cannot be mixed. For the full implementation order, minimal code,
 threading constraints, and acceptance checklist, see [docs/PORTING.md](docs/PORTING.md).
 
 Minimal application lifecycle:
@@ -195,8 +196,8 @@ mybot_stop();
 ```
 
 `mybot_start()` is non-blocking: it starts provisioning first, then initializes storage,
-buttons, audio, the device service, and RTC asynchronously once usable network connectivity is
-reported.
+buttons, audio, and the device service asynchronously once usable network connectivity is
+reported. RTC is initialized on demand when a conversation starts.
 `mybot_stop()` waits for all worker threads to exit and must not be called from inside a
 platform event callback. The application acquires one reference to the process-wide AOSL runtime
 inside `mybot_start()` and releases it at the end of `mybot_stop()`. Agora RTC acquires and releases
@@ -431,12 +432,13 @@ Key CMake targets:
 cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=ON
 cmake --build build -j
 ctest --test-dir build --output-on-failure
-find include src platforms examples tests -type f \
-  \( -name '*.c' -o -name '*.h' \) -print0 | xargs -0 clang-format --dry-run --Werror
+find include src platforms/linux examples/linux tests -type f \
+  \( -name '*.c' -o -name '*.h' \) \
+  -exec clang-format --dry-run --Werror {} +
 ```
 
-- Owned C code follows the root `.clang-format`; `third_party/` keeps upstream content and is
-  excluded from the format check.
+- Host-checked C code follows the root `.clang-format`; `third_party/` keeps upstream content,
+  and BK725x Armino sources use their firmware toolchain's formatting rules.
 - CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the build, tests, and format check
   on every push / PR; make sure your local commands match CI before merging.
 - CI builds with both GCC and Clang under ASan and UBSan, runs cppcheck and clang-tidy static

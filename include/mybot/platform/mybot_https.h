@@ -67,15 +67,20 @@ typedef struct {
 } mybot_https_ops_t;
 
 /**
- * Register one platform TLS transport.
+ * Register TLS transport ops through the legacy per-capability API.
  *
  * @param ops TLS operations table; must remain valid for the process
  *            lifetime
- * @return 0 on success, -1 if ops is invalid or already registered
+ * @return 0 on success; -1 if ops is invalid, HTTPS is already registered,
+ *         registration is locked, or descriptor registration is active
  *
- * @note Call exactly once, before mybot_start(). Do not disable certificate
- *       or hostname verification for development certificates; install the
- *       required CA in the device trust store instead.
+ * @note Compatibility entry point for existing ports. New ports should include
+ *       mybot_platform.h and use mybot_platform_register(). Call before mybot_start().
+ *       The first successful per-capability registration selects legacy mode and
+ *       prevents later descriptor registration; a successful descriptor registration
+ *       likewise prevents this call. Do not disable certificate or hostname verification
+ *       for development certificates; install the required CA in the device trust store
+ *       instead.
  */
 MYBOT_API int mybot_https_register(const mybot_https_ops_t *ops);
 

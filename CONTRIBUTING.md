@@ -12,8 +12,9 @@ Contributions are welcome for the 1.0 release series. Public APIs and ABI follow
 4. Format self-maintained C sources with the repository `.clang-format` and tag every file with an
    SPDX license header (`/* SPDX-License-Identifier: Apache-2.0 */`; the cJSON-derived `mybot_json`
    sources use `MIT`). After mechanical renames or bulk edits, run
-   `find include src platforms examples tests -type f \( -name '*.c' -o -name '*.h' \) -exec
-   clang-format -i {} +` before committing.
+   `find include src platforms/linux examples/linux tests -type f \( -name '*.c' -o -name '*.h'
+   \) -exec clang-format -i {} +` before committing. BK725x Armino sources use their firmware
+   toolchain's formatting rules and are not part of the host format check.
 5. Build and test before opening a pull request (initialize the AOSL submodule first):
 
        git submodule update --init --recursive
