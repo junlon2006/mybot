@@ -2,27 +2,19 @@
 #ifndef MYBOT_APP_INTERNAL_H_
 #define MYBOT_APP_INTERNAL_H_
 
-/*
- * Internal application-control entry points.
- *
- * These are the request APIs behind user-initiated actions. The SDK core
- * invokes them from platform event handlers (key events, wake words); host
- * applications must not call them directly. Not exported: declarations carry
- * no MYBOT_API, and the library builds with -fvisibility=hidden.
- */
+/* Internal commands operate on an explicit runtime instance. */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/** Start a conversation. Called by the core on conversation-start key / wake-word events. */
-void mybot_app_start_conversation(void);
+typedef struct mybot_runtime mybot_runtime_t;
 
-/** Stop the current conversation. Called by the core on conversation-stop key events. */
-void mybot_app_stop_conversation(void);
+void mybot_app_start_conversation(mybot_runtime_t *runtime);
 
-/** Request (re-)pairing. Called by the core on pair key events. */
-void mybot_app_pair(void);
+void mybot_app_stop_conversation(mybot_runtime_t *runtime);
+
+void mybot_app_pair(mybot_runtime_t *runtime);
 
 #ifdef __cplusplus
 }

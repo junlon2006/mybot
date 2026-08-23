@@ -54,6 +54,10 @@ static pthread_mutex_t s_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static mybot_wifi_event_handler_t s_wifi_handler;
 static void *s_wifi_user_data;
+static mybot_key_event_handler_t s_key_handler;
+static void *s_key_user_data;
+static mybot_device_lifecycle_t *s_device_lifecycle;
+static mybot_rtc_session_t *s_rtc_session;
 
 static mybot_device_lifecycle_callbacks_t s_device_callbacks;
 static mybot_device_state_t s_device_state = MYBOT_DEVICE_STATE_RUNTIME;
@@ -180,6 +184,15 @@ static bool wait_for_audio_frame(int16_t reference_sample, int timeout_ms) {
     return false;
 }
 
+static void emit_key_event(mybot_key_event_t event) {
+    mock_lock();
+    mybot_key_event_handler_t handler = s_key_handler;
+    void *user_data = s_key_user_data;
+    mock_unlock();
+    assert(handler != NULL);
+    handler(event, user_data);
+}
+
 static void emit_wifi_event(mybot_wifi_event_t event) {
     mock_lock();
     mybot_wifi_event_handler_t handler = s_wifi_handler;
@@ -191,10 +204,11 @@ static void emit_wifi_event(mybot_wifi_event_t event) {
 
 static void emit_remote_audio(const int16_t *pcm, size_t len) {
     mock_lock();
-    void (*callback)(uint32_t, const void *, size_t) = s_rtc_callbacks.on_remote_audio;
+    void (*callback)(uint32_t, const void *, size_t, void *) = s_rtc_callbacks.on_remote_audio;
+    void *user_data = s_rtc_callbacks.user_data;
     mock_unlock();
     assert(callback != NULL);
-    callback(7, pcm, len);
+    callback(7, pcm, len, user_data);
 }
 
 bool mybot_https_is_registered(void) {
@@ -205,74 +219,90 @@ bool mybot_lcd_is_registered(void) {
     return false;
 }
 
-int mybot_lcd_init(void) {
+int mybot_lcd_init(mybot_lcd_t *lcd) {
+    assert(lcd != NULL);
     return 0;
 }
 
-int mybot_lcd_show_screen(mybot_lcd_screen_t screen) {
+int mybot_lcd_show_screen(mybot_lcd_t *lcd, mybot_lcd_screen_t screen) {
+    assert(lcd != NULL);
     (void)screen;
     return 0;
 }
 
-int mybot_lcd_show_pair_code(const char *pair_code) {
+int mybot_lcd_show_pair_code(mybot_lcd_t *lcd, const char *pair_code) {
+    assert(lcd != NULL);
     (void)pair_code;
     return 0;
 }
 
-void mybot_lcd_deinit(void) {
+void mybot_lcd_deinit(mybot_lcd_t *lcd) {
+    assert(lcd != NULL);
 }
 
-int mybot_kv_store_init(void) {
+int mybot_kv_store_init(mybot_kv_store_t *store) {
+    assert(store != NULL);
     mock_lock();
     s_kv_init_calls++;
     mock_unlock();
     return 0;
 }
 
-void mybot_kv_store_deinit(void) {
+void mybot_kv_store_deinit(mybot_kv_store_t *store) {
+    assert(store != NULL);
     mock_lock();
     s_kv_deinit_calls++;
     mock_unlock();
 }
 
-int mybot_key_init(mybot_key_event_handler_t handler, void *user_data) {
-    (void)handler;
-    (void)user_data;
+int mybot_key_init(mybot_key_t *key, mybot_key_event_handler_t handler, void *user_data) {
+    assert(key != NULL);
     mock_lock();
+    s_key_handler = handler;
+    s_key_user_data = user_data;
     s_key_init_calls++;
     mock_unlock();
     return 0;
 }
 
-void mybot_key_deinit(void) {
+void mybot_key_deinit(mybot_key_t *key) {
+    assert(key != NULL);
     mock_lock();
+    s_key_handler = NULL;
+    s_key_user_data = NULL;
     s_key_deinit_calls++;
     mock_unlock();
 }
 
-int mybot_announce_init(void) {
+int mybot_announce_init(mybot_announce_t *announce) {
+    assert(announce != NULL);
     return 0;
 }
 
-void mybot_announce_deinit(void) {
+void mybot_announce_deinit(mybot_announce_t *announce) {
+    assert(announce != NULL);
 }
 
-int mybot_announce_play_pair_code(const char *code) {
+int mybot_announce_play_pair_code(mybot_announce_t *announce, const char *code) {
+    assert(announce != NULL);
     (void)code;
     return 0;
 }
 
-void mybot_announce_stop(void) {
+void mybot_announce_stop(mybot_announce_t *announce) {
+    assert(announce != NULL);
 }
 
-bool mybot_announce_is_active(void) {
+bool mybot_announce_is_active(mybot_announce_t *announce) {
+    assert(announce != NULL);
     mock_lock();
     bool active = s_announce_active;
     mock_unlock();
     return active;
 }
 
-int mybot_announce_read_pcm(int16_t *dst, int max_frames) {
+int mybot_announce_read_pcm(mybot_announce_t *announce, int16_t *dst, int max_frames) {
+    assert(announce != NULL);
     (void)dst;
     (void)max_frames;
     return 0;
@@ -395,44 +425,58 @@ static const mybot_audio_playback_ops_t s_playback_ops = {
     .destroy = playback_destroy,
 };
 
-const mybot_audio_capture_ops_t *mybot_audio_get_capture(void) {
+void mybot_audio_context_init(mybot_audio_t *audio) {
+    memset(audio, 0, sizeof(*audio));
+}
+
+const mybot_audio_capture_ops_t *mybot_audio_get_capture(const mybot_audio_t *audio) {
+    assert(audio != NULL);
     return &s_capture_ops;
 }
 
-const mybot_audio_playback_ops_t *mybot_audio_get_playback(void) {
+const mybot_audio_playback_ops_t *mybot_audio_get_playback(const mybot_audio_t *audio) {
+    assert(audio != NULL);
     return &s_playback_ops;
 }
 
-int mybot_audio_device_volume_init(void) {
+int mybot_audio_device_volume_init(mybot_audio_t *audio) {
+    assert(audio != NULL);
     return -1;
 }
 
-void mybot_audio_device_volume_deinit(void) {
+void mybot_audio_device_volume_deinit(mybot_audio_t *audio) {
+    assert(audio != NULL);
 }
 
-bool mybot_audio_device_volume_is_active(void) {
+bool mybot_audio_device_volume_is_active(const mybot_audio_t *audio) {
+    assert(audio != NULL);
     return false;
 }
 
-int mybot_audio_device_set_volume(int volume) {
+int mybot_audio_device_set_volume(mybot_audio_t *audio, int volume) {
+    assert(audio != NULL);
     (void)volume;
     return -1;
 }
 
-int mybot_audio_device_get_volume(int *volume) {
+int mybot_audio_device_get_volume(mybot_audio_t *audio, int *volume) {
+    assert(audio != NULL);
     (void)volume;
     return -1;
 }
 
-int mybot_audio_set_media_volume(int volume) {
+int mybot_audio_set_media_volume(mybot_audio_t *audio, int volume) {
+    assert(audio != NULL);
     return volume >= MYBOT_AUDIO_VOLUME_MIN && volume <= MYBOT_AUDIO_VOLUME_MAX ? 0 : -1;
 }
 
-int mybot_audio_get_media_volume(void) {
+int mybot_audio_get_media_volume(const mybot_audio_t *audio) {
+    assert(audio != NULL);
     return MYBOT_AUDIO_VOLUME_DEFAULT;
 }
 
-void mybot_audio_apply_media_volume(int16_t *pcm, int samples) {
+void mybot_audio_apply_media_volume(const mybot_audio_t *audio, int16_t *pcm, int samples) {
+    assert(audio != NULL);
     (void)pcm;
     (void)samples;
 }
@@ -441,8 +485,10 @@ bool mybot_wake_words_is_registered(void) {
     return true;
 }
 
-int mybot_wake_words_init(int sample_rate, int channels, int bits_per_sample,
-                          mybot_wake_words_handler_t handler, void *user_data) {
+int mybot_wake_words_init(mybot_wake_words_t *wake_words, int sample_rate, int channels,
+                          int bits_per_sample, mybot_wake_words_handler_t handler,
+                          void *user_data) {
+    assert(wake_words != NULL);
     (void)sample_rate;
     (void)channels;
     (void)bits_per_sample;
@@ -451,16 +497,20 @@ int mybot_wake_words_init(int sample_rate, int channels, int bits_per_sample,
     return 0;
 }
 
-int mybot_wake_words_process(const void *pcm, int frames) {
+int mybot_wake_words_process(mybot_wake_words_t *wake_words, const void *pcm, int frames) {
+    assert(wake_words != NULL);
     (void)pcm;
     (void)frames;
     return 0;
 }
 
-void mybot_wake_words_deinit(void) {
+void mybot_wake_words_deinit(mybot_wake_words_t *wake_words) {
+    assert(wake_words != NULL);
 }
 
-int mybot_wifi_init(const char *device_id, mybot_wifi_event_handler_t handler, void *user_data) {
+int mybot_wifi_init(mybot_wifi_t *wifi, const char *device_id, mybot_wifi_event_handler_t handler,
+                    void *user_data) {
+    assert(wifi != NULL);
     if (!device_id || !handler) {
         return -1;
     }
@@ -473,7 +523,8 @@ int mybot_wifi_init(const char *device_id, mybot_wifi_event_handler_t handler, v
     return 0;
 }
 
-void mybot_wifi_deinit(void) {
+void mybot_wifi_deinit(mybot_wifi_t *wifi) {
+    assert(wifi != NULL);
     mock_lock();
     s_wifi_handler = NULL;
     s_wifi_user_data = NULL;
@@ -481,15 +532,18 @@ void mybot_wifi_deinit(void) {
     mock_unlock();
 }
 
-int mybot_device_lifecycle_init(const char *server_base, const char *device_id,
+int mybot_device_lifecycle_init(mybot_device_lifecycle_t *lifecycle, mybot_kv_store_t *kv_store,
+                                const char *server_base, const char *device_id,
                                 const char *firmware_ver, const char *hw_model,
-                                mybot_device_lifecycle_callbacks_t *callbacks) {
+                                const mybot_device_lifecycle_callbacks_t *callbacks) {
+    assert(kv_store != NULL);
     assert(strcmp(server_base, TEST_SERVER_BASE) == 0);
     assert(strcmp(device_id, "device-1") == 0);
     (void)firmware_ver;
     (void)hw_model;
     assert(callbacks != NULL);
     mock_lock();
+    s_device_lifecycle = lifecycle;
     s_device_callbacks = *callbacks;
     s_device_state = MYBOT_DEVICE_STATE_RUNTIME;
     s_device_network_available = true;
@@ -498,7 +552,8 @@ int mybot_device_lifecycle_init(const char *server_base, const char *device_id,
     return 0;
 }
 
-void mybot_device_lifecycle_tick(void) {
+void mybot_device_lifecycle_tick(mybot_device_lifecycle_t *lifecycle) {
+    assert(lifecycle == s_device_lifecycle);
     mybot_device_lifecycle_callbacks_t callbacks;
     bool start_conversation = false;
     mock_lock();
@@ -515,7 +570,7 @@ void mybot_device_lifecycle_tick(void) {
         return;
     }
     if (callbacks.on_state_changed) {
-        callbacks.on_state_changed(MYBOT_DEVICE_STATE_IN_CONVERSATION);
+        callbacks.on_state_changed(MYBOT_DEVICE_STATE_IN_CONVERSATION, callbacks.user_data);
     }
     mybot_conversation_params_t params;
     memset(&params, 0, sizeof(params));
@@ -524,10 +579,12 @@ void mybot_device_lifecycle_tick(void) {
     snprintf(params.rtc_channel, sizeof(params.rtc_channel), "%s", "rtc-channel");
     snprintf(params.rtc_uid, sizeof(params.rtc_uid), "%s", "device-uid");
     snprintf(params.rtc_token, sizeof(params.rtc_token), "%s", "rtc-token");
-    callbacks.on_conversation_start(&params);
+    callbacks.on_conversation_start(&params, callbacks.user_data);
 }
 
-void mybot_device_lifecycle_set_network_available(bool available) {
+void mybot_device_lifecycle_set_network_available(mybot_device_lifecycle_t *lifecycle,
+                                                  bool available) {
+    assert(lifecycle == s_device_lifecycle);
     mock_lock();
     s_device_network_available = available;
     if (available) {
@@ -538,7 +595,8 @@ void mybot_device_lifecycle_set_network_available(bool available) {
     mock_unlock();
 }
 
-void mybot_device_lifecycle_shutdown(void) {
+void mybot_device_lifecycle_shutdown(mybot_device_lifecycle_t *lifecycle) {
+    assert(lifecycle == s_device_lifecycle);
     mybot_device_lifecycle_callbacks_t callbacks;
     bool stop_conversation = false;
     mock_lock();
@@ -550,45 +608,53 @@ void mybot_device_lifecycle_shutdown(void) {
     }
     mock_unlock();
     if (stop_conversation && callbacks.on_conversation_stop) {
-        callbacks.on_conversation_stop();
+        callbacks.on_conversation_stop(callbacks.user_data);
     }
 }
 
-mybot_device_state_t mybot_device_lifecycle_get_state(void) {
+mybot_device_state_t mybot_device_lifecycle_get_state(const mybot_device_lifecycle_t *lifecycle) {
+    assert(lifecycle == s_device_lifecycle);
     mock_lock();
     mybot_device_state_t state = s_device_state;
     mock_unlock();
     return state;
 }
 
-void mybot_device_lifecycle_request_pair(void) {
+void mybot_device_lifecycle_request_pair(mybot_device_lifecycle_t *lifecycle) {
+    assert(lifecycle == s_device_lifecycle);
 }
 
-void mybot_device_lifecycle_request_start(void) {
+void mybot_device_lifecycle_request_start(mybot_device_lifecycle_t *lifecycle) {
+    assert(lifecycle == s_device_lifecycle);
     mock_lock();
     s_device_start_requested = true;
     mock_unlock();
 }
 
-void mybot_device_lifecycle_request_stop(void) {
+void mybot_device_lifecycle_request_stop(mybot_device_lifecycle_t *lifecycle) {
+    assert(lifecycle == s_device_lifecycle);
 }
 
-void mybot_device_lifecycle_notify_conversation_ended(void) {
+void mybot_device_lifecycle_notify_conversation_ended(mybot_device_lifecycle_t *lifecycle) {
+    assert(lifecycle == s_device_lifecycle);
     mock_lock();
     s_device_state = MYBOT_DEVICE_STATE_RUNTIME;
     mock_unlock();
 }
 
-void mybot_device_lifecycle_request_rtc_token_renewal(void) {
+void mybot_device_lifecycle_request_rtc_token_renewal(mybot_device_lifecycle_t *lifecycle) {
+    assert(lifecycle == s_device_lifecycle);
     mock_lock();
     s_token_renewal_requests++;
     mock_unlock();
 }
 
-int mybot_rtc_session_init(const char *app_id, mybot_rtc_session_callbacks_t *callbacks) {
+int mybot_rtc_session_init(mybot_rtc_session_t *session, const char *app_id,
+                           const mybot_rtc_session_callbacks_t *callbacks) {
     assert(strcmp(app_id, "rtc-app") == 0);
     assert(callbacks != NULL);
     mock_lock();
+    s_rtc_session = session;
     s_rtc_callbacks = *callbacks;
     s_rtc_initialized = true;
     s_rtc_init_calls++;
@@ -598,7 +664,9 @@ int mybot_rtc_session_init(const char *app_id, mybot_rtc_session_callbacks_t *ca
     return 0;
 }
 
-int mybot_rtc_session_join(const char *channel, const char *token, const char *user_account) {
+int mybot_rtc_session_join(mybot_rtc_session_t *session, const char *channel, const char *token,
+                           const char *user_account) {
+    assert(session == s_rtc_session);
     assert(strcmp(token, "rtc-token") == 0);
     mock_lock();
     assert(s_rtc_initialized);
@@ -606,30 +674,34 @@ int mybot_rtc_session_join(const char *channel, const char *token, const char *u
     snprintf(s_join_user, sizeof(s_join_user), "%s", user_account);
     s_rtc_joined = true;
     s_rtc_join_calls++;
-    void (*callback)(mybot_rtc_state_t) = s_rtc_callbacks.on_state_changed;
+    void (*callback)(mybot_rtc_state_t, void *) = s_rtc_callbacks.on_state_changed;
+    void *user_data = s_rtc_callbacks.user_data;
     mock_unlock();
     if (callback) {
-        callback(MYBOT_RTC_STATE_CONNECTED);
+        callback(MYBOT_RTC_STATE_CONNECTED, user_data);
     }
     return 0;
 }
 
-int mybot_rtc_session_leave(void) {
+int mybot_rtc_session_leave(mybot_rtc_session_t *session) {
+    assert(session == s_rtc_session);
     mock_lock();
     bool was_joined = s_rtc_joined;
     s_rtc_joined = false;
     if (was_joined) {
         s_rtc_leave_calls++;
     }
-    void (*callback)(mybot_rtc_state_t) = s_rtc_callbacks.on_state_changed;
+    void (*callback)(mybot_rtc_state_t, void *) = s_rtc_callbacks.on_state_changed;
+    void *user_data = s_rtc_callbacks.user_data;
     mock_unlock();
     if (was_joined && callback) {
-        callback(MYBOT_RTC_STATE_INITIALIZED);
+        callback(MYBOT_RTC_STATE_INITIALIZED, user_data);
     }
     return 0;
 }
 
-void mybot_rtc_session_fini(void) {
+void mybot_rtc_session_fini(mybot_rtc_session_t *session) {
+    assert(session == s_rtc_session);
     mock_lock();
     if (!s_rtc_initialized) {
         mock_unlock();
@@ -643,7 +715,8 @@ void mybot_rtc_session_fini(void) {
     aosl_dtor();
 }
 
-int mybot_rtc_session_send_audio(const void *data, size_t len) {
+int mybot_rtc_session_send_audio(mybot_rtc_session_t *session, const void *data, size_t len) {
+    assert(session == s_rtc_session);
     mock_lock();
     if (!s_rtc_joined) {
         mock_unlock();
@@ -660,7 +733,8 @@ int mybot_rtc_session_send_audio(const void *data, size_t len) {
     return 0;
 }
 
-int mybot_rtc_session_renew_token(const char *token) {
+int mybot_rtc_session_renew_token(mybot_rtc_session_t *session, const char *token) {
+    assert(session == s_rtc_session);
     mock_lock();
     if (!s_rtc_joined || !token || !token[0]) {
         mock_unlock();
@@ -715,7 +789,7 @@ int main(void) {
     assert(read_counter(&s_network_down_calls) == 2);
     assert(read_counter(&s_network_up_calls) == 2);
 
-    mybot_app_start_conversation();
+    emit_key_event(MYBOT_KEY_EVENT_CONVERSATION_START);
     assert(wait_for_counter(&s_rtc_join_calls, 1, 3000));
     mock_lock();
     assert(strcmp(s_join_channel, "rtc-channel") == 0);
@@ -723,15 +797,17 @@ int main(void) {
     mock_unlock();
 
     mock_lock();
-    void (*token_will_expire)(void) = s_rtc_callbacks.on_token_will_expire;
-    int (*token_renewed)(const char *) = s_device_callbacks.on_rtc_token_renewed;
+    void (*token_will_expire)(void *) = s_rtc_callbacks.on_token_will_expire;
+    void *rtc_user_data = s_rtc_callbacks.user_data;
+    int (*token_renewed)(const char *, void *) = s_device_callbacks.on_rtc_token_renewed;
+    void *device_user_data = s_device_callbacks.user_data;
     mock_unlock();
     assert(token_will_expire != NULL);
     assert(token_renewed != NULL);
 
-    token_will_expire();
+    token_will_expire(rtc_user_data);
     assert(read_counter(&s_token_renewal_requests) == 1);
-    assert(token_renewed("renewed-token") == 0);
+    assert(token_renewed("renewed-token", device_user_data) == 0);
     assert(read_counter(&s_rtc_renew_calls) == 1);
     mock_lock();
     assert(strcmp(s_renewed_token, "renewed-token") == 0);

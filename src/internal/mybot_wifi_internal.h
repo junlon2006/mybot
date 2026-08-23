@@ -4,9 +4,17 @@
 
 #include <mybot/platform/mybot_wifi.h>
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct {
+    const mybot_wifi_ops_t *ops;
+    void *ctx;
+    bool active;
+} mybot_wifi_t;
 
 /**
  * SDK-internal Wi-Fi facade. The public mybot/platform/mybot_wifi.h only
@@ -19,10 +27,11 @@ extern "C" {
  * A successful return means the implementation started; subsequent connectivity
  * results are reported through handler.
  */
-int mybot_wifi_init(const char *device_id, mybot_wifi_event_handler_t handler, void *user_data);
+int mybot_wifi_init(mybot_wifi_t *wifi, const char *device_id, mybot_wifi_event_handler_t handler,
+                    void *user_data);
 
 /** Stop provisioning/link monitoring and release its resources. Idempotent. */
-void mybot_wifi_deinit(void);
+void mybot_wifi_deinit(mybot_wifi_t *wifi);
 
 #ifdef __cplusplus
 }

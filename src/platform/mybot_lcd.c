@@ -8,69 +8,67 @@
 #include <stddef.h>
 #include <string.h>
 
-static const mybot_lcd_ops_t *s_ops;
-static void *s_ctx;
-static aosl_mutex_t s_render_lock;
-static bool s_active;
+static const mybot_lcd_ops_t *s_registered_ops;
 
 static bool screen_is_valid(mybot_lcd_screen_t screen) {
     return screen >= MYBOT_LCD_SCREEN_STARTING && screen < MYBOT_LCD_SCREEN_COUNT;
 }
 
-static int render_content(const mybot_lcd_content_t *content) {
-    if (!content || !screen_is_valid(content->screen) || !s_render_lock) {
+static int render_content(mybot_lcd_t *lcd, const mybot_lcd_content_t *content) {
+    if (!lcd || !content || !screen_is_valid(content->screen) || !lcd->render_lock) {
         return -1;
     }
 
-    if (aosl_hal_mutex_lock(s_render_lock) < 0) {
+    if (aosl_hal_mutex_lock(lcd->render_lock) < 0) {
         return -1;
     }
 
     int ret = -1;
-    if (s_active) {
-        ret = s_ops->render(s_ctx, content);
+    if (lcd->active) {
+        ret = lcd->ops->render(lcd->ctx, content);
     }
 
-    if (aosl_hal_mutex_unlock(s_render_lock) < 0) {
+    if (aosl_hal_mutex_unlock(lcd->render_lock) < 0) {
         return -1;
     }
     return ret;
 }
 
 int mybot_lcd_register(const mybot_lcd_ops_t *ops) {
-    if (!ops || !ops->init || !ops->render || !ops->destroy || s_active) {
+    if (!ops || !ops->init || !ops->render || !ops->destroy || s_registered_ops) {
         return -1;
     }
-    s_ops = ops;
+    s_registered_ops = ops;
     return 0;
 }
 
 bool mybot_lcd_is_registered(void) {
-    return s_ops != NULL;
+    return s_registered_ops != NULL;
 }
 
-int mybot_lcd_init(void) {
-    if (s_active || !s_ops) {
+int mybot_lcd_init(mybot_lcd_t *lcd) {
+    if (!lcd || lcd->active || !s_registered_ops) {
         return -1;
     }
 
-    s_render_lock = aosl_hal_mutex_create();
-    if (!s_render_lock) {
+    lcd->ops = s_registered_ops;
+    lcd->render_lock = aosl_hal_mutex_create();
+    if (!lcd->render_lock) {
         return -1;
     }
 
-    if (s_ops->init(&s_ctx) < 0) {
-        s_ctx = NULL;
-        aosl_hal_mutex_destroy(s_render_lock);
-        s_render_lock = NULL;
+    if (lcd->ops->init(&lcd->ctx) < 0) {
+        lcd->ctx = NULL;
+        aosl_hal_mutex_destroy(lcd->render_lock);
+        lcd->render_lock = NULL;
         return -1;
     }
 
-    s_active = true;
+    lcd->active = true;
     return 0;
 }
 
-int mybot_lcd_show_screen(mybot_lcd_screen_t screen) {
+int mybot_lcd_show_screen(mybot_lcd_t *lcd, mybot_lcd_screen_t screen) {
     if (!screen_is_valid(screen) || screen == MYBOT_LCD_SCREEN_PAIR_CODE) {
         return -1;
     }
@@ -78,10 +76,10 @@ int mybot_lcd_show_screen(mybot_lcd_screen_t screen) {
     mybot_lcd_content_t content;
     memset(&content, 0, sizeof(content));
     content.screen = screen;
-    return render_content(&content);
+    return render_content(lcd, &content);
 }
 
-int mybot_lcd_show_pair_code(const char *pair_code) {
+int mybot_lcd_show_pair_code(mybot_lcd_t *lcd, const char *pair_code) {
     if (!pair_code) {
         return -1;
     }
@@ -95,20 +93,20 @@ int mybot_lcd_show_pair_code(const char *pair_code) {
     memset(&content, 0, sizeof(content));
     content.screen = MYBOT_LCD_SCREEN_PAIR_CODE;
     memcpy(content.pair_code, pair_code, len + 1);
-    return render_content(&content);
+    return render_content(lcd, &content);
 }
 
-void mybot_lcd_deinit(void) {
-    if (!s_active) {
+void mybot_lcd_deinit(mybot_lcd_t *lcd) {
+    if (!lcd || !lcd->active) {
         return;
     }
 
-    aosl_hal_mutex_lock(s_render_lock);
-    s_active = false;
-    s_ops->destroy(s_ctx);
-    s_ctx = NULL;
-    aosl_hal_mutex_unlock(s_render_lock);
+    aosl_hal_mutex_lock(lcd->render_lock);
+    lcd->active = false;
+    lcd->ops->destroy(lcd->ctx);
+    lcd->ctx = NULL;
+    aosl_hal_mutex_unlock(lcd->render_lock);
 
-    aosl_hal_mutex_destroy(s_render_lock);
-    s_render_lock = NULL;
+    aosl_hal_mutex_destroy(lcd->render_lock);
+    lcd->render_lock = NULL;
 }

@@ -16,6 +16,10 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- Refactor application, lifecycle, RTC, audio, storage, connectivity, input, display, announcement,
+  and wake-word runtime state into caller-owned internal contexts. Public APIs retain the default
+  process-wide compatibility facade, while active implementation state no longer lives in module
+  globals.
 - Limit host clang-format and clang-tidy checks to the SDK core, Linux platform, Linux example, and
   tests; BK725x Armino sources are validated by the BK firmware build environment instead.
 - Update the pinned AOSL submodule to upstream commit `84e0860`, which adds reference-counted

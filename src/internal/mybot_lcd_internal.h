@@ -4,9 +4,18 @@
 
 #include <mybot/platform/mybot_lcd.h>
 
+#include <hal/aosl_hal_thread.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct {
+    const mybot_lcd_ops_t *ops;
+    void *ctx;
+    aosl_mutex_t render_lock;
+    bool active;
+} mybot_lcd_t;
 
 /**
  * SDK-internal LCD facade. The public mybot/platform/mybot_lcd.h only exposes
@@ -18,16 +27,16 @@ extern "C" {
 bool mybot_lcd_is_registered(void);
 
 /** Initialize the registered LCD implementation. */
-int mybot_lcd_init(void);
+int mybot_lcd_init(mybot_lcd_t *lcd);
 
 /** Render a workflow screen that does not require additional content. */
-int mybot_lcd_show_screen(mybot_lcd_screen_t screen);
+int mybot_lcd_show_screen(mybot_lcd_t *lcd, mybot_lcd_screen_t screen);
 
 /** Render the pairing screen with a server-provided pairing code. */
-int mybot_lcd_show_pair_code(const char *pair_code);
+int mybot_lcd_show_pair_code(mybot_lcd_t *lcd, const char *pair_code);
 
 /** Release the LCD implementation. Call only after all render callers have stopped. Idempotent. */
-void mybot_lcd_deinit(void);
+void mybot_lcd_deinit(mybot_lcd_t *lcd);
 
 #ifdef __cplusplus
 }

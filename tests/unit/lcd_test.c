@@ -13,6 +13,7 @@
 #include <stddef.h>
 #include <string.h>
 
+static mybot_lcd_t s_lcd;
 static int s_init_count;
 static int s_render_count;
 static int s_destroy_count;
@@ -55,7 +56,7 @@ static void fake_destroy(void *ctx) {
 static void *render_screens(void *opaque) {
     render_thread_arg_t *arg = opaque;
     for (int i = 0; i < 20; ++i) {
-        if (mybot_lcd_show_screen(arg->screen) < 0) {
+        if (mybot_lcd_show_screen(&s_lcd, arg->screen) < 0) {
             arg->result = -1;
             return NULL;
         }
@@ -76,24 +77,24 @@ int main(void) {
     assert(!mybot_lcd_is_registered());
     assert(mybot_lcd_register(NULL) < 0);
     assert(mybot_lcd_register(&incomplete_ops) < 0);
-    assert(mybot_lcd_init() < 0);
+    assert(mybot_lcd_init(&s_lcd) < 0);
     assert(mybot_lcd_register(&fake_ops) == 0);
     assert(mybot_lcd_is_registered());
 
     s_init_fails = true;
-    assert(mybot_lcd_init() < 0);
+    assert(mybot_lcd_init(&s_lcd) < 0);
     s_init_fails = false;
-    assert(mybot_lcd_init() == 0);
+    assert(mybot_lcd_init(&s_lcd) == 0);
     assert(s_init_count == 2);
-    assert(mybot_lcd_init() < 0);
+    assert(mybot_lcd_init(&s_lcd) < 0);
     assert(mybot_lcd_register(&fake_ops) < 0);
 
-    assert(mybot_lcd_show_screen(MYBOT_LCD_SCREEN_WIFI_PROVISIONING) == 0);
+    assert(mybot_lcd_show_screen(&s_lcd, MYBOT_LCD_SCREEN_WIFI_PROVISIONING) == 0);
     assert(s_render_count == 1);
     assert(s_last_content.screen == MYBOT_LCD_SCREEN_WIFI_PROVISIONING);
     assert(s_last_content.pair_code[0] == '\0');
 
-    assert(mybot_lcd_show_pair_code("123456") == 0);
+    assert(mybot_lcd_show_pair_code(&s_lcd, "123456") == 0);
     assert(s_render_count == 2);
     assert(s_last_content.screen == MYBOT_LCD_SCREEN_PAIR_CODE);
     assert(strcmp(s_last_content.pair_code, "123456") == 0);
@@ -113,17 +114,17 @@ int main(void) {
     assert(aosl_atomic_read(&s_concurrent_render_detected) == false);
     assert(s_render_count == 42);
 
-    assert(mybot_lcd_show_screen(MYBOT_LCD_SCREEN_PAIR_CODE) < 0);
-    assert(mybot_lcd_show_screen(MYBOT_LCD_SCREEN_COUNT) < 0);
-    assert(mybot_lcd_show_pair_code(NULL) < 0);
-    assert(mybot_lcd_show_pair_code("") < 0);
-    assert(mybot_lcd_show_pair_code("1234567890123456") < 0);
+    assert(mybot_lcd_show_screen(&s_lcd, MYBOT_LCD_SCREEN_PAIR_CODE) < 0);
+    assert(mybot_lcd_show_screen(&s_lcd, MYBOT_LCD_SCREEN_COUNT) < 0);
+    assert(mybot_lcd_show_pair_code(&s_lcd, NULL) < 0);
+    assert(mybot_lcd_show_pair_code(&s_lcd, "") < 0);
+    assert(mybot_lcd_show_pair_code(&s_lcd, "1234567890123456") < 0);
     assert(s_render_count == 42);
 
-    mybot_lcd_deinit();
-    mybot_lcd_deinit();
+    mybot_lcd_deinit(&s_lcd);
+    mybot_lcd_deinit(&s_lcd);
     assert(s_destroy_count == 1);
-    assert(mybot_lcd_show_screen(MYBOT_LCD_SCREEN_READY) < 0);
+    assert(mybot_lcd_show_screen(&s_lcd, MYBOT_LCD_SCREEN_READY) < 0);
 
     aosl_dtor();
     return 0;

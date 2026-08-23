@@ -21,6 +21,7 @@
  * x86_64 archive is not linked into this test; only the wrapper logic in
  * mybot_agora_rtc.c is exercised. ---- */
 static agora_rtc_event_handler_t s_handler;
+static int s_callback_owner;
 static connection_id_t s_next_conn = 1;
 static int s_init_calls;
 static int s_fini_calls;
@@ -128,35 +129,39 @@ int agora_rtc_send_audio_data(connection_id_t conn_id, const void *data_ptr, siz
 }
 
 /* ---- app callbacks ---- */
-static void on_state_changed(mybot_rtc_state_t state) {
+static void on_state_changed(mybot_rtc_state_t state, void *user_data) {
+    assert(user_data == &s_callback_owner);
     s_last_state = state;
     s_state_changes++;
 }
 
-static void on_remote_audio(uint32_t uid, const void *data, size_t len) {
+static void on_remote_audio(uint32_t uid, const void *data, size_t len, void *user_data) {
+    assert(user_data == &s_callback_owner);
     (void)uid;
     (void)data;
     (void)len;
     s_remote_audio_calls++;
 }
 
-static void on_token_will_expire(void) {
+static void on_token_will_expire(void *user_data) {
+    assert(user_data == &s_callback_owner);
     s_token_expiry_calls++;
 }
 
 int main(void) {
     aosl_ctor();
 
+    mybot_rtc_session_t session = {0};
     unsigned char pcm_frame[RTC_PCM_FRAME_BYTES] = {0};
 
     /* Not initialized yet. */
-    assert(mybot_rtc_session_get_state() == MYBOT_RTC_STATE_IDLE);
-    assert(!mybot_rtc_session_is_connected());
-    assert(mybot_rtc_session_join("room", "token", "user") < 0);
-    assert(mybot_rtc_session_leave() == 0);
-    mybot_rtc_session_fini(); /* no agora_rtc_fini when uninitialized */
+    assert(mybot_rtc_session_get_state(&session) == MYBOT_RTC_STATE_IDLE);
+    assert(!mybot_rtc_session_is_connected(&session));
+    assert(mybot_rtc_session_join(&session, "room", "token", "user") < 0);
+    assert(mybot_rtc_session_leave(&session) == 0);
+    mybot_rtc_session_fini(&session); /* no agora_rtc_fini when uninitialized */
     assert(s_fini_calls == 0);
-    assert(mybot_rtc_session_renew_token("renewed-token") < 0);
+    assert(mybot_rtc_session_renew_token(&session, "renewed-token") < 0);
     assert(s_renew_calls == 0);
 
     mybot_rtc_session_callbacks_t cbs;
@@ -164,21 +169,22 @@ int main(void) {
     cbs.on_state_changed = on_state_changed;
     cbs.on_remote_audio = on_remote_audio;
     cbs.on_token_will_expire = on_token_will_expire;
+    cbs.user_data = &s_callback_owner;
 
-    assert(mybot_rtc_session_init("test-app", &cbs) == 0);
+    assert(mybot_rtc_session_init(&session, "test-app", &cbs) == 0);
     assert(s_init_calls == 1);
-    assert(mybot_rtc_session_get_state() == MYBOT_RTC_STATE_INITIALIZED);
+    assert(mybot_rtc_session_get_state(&session) == MYBOT_RTC_STATE_INITIALIZED);
 
     /* Double init is a no-op. */
-    assert(mybot_rtc_session_init("test-app", &cbs) == 0);
+    assert(mybot_rtc_session_init(&session, "test-app", &cbs) == 0);
     assert(s_init_calls == 1);
 
     /* Cannot send before joining. */
-    assert(mybot_rtc_session_send_audio(pcm_frame, sizeof(pcm_frame)) < 0);
+    assert(mybot_rtc_session_send_audio(&session, pcm_frame, sizeof(pcm_frame)) < 0);
     assert(s_send_calls == 0);
 
     /* Join: connecting until the SDK reports success. */
-    assert(mybot_rtc_session_join("room", "token", "user1") == 0);
+    assert(mybot_rtc_session_join(&session, "room", "token", "user1") == 0);
     assert(s_join_calls == 1);
     assert(s_create_calls == 1);
     assert(s_join_options.audio_codec_opt.audio_codec_type == AUDIO_CODEC_TYPE_G722);
@@ -188,69 +194,69 @@ int main(void) {
     assert(s_join_options.audio_jitter_frame_duration == MYBOT_AUDIO_PTIME_MS);
     assert(s_join_options.enable_audio_downlink_aec == (MYBOT_CLOUD_AEC != 0));
     assert(s_join_options.enable_audio_ai_qos == (MYBOT_AI_QOS != 0));
-    assert(mybot_rtc_session_get_state() == MYBOT_RTC_STATE_CONNECTING);
-    assert(!mybot_rtc_session_is_connected());
+    assert(mybot_rtc_session_get_state(&session) == MYBOT_RTC_STATE_CONNECTING);
+    assert(!mybot_rtc_session_is_connected(&session));
 
     s_handler.on_join_channel_success(1, 42, 100);
-    assert(mybot_rtc_session_is_connected());
-    assert(mybot_rtc_session_get_state() == MYBOT_RTC_STATE_CONNECTED);
+    assert(mybot_rtc_session_is_connected(&session));
+    assert(mybot_rtc_session_get_state(&session) == MYBOT_RTC_STATE_CONNECTED);
 
     s_handler.on_token_privilege_will_expire(1, "old-token");
     assert(s_token_expiry_calls == 1);
-    assert(mybot_rtc_session_renew_token("renewed-token") == 0);
+    assert(mybot_rtc_session_renew_token(&session, "renewed-token") == 0);
     assert(s_renew_calls == 1);
     assert(strcmp(s_renewed_token, "renewed-token") == 0);
     s_renew_result = -1;
-    assert(mybot_rtc_session_renew_token("rejected-token") < 0);
+    assert(mybot_rtc_session_renew_token(&session, "rejected-token") < 0);
     assert(s_renew_calls == 2);
     s_renew_result = 0;
 
-    assert(mybot_rtc_session_send_audio(pcm_frame, sizeof(pcm_frame)) == 0);
+    assert(mybot_rtc_session_send_audio(&session, pcm_frame, sizeof(pcm_frame)) == 0);
     assert(s_last_send_len == sizeof(pcm_frame));
     assert(s_last_send_info.data_type == AUDIO_DATA_TYPE_PCM);
     assert(s_send_calls == 1);
 
     /* Connection loss blocks sends until the rejoin callback. */
     s_handler.on_connection_lost(1);
-    assert(mybot_rtc_session_get_state() == MYBOT_RTC_STATE_DISCONNECTED);
-    assert(mybot_rtc_session_send_audio(pcm_frame, sizeof(pcm_frame)) < 0);
+    assert(mybot_rtc_session_get_state(&session) == MYBOT_RTC_STATE_DISCONNECTED);
+    assert(mybot_rtc_session_send_audio(&session, pcm_frame, sizeof(pcm_frame)) < 0);
     s_handler.on_rejoin_channel_success(1, 42, 50);
-    assert(mybot_rtc_session_is_connected());
-    assert(mybot_rtc_session_send_audio(pcm_frame, sizeof(pcm_frame)) == 0);
+    assert(mybot_rtc_session_is_connected(&session));
+    assert(mybot_rtc_session_send_audio(&session, pcm_frame, sizeof(pcm_frame)) == 0);
     assert(s_send_calls == 2);
     assert(s_last_send_len == sizeof(pcm_frame));
 
     /* License failure moves to ERROR. */
     s_handler.on_license_validation_failure(1, 2);
-    assert(mybot_rtc_session_get_state() == MYBOT_RTC_STATE_ERROR);
-    assert(!mybot_rtc_session_is_connected());
+    assert(mybot_rtc_session_get_state(&session) == MYBOT_RTC_STATE_ERROR);
+    assert(!mybot_rtc_session_is_connected(&session));
 
     /* Recover to CONNECTED, then a second join is rejected while joined. */
     s_handler.on_join_channel_success(1, 42, 0);
-    assert(mybot_rtc_session_is_connected());
-    assert(mybot_rtc_session_join("room2", "token", "user2") < 0);
+    assert(mybot_rtc_session_is_connected(&session));
+    assert(mybot_rtc_session_join(&session, "room2", "token", "user2") < 0);
 
     /* Remote audio forwards to the application callback. */
     s_handler.on_audio_data(1, 7, 0, "audio", 5, NULL);
     assert(s_remote_audio_calls == 1);
 
     /* Leave tears down the connection and returns to INITIALIZED. */
-    assert(mybot_rtc_session_leave() == 0);
+    assert(mybot_rtc_session_leave(&session) == 0);
     assert(s_leave_calls == 1);
     assert(s_destroy_calls == 1);
-    assert(mybot_rtc_session_get_state() == MYBOT_RTC_STATE_INITIALIZED);
-    assert(mybot_rtc_session_leave() == 0); /* idempotent without a connection */
+    assert(mybot_rtc_session_get_state(&session) == MYBOT_RTC_STATE_INITIALIZED);
+    assert(mybot_rtc_session_leave(&session) == 0); /* idempotent without a connection */
     assert(s_leave_calls == 1);
-    assert(mybot_rtc_session_renew_token("renewed-token") < 0);
+    assert(mybot_rtc_session_renew_token(&session, "renewed-token") < 0);
     assert(s_renew_calls == 2);
 
     /* Finalize calls agora_rtc_fini exactly once. */
-    mybot_rtc_session_fini();
+    mybot_rtc_session_fini(&session);
     assert(s_fini_calls == 1);
-    assert(!mybot_rtc_session_is_connected());
-    assert(mybot_rtc_session_join("room", "token", "user") < 0);
-    assert(mybot_rtc_session_leave() == 0);
-    mybot_rtc_session_fini(); /* now uninitialized again */
+    assert(!mybot_rtc_session_is_connected(&session));
+    assert(mybot_rtc_session_join(&session, "room", "token", "user") < 0);
+    assert(mybot_rtc_session_leave(&session) == 0);
+    mybot_rtc_session_fini(&session); /* now uninitialized again */
     assert(s_fini_calls == 1);
     assert(s_state_changes > 0);
 

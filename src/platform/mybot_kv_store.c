@@ -3,54 +3,58 @@
 
 #include "mybot_kv_store_internal.h"
 
-static const mybot_kv_store_ops_t *s_ops;
-static void *s_ctx;
+static const mybot_kv_store_ops_t *s_registered_ops;
 
 int mybot_kv_store_register(const mybot_kv_store_ops_t *ops) {
     if (!ops || !ops->init || !ops->get || !ops->set || !ops->erase || !ops->destroy) {
         return -1;
     }
-    if (s_ctx) {
+    if (s_registered_ops) {
         return -1;
     }
-    s_ops = ops;
+    s_registered_ops = ops;
     return 0;
 }
 
-int mybot_kv_store_init(void) {
-    if (s_ctx) {
+int mybot_kv_store_init(mybot_kv_store_t *store) {
+    if (!store) {
+        return -1;
+    }
+    if (store->ctx) {
         return 0;
     }
-    if (!s_ops) {
+    store->ops = s_registered_ops;
+    if (!store->ops) {
         return -1;
     }
-    return s_ops->init(&s_ctx);
+    return store->ops->init(&store->ctx);
 }
 
-void mybot_kv_store_deinit(void) {
-    if (s_ctx) {
-        s_ops->destroy(s_ctx);
-        s_ctx = NULL;
+void mybot_kv_store_deinit(mybot_kv_store_t *store) {
+    if (store && store->ctx) {
+        store->ops->destroy(store->ctx);
+        store->ctx = NULL;
     }
 }
 
-int mybot_kv_store_get(const char *key, void *value, size_t capacity, size_t *out_len) {
-    if (!s_ctx || !key || !value || !out_len) {
+int mybot_kv_store_get(mybot_kv_store_t *store, const char *key, void *value, size_t capacity,
+                       size_t *out_len) {
+    if (!store || !store->ctx || !key || !value || !out_len) {
         return -1;
     }
-    return s_ops->get(s_ctx, key, value, capacity, out_len);
+    return store->ops->get(store->ctx, key, value, capacity, out_len);
 }
 
-int mybot_kv_store_set(const char *key, const void *value, size_t len) {
-    if (!s_ctx || !key || (!value && len != 0)) {
+int mybot_kv_store_set(mybot_kv_store_t *store, const char *key, const void *value, size_t len) {
+    if (!store || !store->ctx || !key || (!value && len != 0)) {
         return -1;
     }
-    return s_ops->set(s_ctx, key, value, len);
+    return store->ops->set(store->ctx, key, value, len);
 }
 
-int mybot_kv_store_erase(const char *key) {
-    if (!s_ctx || !key) {
+int mybot_kv_store_erase(mybot_kv_store_t *store, const char *key) {
+    if (!store || !store->ctx || !key) {
         return -1;
     }
-    return s_ops->erase(s_ctx, key);
+    return store->ops->erase(store->ctx, key);
 }
