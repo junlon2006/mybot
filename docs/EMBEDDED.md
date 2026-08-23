@@ -58,8 +58,10 @@ loss; the device-service lifecycle state machine remains internal.
 | `pb_mpq` | Playback and AEC reference | 16 KB |
 | `key_stdin_mpq` (Linux reference only) | Stdin key events | 4 KB |
 
-Core stack budget is therefore 5 × 16 KB = 80 KB. Stack sizes are compile-time constants
-(`MPQ_STACK_SIZE` in `src/core/mybot_app.c`); profile on the target before tuning. The real-time
+Core stack budget is therefore 5 × 16 KB = 80 KB. Stack sizes are compile-time
+constants: control workers use `APP_MPQ_STACK_SIZE` in
+`src/core/mybot_app.c`, while audio workers use `MEDIA_MPQ_STACK_SIZE` in
+`src/media/mybot_media_pipeline.c`; profile on the target before tuning. The real-time
 audio timers live on separate MPQs so a single blocking implementation cannot
 stall the whole audio path, and the state machine runs on its own thread because HTTP polling
 blocks. The Agora RTSA SDK owns

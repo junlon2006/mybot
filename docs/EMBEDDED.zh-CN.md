@@ -53,8 +53,10 @@ x86_64 Linux 参考构建（GCC 13，默认优化），**仅供参考**——请
 | `pb_mpq` | 播放与 AEC 参考 | 16 KB |
 | `key_stdin_mpq`（仅 Linux 参考） | 标准输入按键事件 | 4 KB |
 
-核心栈预算合计 5 × 16 KB = 80 KB。栈大小为编译期常量（`src/core/mybot_app.c` 中的
-`MPQ_STACK_SIZE`），请在目标上实测后再调整。实时音频定时器位于独立 MPQ，单个阻塞实现不会
+核心栈预算合计 5 × 16 KB = 80 KB。栈大小为编译期常量：
+控制线程使用 `src/core/mybot_app.c` 中的
+`APP_MPQ_STACK_SIZE`，音频线程使用 `src/media/mybot_media_pipeline.c` 中的
+`MEDIA_MPQ_STACK_SIZE`；请在目标上实测后再调整。实时音频定时器位于独立 MPQ，单个阻塞实现不会
 拖垮整条音频通路；状态机因 HTTP 轮询会阻塞而独占线程。Agora RTSA SDK 内部另有厂商管理的
 线程。
 
