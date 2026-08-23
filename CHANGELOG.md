@@ -6,6 +6,9 @@ This project follows Semantic Versioning.
 
 ### Added
 
+- Expand deterministic unit coverage for JSON allocation failures, HTTP and device-service
+  protocol boundaries, device lifecycle recovery, RTC errors, application cleanup, and the
+  conversation facade.
 - Add the versioned `mybot_platform_descriptor_t` capability registry with atomic registration,
   legacy per-capability compatibility APIs, and synchronous startup validation of required ops.
 - Add the BK725x platform port under `platforms/bk725x` and synchronize the complete BK7258
