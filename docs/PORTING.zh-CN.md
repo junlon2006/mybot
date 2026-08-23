@@ -40,7 +40,8 @@ platforms/my_mcu/
 
 ## 第 3 步：实现必需平台能力
 
-在 `mybot_start()` 之前，每个必需实现恰好注册一次。
+实现以下 ops 表，并将其提供给平台注册单元。新移植在第 4 步通过描述符一次性注册；单项注册
+函数仅用于兼容已有集成。
 
 ### 音频
 
@@ -54,17 +55,16 @@ platforms/my_mcu/
 - I/O 运行在专用的 AOSL MPQ 工作线程上。阻塞必须有界，以便关闭流程能完成。
 - `stop` 应解除在途 I/O 的阻塞；`destroy` 在工作线程停止后释放上下文。
 
-使用 `mybot_audio_register_capture()` 与 `mybot_audio_register_playback()`
-注册。
+将两个 ops 表加入平台描述符。
 
 #### 设备音量（可选）
 
 音量由 SDK 统一管理，不对外提供音量控制 API；音量变化（例如音量按键事件）走以下两条
 路径之一：
 
-- **设备音量**是首选路径。实现 `mybot_audio_volume_ops_t` 并调用
-  `mybot_audio_device_register_volume()`，即可让 SDK 的音量变化路由到真实硬件（Codec
-  寄存器、功放或混音器）。`init`、`set_volume`、`destroy` 为必需；`get_volume` 可选，
+- **设备音量**是首选路径。实现 `mybot_audio_volume_ops_t` 并加入平台描述符，即可让 SDK
+  的音量变化路由到真实硬件（Codec 寄存器、功放或混音器）。`init`、`set_volume`、
+  `destroy` 为必需；`get_volume` 可选，
   仅用于同步 SDK 的音量状态。SDK 在启动时初始化该实现，关闭时释放。
 - **媒体音量**是未注册设备音量实现时的兜底。SDK 保存 0..100 的软件增益，播放流水线在
   PCM 到达设备前以数字方式应用（线性幅度，100 为原增益）。无需平台代码。
@@ -77,8 +77,8 @@ platforms/my_mcu/
 disconnected 与 failed 事件仅在连接状态转换时发出。只有 STA 已获取 IP 且网络可供 SDK
 请求使用时才能上报 connected。事件可来自平台线程，但必须串行传递，且 `destroy` 返回后
 不得再运行任何事件。Destroy 必须停止传输并等待在途回调。实现在首次成功连接后必须持续监控
-网络连接，并上报运行期断开与重连事件；SDK 在离线期间暂停设备服务流量，重连后恢复。使用
-`mybot_wifi_register()` 注册。
+网络连接，并上报运行期断开与重连事件；SDK 在离线期间暂停设备服务流量，重连后恢复。将
+ops 表加入平台描述符。
 
 Linux 参考实现立即上报已连接，不是真正的 APSTA 参考实现。
 
@@ -92,12 +92,12 @@ Linux 参考实现立即上报已连接，不是真正的 APSTA 参考实现。
 - `erase` 是幂等的。
 - 使用适当的访问控制或加密保护设备 token。
 
-使用 `mybot_kv_store_register()` 注册。
+将 ops 表加入平台描述符。
 
 ### HTTPS 传输
 
-生产构建保持 `MYBOT_ENABLE_HTTPS=ON`，并在 `mybot_start()` 之前注册一个
-`mybot_https_ops_t`。封装 mbedTLS、BearSSL 或芯片厂商 TLS socket API；SDK 核心
+生产构建保持 `MYBOT_ENABLE_HTTPS=ON`，并提供一个 `mybot_https_ops_t`。封装 mbedTLS、
+BearSSL 或芯片厂商 TLS socket API；SDK 核心
 不链接 OpenSSL。实现必须：
 
 - 在给定超时内建立 TCP 与 TLS；
@@ -106,8 +106,8 @@ Linux 参考实现立即上报已连接，不是真正的 APSTA 参考实现。
   返回 -1；
 - `close` 释放整个 TLS 连接。
 
-使用 `mybot_https_register()` 注册。不要为开发证书关闭证书或主机名校验；请将
-所需 CA 安装到设备信任库。Linux 参考实现使用 OpenSSL 与系统 CA 库。明文 HTTP 仅存在于
+将 ops 表加入平台描述符。不要为开发证书关闭证书或主机名校验；请将所需 CA 安装到设备
+信任库。Linux 参考实现使用 OpenSSL 与系统 CA 库。明文 HTTP 仅存在于
 配置了 `MYBOT_ENABLE_HTTPS=OFF -DMYBOT_ALLOW_INSECURE_HTTP=ON` 的隔离开发构建。
 
 ### 按键
@@ -115,7 +115,7 @@ Linux 参考实现立即上报已连接，不是真正的 APSTA 参考实现。
 实现 `mybot_key_ops_t`，将硬件输入转换为会话开始、停止、配对、退出、音量增大与
 音量减小事件。SDK 收到音量事件时将音量步进 10——设备音量实现激活时调整真实硬件音量，
 否则回退到媒体音量软件增益；音量事件为可选。事件可以是异步的。Destroy 必须停止输入源
-并等待所有处理器。使用 `mybot_key_register()` 注册。
+并等待所有处理器。将 ops 表加入平台描述符。
 
 对于单个硬件切换键，处理按键时查询线程安全的 `mybot_get_state()`：仅在
 `MYBOT_STATE_READY` 时发出 `MYBOT_KEY_EVENT_CONVERSATION_START`，仅在
@@ -126,12 +126,12 @@ Linux 参考实现立即上报已连接，不是真正的 APSTA 参考实现。
 ### LCD（可选）
 
 存在显示设备时实现 `mybot_lcd_ops_t`。渲染接收语义内容，可能从不同 SDK 线程调用；SDK
-负责串行化调用。内容为借用。使用 `mybot_lcd_register()` 注册。
+负责串行化调用。内容为借用。将 ops 表加入平台描述符。
 
 ### 唤醒词（可选）
 
 仅在 `MYBOT_WAKE_WORDS=ON` 时必需。`process()` 回调接收借用的 PCM。异步实现必须复制需要保留的
-数据，destroy 必须等待所有检测处理器。使用 `mybot_wake_words_register()` 注册。
+数据，destroy 必须等待所有检测处理器。将 ops 表加入平台描述符。
 
 ### 配对码语音播报（可选）
 
@@ -145,28 +145,40 @@ Linux 参考实现立即上报已连接，不是真正的 APSTA 参考实现。
 
 接口约定：`init` 初始化实现；`open` 打开一个逻辑声音（`MYBOT_ANNOUNCE_SOUND_PROMPT`、
 `MYBOT_ANNOUNCE_SOUND_DIGIT_0`..`9`），可做 I/O；`read` 最多拷贝 `max_frames` 帧，必须
-轻量（运行在实时播放线程上）；`close` / `destroy` 释放句柄与实现。在 `mybot_start()` 之前
-用 `mybot_announce_register()` 注册。该实现可选：未注册时 SDK 跳过本地播报，仅记日志。
+轻量（运行在实时播放线程上）；`close` / `destroy` 释放句柄与实现。将 ops 表加入平台
+描述符。该实现可选：未提供时 SDK 跳过本地播报，仅记日志。
 
 Linux 参考实现按语言从 `./assets/locales/<locale>/` 读取原始 PCM 文件（`prompt.pcm`、
 `0.pcm`~`9.pcm`）；可用环境变量 `MYBOT_ASSETS_DIR` 覆盖目录（默认 `./assets`），
 `MYBOT_LOCALE` 选择语言（默认 `zh-CN`）。
 
-## 第 4 步：添加一个注册入口
+## 第 4 步：注册一个带版本的平台描述符
 
 ```c
+#include <mybot/platform/mybot_platform.h>
+
+static const mybot_platform_descriptor_t my_mcu_platform = {
+    .api_version = MYBOT_PLATFORM_API_VERSION,
+    .struct_size = sizeof(mybot_platform_descriptor_t),
+    .name = "my-mcu",
+    .capabilities = MYBOT_PLATFORM_CAP_REQUIRED | MYBOT_PLATFORM_CAP_HTTPS |
+                    MYBOT_PLATFORM_CAP_LCD,
+    .wifi = &my_mcu_wifi_ops,
+    .kv_store = &my_mcu_kv_ops,
+    .key = &my_mcu_key_ops,
+    .audio_capture = &my_mcu_capture_ops,
+    .audio_playback = &my_mcu_playback_ops,
+    .https = &my_mcu_https_ops,
+    .lcd = &my_mcu_lcd_ops,
+};
+
 int my_mcu_platform_register(void) {
-    if (my_mcu_wifi_register() < 0 || my_mcu_https_register() < 0 ||
-        my_mcu_kv_register() < 0 ||
-        my_mcu_key_register() < 0 || my_mcu_audio_capture_register() < 0 ||
-        my_mcu_audio_playback_register() < 0) {
-        return -1;
-    }
-    return 0;
+    return mybot_platform_register(&my_mcu_platform);
 }
 ```
 
-逐一检查并返回每个注册调用的错误。启用 LCD、唤醒词或配对码播报时，再加入对应的注册调用。
+仅在对应 ops 指针存在时设置能力位。`mybot_platform_register()` 会在提交前校验完整描述符，
+因此失败不会留下只注册一半的平台。旧集成仍可继续使用单项 `mybot_*_register()` 函数。
 
 ## 第 5 步：与 CMake 集成
 
@@ -252,6 +264,6 @@ cmake --build build-target -j
 
 - HTTPS 需要平台 TLS 实现与受维护的 CA 信任库。Linux 提供 OpenSSL 参考实现；MCU 移植必须
   集成其 TLS 栈。
-- RTC 是 Agora 专用，注册表是单例，且仅支持单应用实例。
+- RTC 是 Agora 专用，平台注册为进程级，且仅支持单应用实例。
 - Linux 参考实现是开发参考，不是生产级配网或安全存储。
 - 第三方再分发权需单独核实；见 `THIRD_PARTY_NOTICES.md`。

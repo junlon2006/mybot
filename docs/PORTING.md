@@ -43,7 +43,9 @@ An out-of-tree firmware project may use the same layout without changing this re
 
 ## Step 3: Implement the required platform capabilities
 
-Register every required implementation exactly once before `mybot_start()`.
+Implement the operations tables below and expose them to the platform registration unit. New ports
+register them together through the descriptor in Step 4; the individual registration functions are
+only for existing integrations.
 
 ### Audio
 
@@ -58,17 +60,16 @@ Implement complete capture and playback tables from `mybot_audio.h`. The lifecyc
 - I/O runs on dedicated AOSL MPQ workers. Blocking must be bounded so shutdown can finish.
 - `stop` should unblock in-flight I/O; `destroy` releases the context after workers stop.
 
-Register with `mybot_audio_register_capture()` and
-`mybot_audio_register_playback()`.
+Add both operations tables to the platform descriptor.
 
 #### Device volume (optional)
 
 The SDK owns volume control and exposes no application-facing volume API; volume changes (for
 example from volume key events) take one of two paths:
 
-- **Device volume** is the primary path. Implement `mybot_audio_volume_ops_t` and call
-  `mybot_audio_device_register_volume()` to route the SDK's volume changes to real hardware
-  (codec register, amplifier, or mixer). `init`, `set_volume`, and `destroy` are required;
+- **Device volume** is the primary path. Implement `mybot_audio_volume_ops_t` and add it to the
+  platform descriptor to route the SDK's volume changes to real hardware (codec register,
+  amplifier, or mixer). `init`, `set_volume`, and `destroy` are required;
   `get_volume` is optional and used only to sync the SDK's volume state. The SDK initializes
   the implementation during startup and releases it on shutdown.
 - **Media volume** is the fallback used when no device volume implementation is active. The SDK keeps a
@@ -87,7 +88,7 @@ platform threads, but must be delivered serially and none may run after `destroy
 must stop the transport and wait for in-flight callbacks. The implementation must keep monitoring
 network connectivity after the first successful connection and report runtime disconnect and
 reconnect events; the SDK pauses device-service traffic while offline and resumes it after
-reconnect. Register with `mybot_wifi_register()`.
+reconnect. Add the operations table to the platform descriptor.
 
 The Linux reference implementation reports connected immediately and is not a real APSTA reference.
 
@@ -101,12 +102,12 @@ Implement all callbacks in `mybot_kv_store_ops_t`.
 - `erase` is idempotent.
 - Protect the device token with appropriate access controls or encryption.
 
-Register with `mybot_kv_store_register()`.
+Add the operations table to the platform descriptor.
 
 ### HTTPS transport
 
-Production builds keep `MYBOT_ENABLE_HTTPS=ON` and register one
-`mybot_https_ops_t` before `mybot_start()`. Wrap mbedTLS, BearSSL, or the chipset TLS
+Production builds keep `MYBOT_ENABLE_HTTPS=ON` and provide one `mybot_https_ops_t`. Wrap mbedTLS,
+BearSSL, or the chipset TLS
 socket API; the SDK core does not link OpenSSL. The implementation must:
 
 - establish TCP and TLS within the supplied timeout;
@@ -116,7 +117,7 @@ socket API; the SDK core does not link OpenSSL. The implementation must:
   peer close, and -1 on error or timeout;
 - release the entire TLS connection from `close`.
 
-Register with `mybot_https_register()`. Do not disable certificate or hostname
+Add the operations table to the platform descriptor. Do not disable certificate or hostname
 verification for development certificates; install the required CA in the device trust store.
 The Linux reference implementation uses OpenSSL and the system CA store. Plain HTTP exists only for an
 isolated development build configured with
@@ -128,7 +129,7 @@ Implement `mybot_key_ops_t` and translate hardware input into conversation start
 pair, exit, volume-up and volume-down events. The SDK adjusts volume by 10 on volume events —
 real hardware volume when a device volume implementation is active, otherwise the media-volume software
 gain; emitting volume events is optional. Events may be asynchronous. Destroy must stop the
-source and wait for all handlers. Register with `mybot_key_register()`.
+source and wait for all handlers. Add the operations table to the platform descriptor.
 
 For a single hardware toggle button, query the thread-safe `mybot_get_state()` when handling the
 button: emit `MYBOT_KEY_EVENT_CONVERSATION_START` only from `MYBOT_STATE_READY`, and emit
@@ -140,14 +141,14 @@ from the LCD or maintain a second platform-side state; runtime connectivity loss
 ### LCD (optional)
 
 Implement `mybot_lcd_ops_t` when a display exists. Render receives semantic content and can be
-called from different SDK threads; the SDK serializes calls. Content is borrowed. Register with
-`mybot_lcd_register()`.
+called from different SDK threads; the SDK serializes calls. Content is borrowed. Add the operations
+table to the platform descriptor.
 
 ### Wake words (optional)
 
 Required only with `MYBOT_WAKE_WORDS=ON`. Process receives borrowed PCM. An asynchronous implementation
-must copy retained data, and destroy must wait for all detection handlers. Register with
-`mybot_wake_words_register()`.
+must copy retained data, and destroy must wait for all detection handlers. Add the operations table
+to the platform descriptor.
 
 ### Pairing-code voice announcement (optional)
 
@@ -164,8 +165,8 @@ on the audio.
 Ops interface: `init` allocates the implementation; `open` opens one logical sound
 (`MYBOT_ANNOUNCE_SOUND_PROMPT`, `MYBOT_ANNOUNCE_SOUND_DIGIT_0`..`9`) and may do I/O; `read`
 copies up to `max_frames` frames and must stay cheap (it runs on the real-time playback worker);
-`close` / `destroy` release handles and the implementation. Register with `mybot_announce_register()`
-before `mybot_start()`. The implementation is optional: without one the SDK skips local announcements
+`close` / `destroy` release handles and the implementation. Add the operations table to the
+platform descriptor. The implementation is optional: without one the SDK skips local announcements
 and only logs.
 
 The Linux reference implementation reads raw PCM files per locale from
@@ -173,22 +174,34 @@ The Linux reference implementation reads raw PCM files per locale from
 `MYBOT_ASSETS_DIR` environment variable (default `./assets`) and the locale with `MYBOT_LOCALE`
 (default `zh-CN`).
 
-## Step 4: Add one registration entry point
+## Step 4: Register one versioned platform descriptor
 
 ```c
+#include <mybot/platform/mybot_platform.h>
+
+static const mybot_platform_descriptor_t my_mcu_platform = {
+    .api_version = MYBOT_PLATFORM_API_VERSION,
+    .struct_size = sizeof(mybot_platform_descriptor_t),
+    .name = "my-mcu",
+    .capabilities = MYBOT_PLATFORM_CAP_REQUIRED | MYBOT_PLATFORM_CAP_HTTPS |
+                    MYBOT_PLATFORM_CAP_LCD,
+    .wifi = &my_mcu_wifi_ops,
+    .kv_store = &my_mcu_kv_ops,
+    .key = &my_mcu_key_ops,
+    .audio_capture = &my_mcu_capture_ops,
+    .audio_playback = &my_mcu_playback_ops,
+    .https = &my_mcu_https_ops,
+    .lcd = &my_mcu_lcd_ops,
+};
+
 int my_mcu_platform_register(void) {
-    if (my_mcu_wifi_register() < 0 || my_mcu_https_register() < 0 ||
-        my_mcu_kv_register() < 0 ||
-        my_mcu_key_register() < 0 || my_mcu_audio_capture_register() < 0 ||
-        my_mcu_audio_playback_register() < 0) {
-        return -1;
-    }
-    return 0;
+    return mybot_platform_register(&my_mcu_platform);
 }
 ```
 
-Check and return every registration failure. Add the corresponding LCD, wake-word, or
-announcement registration call when that optional capability is enabled.
+Set a capability bit exactly when its ops pointer is present. `mybot_platform_register()` validates
+the complete descriptor before committing it, so a failure cannot leave a partially registered
+platform. The individual `mybot_*_register()` functions remain available for legacy integrations.
 
 ## Step 5: Integrate with CMake
 
@@ -278,6 +291,7 @@ Verify endianness, pointer width, libc, compiler and floating-point ABI against 
 
 - HTTPS requires a platform TLS implementation and maintained CA trust store. Linux supplies an OpenSSL
   reference; MCU ports must integrate their TLS stack.
-- RTC is Agora-specific, registries are singleton, and one application instance is supported.
+- RTC is Agora-specific, platform registration is process-wide, and one application instance is
+  supported.
 - Linux reference implementations are development references, not production provisioning or secure storage.
 - Third-party redistribution rights must be verified separately; see `THIRD_PARTY_NOTICES.md`.

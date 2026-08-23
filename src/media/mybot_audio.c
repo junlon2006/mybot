@@ -2,32 +2,18 @@
 #include <mybot/platform/mybot_audio.h>
 
 #include "mybot_audio_internal.h"
+#include "mybot_platform_registry.h"
 
 #include <api/aosl_atomic.h>
 
 #include <string.h>
 
-/* Default implementation registry used by the public compatibility API. */
-static const mybot_audio_capture_ops_t *s_registered_capture_ops;
-static const mybot_audio_playback_ops_t *s_registered_playback_ops;
-static const mybot_audio_volume_ops_t *s_registered_volume_ops;
-
 int mybot_audio_register_capture(const mybot_audio_capture_ops_t *ops) {
-    if (!ops || !ops->init || !ops->start || !ops->read || !ops->stop || !ops->destroy ||
-        s_registered_capture_ops) {
-        return -1;
-    }
-    s_registered_capture_ops = ops;
-    return 0;
+    return mybot_platform_registry_register_audio_capture(ops);
 }
 
 int mybot_audio_register_playback(const mybot_audio_playback_ops_t *ops) {
-    if (!ops || !ops->init || !ops->start || !ops->write || !ops->stop || !ops->destroy ||
-        s_registered_playback_ops) {
-        return -1;
-    }
-    s_registered_playback_ops = ops;
-    return 0;
+    return mybot_platform_registry_register_audio_playback(ops);
 }
 
 void mybot_audio_context_init(mybot_audio_t *audio) {
@@ -35,9 +21,9 @@ void mybot_audio_context_init(mybot_audio_t *audio) {
         return;
     }
     memset(audio, 0, sizeof(*audio));
-    audio->capture_ops = s_registered_capture_ops;
-    audio->playback_ops = s_registered_playback_ops;
-    audio->volume_ops = s_registered_volume_ops;
+    audio->capture_ops = mybot_platform_registry_audio_capture();
+    audio->playback_ops = mybot_platform_registry_audio_playback();
+    audio->volume_ops = mybot_platform_registry_audio_volume();
     aosl_atomic_set(&audio->media_volume, MYBOT_AUDIO_VOLUME_DEFAULT);
     aosl_atomic_set(&audio->device_volume, MYBOT_AUDIO_VOLUME_DEFAULT);
 }
@@ -51,11 +37,7 @@ const mybot_audio_playback_ops_t *mybot_audio_get_playback(const mybot_audio_t *
 }
 
 int mybot_audio_device_register_volume(const mybot_audio_volume_ops_t *ops) {
-    if (!ops || !ops->init || !ops->set_volume || !ops->destroy || s_registered_volume_ops) {
-        return -1;
-    }
-    s_registered_volume_ops = ops;
-    return 0;
+    return mybot_platform_registry_register_audio_volume(ops);
 }
 
 bool mybot_audio_device_volume_is_registered(const mybot_audio_t *audio) {

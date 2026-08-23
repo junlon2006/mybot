@@ -6,6 +6,8 @@ This project follows Semantic Versioning.
 
 ### Added
 
+- Add the versioned `mybot_platform_descriptor_t` capability registry with atomic registration,
+  legacy per-capability compatibility APIs, and synchronous startup validation of required ops.
 - Add the BK725x platform port under `platforms/bk725x` and synchronize the complete BK7258
   reference project under `examples/bk725x`, with the full firmware implementation maintained at
   <https://github.com/junlon2006/mybot-bk7258>.

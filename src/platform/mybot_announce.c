@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "mybot_announce_internal.h"
+#include "mybot_platform_registry.h"
 
 #include <api/aosl_log.h>
 #include <hal/aosl_hal_thread.h>
@@ -8,19 +9,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const mybot_announce_ops_t *s_registered_ops;
-
 int mybot_announce_register(const mybot_announce_ops_t *ops) {
-    if (!ops || !ops->init || !ops->open || !ops->read || !ops->close || !ops->destroy ||
-        s_registered_ops) {
-        return -1;
-    }
-    s_registered_ops = ops;
-    return 0;
+    return mybot_platform_registry_register_announce(ops);
 }
 
 bool mybot_announce_is_registered(void) {
-    return s_registered_ops != NULL;
+    return mybot_platform_registry_announce() != NULL;
 }
 
 int mybot_announce_init(mybot_announce_t *announce) {
@@ -30,7 +24,7 @@ int mybot_announce_init(mybot_announce_t *announce) {
     if (announce && announce->active) {
         return 0;
     }
-    announce->ops = s_registered_ops;
+    announce->ops = mybot_platform_registry_announce();
     if (!announce->ops) {
         return 0; /* optional feature, not registered */
     }

@@ -148,6 +148,7 @@ add_library(mybot_sdk STATIC
     src/platform/mybot_https.c
     src/platform/mybot_kv_store.c
     src/platform/mybot_lcd.c
+    src/platform/mybot_platform.c
     src/platform/mybot_wifi.c
     src/rtc/mybot_agora_rtc.c
     src/rtc/mybot_conversation.c

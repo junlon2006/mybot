@@ -90,9 +90,9 @@ typedef enum {
  * development environments whose host already manages the network connection.
  *
  * Preconditions:
- * - Every required platform implementation must be registered first (Wi-Fi, KV,
- *   key, audio capture and playback). LCD and announcement implementations are optional;
- *   a wake-word implementation is required only when MYBOT_WAKE_WORDS is enabled.
+ * - Register a complete mybot_platform_descriptor_t first (recommended), or use the legacy
+ *   individual registration functions. Wi-Fi, KV, key, audio capture and playback are required;
+ *   HTTPS and wake words become required when selected by the build and configuration.
  * - With MYBOT_ENABLE_HTTPS=ON, a "https://" server requires a registered
  *   TLS transport (mybot_https_register()); plain "http://" is rejected
  *   unless MYBOT_ALLOW_INSECURE_HTTP=ON is set for development builds.

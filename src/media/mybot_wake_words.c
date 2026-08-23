@@ -2,32 +2,27 @@
 #include <mybot/platform/mybot_wake_words.h>
 
 #include "mybot_wake_words_internal.h"
+#include "mybot_platform_registry.h"
 
 #include <stddef.h>
 
-static const mybot_wake_words_ops_t *s_registered_ops;
-
 int mybot_wake_words_register(const mybot_wake_words_ops_t *ops) {
-    if (!ops || !ops->init || !ops->process || !ops->destroy || s_registered_ops) {
-        return -1;
-    }
-    s_registered_ops = ops;
-    return 0;
+    return mybot_platform_registry_register_wake_words(ops);
 }
 
 bool mybot_wake_words_is_registered(void) {
-    return s_registered_ops != NULL;
+    return mybot_platform_registry_wake_words() != NULL;
 }
 
 int mybot_wake_words_init(mybot_wake_words_t *wake_words, int sample_rate, int channels,
                           int bits_per_sample, mybot_wake_words_handler_t handler,
                           void *user_data) {
-    if (!wake_words || wake_words->active || !s_registered_ops || sample_rate <= 0 ||
-        channels <= 0 || bits_per_sample <= 0 || !handler) {
+    if (!wake_words || wake_words->active || !mybot_platform_registry_wake_words() ||
+        sample_rate <= 0 || channels <= 0 || bits_per_sample <= 0 || !handler) {
         return -1;
     }
 
-    wake_words->ops = s_registered_ops;
+    wake_words->ops = mybot_platform_registry_wake_words();
     if (wake_words->ops->init(&wake_words->ctx, sample_rate, channels, bits_per_sample, handler,
                               user_data) < 0) {
         wake_words->ctx = NULL;

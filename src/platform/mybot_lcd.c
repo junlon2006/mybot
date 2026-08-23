@@ -2,13 +2,12 @@
 #include <mybot/platform/mybot_lcd.h>
 
 #include "mybot_lcd_internal.h"
+#include "mybot_platform_registry.h"
 
 #include "hal/aosl_hal_thread.h"
 
 #include <stddef.h>
 #include <string.h>
-
-static const mybot_lcd_ops_t *s_registered_ops;
 
 static bool screen_is_valid(mybot_lcd_screen_t screen) {
     return screen >= MYBOT_LCD_SCREEN_STARTING && screen < MYBOT_LCD_SCREEN_COUNT;
@@ -35,23 +34,19 @@ static int render_content(mybot_lcd_t *lcd, const mybot_lcd_content_t *content) 
 }
 
 int mybot_lcd_register(const mybot_lcd_ops_t *ops) {
-    if (!ops || !ops->init || !ops->render || !ops->destroy || s_registered_ops) {
-        return -1;
-    }
-    s_registered_ops = ops;
-    return 0;
+    return mybot_platform_registry_register_lcd(ops);
 }
 
 bool mybot_lcd_is_registered(void) {
-    return s_registered_ops != NULL;
+    return mybot_platform_registry_lcd() != NULL;
 }
 
 int mybot_lcd_init(mybot_lcd_t *lcd) {
-    if (!lcd || lcd->active || !s_registered_ops) {
+    if (!lcd || lcd->active || !mybot_platform_registry_lcd()) {
         return -1;
     }
 
-    lcd->ops = s_registered_ops;
+    lcd->ops = mybot_platform_registry_lcd();
     lcd->render_lock = aosl_hal_mutex_create();
     if (!lcd->render_lock) {
         return -1;

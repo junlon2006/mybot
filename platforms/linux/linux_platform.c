@@ -4,19 +4,27 @@
 #include "linux_platform_adapters.h"
 
 #include <mybot/mybot_build_config.h>
+#include <mybot/platform/mybot_platform.h>
 
 int linux_platform_register(void) {
-    if (linux_wifi_platform_register_host_network() < 0 ||
-        linux_audio_platform_register_alsa_capture() < 0 ||
-        linux_audio_platform_register_alsa_playback() < 0 ||
-        linux_audio_platform_register_alsa_volume() < 0 ||
-        linux_kv_store_platform_register_file() < 0 || linux_key_platform_register_stdin() < 0 ||
-        linux_lcd_platform_register_console() < 0 || linux_announce_platform_register() < 0
+    mybot_platform_descriptor_t descriptor = {
+        .api_version = MYBOT_PLATFORM_API_VERSION,
+        .struct_size = sizeof(descriptor),
+        .name = "linux-reference",
+        .capabilities = MYBOT_PLATFORM_CAP_REQUIRED | MYBOT_PLATFORM_CAP_AUDIO_VOLUME |
+                        MYBOT_PLATFORM_CAP_LCD | MYBOT_PLATFORM_CAP_ANNOUNCE,
+        .wifi = linux_wifi_platform_host_network_ops(),
+        .kv_store = linux_kv_store_platform_file_ops(),
+        .key = linux_key_platform_stdin_ops(),
+        .audio_capture = linux_audio_platform_alsa_capture_ops(),
+        .audio_playback = linux_audio_platform_alsa_playback_ops(),
+        .audio_volume = linux_audio_platform_alsa_volume_ops(),
+        .lcd = linux_lcd_platform_console_ops(),
+        .announce = linux_announce_platform_file_ops(),
+    };
 #if MYBOT_LINUX_HTTPS_OPENSSL
-        || linux_https_platform_register_openssl() < 0
+    descriptor.capabilities |= MYBOT_PLATFORM_CAP_HTTPS;
+    descriptor.https = linux_https_platform_openssl_ops();
 #endif
-    ) {
-        return -1;
-    }
-    return 0;
+    return mybot_platform_register(&descriptor);
 }
