@@ -59,13 +59,17 @@ typedef struct {
      * @return frames actually read (positive), 0 on no progress, or -1 on
      *         error. Never return more than the requested frames.
      *
-     * @note A call may block, but it must return within a bounded time so the
-     *       worker can observe shutdown. stop() is called after the worker exits.
+     * @note A call may block during normal operation. During shutdown the SDK calls stop() from
+     *       another thread; the in-flight read() must then return promptly.
      */
     int (*read)(void *ctx, void *buf, int frames);
 
     /**
      * Stop the capture stream.
+     *
+     * Called from the SDK shutdown thread while read() may be in flight on the capture worker.
+     * The implementation must be thread-safe and cause that read() to return promptly. The context
+     * remains valid until destroy() after the worker exits.
      *
      * @param ctx device context from init()
      * @return 0 on success, -1 on error
@@ -121,13 +125,17 @@ typedef struct {
      * @return frames actually written (positive), 0 on no progress, or -1 on
      *         error. Never return more than the requested frames.
      *
-     * @note A call may block, but it must return within a bounded time so the
-     *       worker can observe shutdown. stop() is called after the worker exits.
+     * @note A call may block during normal operation. During shutdown the SDK calls stop() from
+     *       another thread; the in-flight write() must then return promptly.
      */
     int (*write)(void *ctx, const void *buf, int frames);
 
     /**
      * Stop the playback stream.
+     *
+     * Called from the SDK shutdown thread while write() may be in flight on the playback worker.
+     * The implementation must be thread-safe and cause that write() to return promptly. The
+     * context remains valid until destroy() after the worker exits.
      *
      * @param ctx device context from init()
      * @return 0 on success, -1 on error

@@ -25,11 +25,13 @@
 #include <hal/aosl_hal_time.h>
 
 #include <assert.h>
+#include <errno.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #define TEST_SAMPLE_RATE 16000
 #define TEST_CHANNELS 1
@@ -53,6 +55,7 @@
 #endif
 
 static pthread_mutex_t s_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t s_io_cond = PTHREAD_COND_INITIALIZER;
 
 static mybot_wifi_event_handler_t s_wifi_handler;
 static void *s_wifi_user_data;
@@ -110,6 +113,12 @@ static int s_capture_context;
 static int s_playback_context;
 static bool s_capture_started;
 static bool s_playback_started;
+static bool s_block_capture_read;
+static bool s_capture_read_blocked;
+static bool s_capture_read_timed_out;
+static bool s_block_playback_write;
+static bool s_playback_write_blocked;
+static bool s_playback_write_timed_out;
 
 static void mock_lock(void) {
     assert(pthread_mutex_lock(&s_lock) == 0);
@@ -124,6 +133,37 @@ static int read_counter(const int *counter) {
     int value = *counter;
     mock_unlock();
     return value;
+}
+
+static bool wait_for_flag(const bool *flag, int timeout_ms) {
+    for (int elapsed = 0; elapsed < timeout_ms; elapsed++) {
+        mock_lock();
+        bool value = *flag;
+        mock_unlock();
+        if (value) {
+            return true;
+        }
+        aosl_hal_msleep(1);
+    }
+    return false;
+}
+
+static void wait_for_io_stop(bool *block_requested, bool *blocked, bool *started, bool *timed_out) {
+    struct timespec deadline;
+    assert(clock_gettime(CLOCK_REALTIME, &deadline) == 0);
+    deadline.tv_sec += 5;
+    *blocked = true;
+    assert(pthread_cond_broadcast(&s_io_cond) == 0);
+    while (*block_requested && *started) {
+        int ret = pthread_cond_timedwait(&s_io_cond, &s_lock, &deadline);
+        if (ret == ETIMEDOUT) {
+            *timed_out = true;
+            *block_requested = false;
+            break;
+        }
+        assert(ret == 0);
+    }
+    *blocked = false;
 }
 
 static bool wait_for_app_state(mybot_state_t expected, int timeout_ms) {
@@ -347,6 +387,10 @@ static int capture_start(void *ctx) {
 static int capture_read(void *ctx, void *buf, int frames) {
     assert(ctx == &s_capture_context);
     mock_lock();
+    if (s_block_capture_read) {
+        wait_for_io_stop(&s_block_capture_read, &s_capture_read_blocked, &s_capture_started,
+                         &s_capture_read_timed_out);
+    }
     bool started = s_capture_started;
     mock_unlock();
     if (!started) {
@@ -363,6 +407,8 @@ static int capture_stop(void *ctx) {
     assert(ctx == &s_capture_context);
     mock_lock();
     s_capture_started = false;
+    s_block_capture_read = false;
+    assert(pthread_cond_broadcast(&s_io_cond) == 0);
     s_capture_stop_calls++;
     mock_unlock();
     return 0;
@@ -399,6 +445,10 @@ static int playback_write(void *ctx, const void *buf, int frames) {
     assert(ctx == &s_playback_context);
     assert(buf != NULL);
     mock_lock();
+    if (s_block_playback_write) {
+        wait_for_io_stop(&s_block_playback_write, &s_playback_write_blocked, &s_playback_started,
+                         &s_playback_write_timed_out);
+    }
     bool started = s_playback_started;
     if (started) {
         s_playback_write_calls++;
@@ -411,6 +461,8 @@ static int playback_stop(void *ctx) {
     assert(ctx == &s_playback_context);
     mock_lock();
     s_playback_started = false;
+    s_block_playback_write = false;
+    assert(pthread_cond_broadcast(&s_io_cond) == 0);
     s_playback_stop_calls++;
     mock_unlock();
     return 0;
@@ -863,7 +915,19 @@ int main(void) {
     assert(wait_for_audio_frame(TEST_REF_SAMPLE, 2000));
 #endif
 
+    int16_t shutdown_frame[TEST_FRAME_SAMPLES];
+    memset(shutdown_frame, 0, sizeof(shutdown_frame));
+    mock_lock();
+    s_block_capture_read = true;
+    s_block_playback_write = true;
+    mock_unlock();
+    emit_remote_audio(shutdown_frame, sizeof(shutdown_frame));
+    assert(wait_for_flag(&s_capture_read_blocked, 1000));
+    assert(wait_for_flag(&s_playback_write_blocked, 1000));
+
     mybot_stop();
+    assert(!s_capture_read_timed_out);
+    assert(!s_playback_write_timed_out);
     assert(!mybot_is_running());
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
     assert(read_counter(&s_device_shutdown_calls) == 1);

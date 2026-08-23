@@ -58,7 +58,9 @@ Implement complete capture and playback tables from `mybot_audio.h`. The lifecyc
   Never return more frames than requested.
 - PCM pointers are borrowed only for the callback duration.
 - I/O runs on dedicated AOSL MPQ workers. Blocking must be bounded so shutdown can finish.
-- `stop` should unblock in-flight I/O; `destroy` releases the context after workers stop.
+- The SDK calls capture and playback `stop` from its shutdown thread before waiting for either
+  worker. `stop` must be thread-safe and promptly unblock an in-flight `read` / `write`;
+  `destroy` runs only after the corresponding worker has exited.
 
 Add both operations tables to the platform descriptor.
 

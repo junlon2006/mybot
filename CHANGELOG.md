@@ -42,6 +42,8 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
+- Call both platform audio `stop` hooks before waiting for media workers, allowing a thread-safe
+  stop implementation to unblock in-flight capture and playback I/O without shutdown deadlocks.
 - Simplify device-service URL scheme validation into direct branches, eliminating a duplicate-condition
   cppcheck warning across HTTPS and development HTTP build configurations.
 - Clamp server-provided device-service polling intervals to 3..60 seconds and saturate oversized JSON
