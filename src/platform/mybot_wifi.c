@@ -2,28 +2,23 @@
 #include <mybot/platform/mybot_wifi.h>
 
 #include "mybot_wifi_internal.h"
+#include "mybot_platform_registry.h"
 
 #include <stdbool.h>
 #include <stddef.h>
 
-static const mybot_wifi_ops_t *s_registered_ops;
-
 int mybot_wifi_register(const mybot_wifi_ops_t *ops) {
-    if (!ops || !ops->init || !ops->destroy || s_registered_ops) {
-        return -1;
-    }
-
-    s_registered_ops = ops;
-    return 0;
+    return mybot_platform_registry_register_wifi(ops);
 }
 
 int mybot_wifi_init(mybot_wifi_t *wifi, const char *device_id, mybot_wifi_event_handler_t handler,
                     void *user_data) {
-    if (!wifi || !device_id || !device_id[0] || !handler || !s_registered_ops || wifi->active) {
+    if (!wifi || !device_id || !device_id[0] || !handler || !mybot_platform_registry_wifi() ||
+        wifi->active) {
         return -1;
     }
 
-    wifi->ops = s_registered_ops;
+    wifi->ops = mybot_platform_registry_wifi();
     if (wifi->ops->init(&wifi->ctx, device_id, handler, user_data) < 0) {
         wifi->ctx = NULL;
         return -1;

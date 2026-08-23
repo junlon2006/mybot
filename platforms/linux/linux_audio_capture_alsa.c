@@ -289,6 +289,10 @@ static const mybot_audio_capture_ops_t g_alsa_capture_ops = {
     .destroy = alsa_capture_destroy,
 };
 
+const mybot_audio_capture_ops_t *linux_audio_platform_alsa_capture_ops(void) {
+    return &g_alsa_capture_ops;
+}
+
 int linux_audio_platform_register_alsa_capture(void) {
     int ret = mybot_audio_register_capture(&g_alsa_capture_ops);
     if (ret == 0) {

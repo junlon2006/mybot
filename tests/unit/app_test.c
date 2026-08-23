@@ -4,6 +4,7 @@
 #include <mybot/platform/mybot_audio.h>
 #include <mybot/platform/mybot_key.h>
 #include <mybot/platform/mybot_lcd.h>
+#include <mybot/platform/mybot_platform.h>
 #include <mybot/platform/mybot_wake_words.h>
 #include <mybot/platform/mybot_wifi.h>
 
@@ -15,6 +16,7 @@
 #include "mybot_key_internal.h"
 #include "mybot_kv_store_internal.h"
 #include "mybot_lcd_internal.h"
+#include "mybot_platform_registry.h"
 #include "mybot_rtc_session.h"
 #include "mybot_wake_words_internal.h"
 #include "mybot_wifi_internal.h"
@@ -68,6 +70,8 @@ static bool s_announce_active;
 static mybot_rtc_session_callbacks_t s_rtc_callbacks;
 static bool s_rtc_initialized;
 static bool s_rtc_joined;
+static uint64_t s_missing_platform_capabilities;
+static int s_platform_registry_lock_calls;
 
 static int s_wifi_init_calls;
 static int s_wifi_deinit_calls;
@@ -213,6 +217,18 @@ static void emit_remote_audio(const int16_t *pcm, size_t len) {
 
 bool mybot_https_is_registered(void) {
     return true;
+}
+
+int mybot_platform_validate(uint64_t required_capabilities, uint64_t *missing_capabilities) {
+    uint64_t missing = required_capabilities & s_missing_platform_capabilities;
+    if (missing_capabilities) {
+        *missing_capabilities = missing;
+    }
+    return missing == 0 ? 0 : -1;
+}
+
+void mybot_platform_registry_lock(void) {
+    s_platform_registry_lock_calls++;
 }
 
 bool mybot_lcd_is_registered(void) {
@@ -755,7 +771,16 @@ int main(void) {
     snprintf(config.hw_model, sizeof(config.hw_model), "%s", "test-hw");
 
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+    s_missing_platform_capabilities = MYBOT_PLATFORM_CAP_WIFI;
+    assert(mybot_start(&config) < 0);
+    assert(!mybot_is_running());
+    assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+    assert(read_counter(&s_wifi_init_calls) == 0);
+    assert(s_platform_registry_lock_calls == 0);
+
+    s_missing_platform_capabilities = 0;
     assert(mybot_start(&config) == 0);
+    assert(s_platform_registry_lock_calls == 1);
     assert(mybot_is_running());
     assert(mybot_get_state() == MYBOT_STATE_WIFI_PROVISIONING);
     assert(read_counter(&s_wifi_init_calls) == 1);

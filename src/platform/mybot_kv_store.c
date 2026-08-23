@@ -2,18 +2,10 @@
 #include <mybot/platform/mybot_kv_store.h>
 
 #include "mybot_kv_store_internal.h"
-
-static const mybot_kv_store_ops_t *s_registered_ops;
+#include "mybot_platform_registry.h"
 
 int mybot_kv_store_register(const mybot_kv_store_ops_t *ops) {
-    if (!ops || !ops->init || !ops->get || !ops->set || !ops->erase || !ops->destroy) {
-        return -1;
-    }
-    if (s_registered_ops) {
-        return -1;
-    }
-    s_registered_ops = ops;
-    return 0;
+    return mybot_platform_registry_register_kv_store(ops);
 }
 
 int mybot_kv_store_init(mybot_kv_store_t *store) {
@@ -23,7 +15,7 @@ int mybot_kv_store_init(mybot_kv_store_t *store) {
     if (store->ctx) {
         return 0;
     }
-    store->ops = s_registered_ops;
+    store->ops = mybot_platform_registry_kv_store();
     if (!store->ops) {
         return -1;
     }

@@ -241,6 +241,10 @@ static const mybot_audio_playback_ops_t g_alsa_playback_ops = {
     .destroy = alsa_playback_destroy,
 };
 
+const mybot_audio_playback_ops_t *linux_audio_platform_alsa_playback_ops(void) {
+    return &g_alsa_playback_ops;
+}
+
 int linux_audio_platform_register_alsa_playback(void) {
     int ret = mybot_audio_register_playback(&g_alsa_playback_ops);
     if (ret == 0) {

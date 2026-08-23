@@ -176,12 +176,12 @@ add_subdirectory(third_party/mybot)
 target_link_libraries(device_firmware PRIVATE mybot::sdk)
 ```
 
-The platform must register the Wi-Fi, KV, key, audio capture, audio playback, and HTTPS transport
-implementations before `mybot_start()`. The LCD and pairing-code announcement implementations are
-optional; the local ASR implementation is required only when `MYBOT_WAKE_WORDS=ON`. The Linux
-platform registers the OpenSSL implementation automatically; other platforms must implement
-`mybot_https_ops_t`. For the full implementation order, minimal code, threading constraints, and
-acceptance checklist, see [docs/PORTING.md](docs/PORTING.md).
+Register one versioned `mybot_platform_descriptor_t` before `mybot_start()`. It declares required and
+optional capability bits together with the Wi-Fi, KV, key, audio, HTTPS, LCD, announcement, volume,
+and wake-word ops. Registration is validated and committed atomically; `mybot_start()` rejects missing
+required capabilities before creating any platform resources. The individual `mybot_*_register()`
+functions remain available as a compatibility path. For the full implementation order, minimal code,
+threading constraints, and acceptance checklist, see [docs/PORTING.md](docs/PORTING.md).
 
 Minimal application lifecycle:
 
