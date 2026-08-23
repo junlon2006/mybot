@@ -30,6 +30,13 @@ static int s_leave_calls;
 static int s_destroy_calls;
 static int s_create_calls;
 static int s_send_calls;
+static int s_init_result;
+static int s_create_result;
+static int s_destroy_result;
+static int s_join_result;
+static int s_leave_result;
+static int s_bwe_result;
+static int s_send_result;
 static int s_renew_calls;
 static int s_renew_result;
 static char s_renewed_token[512];
@@ -58,9 +65,12 @@ int agora_rtc_init(const char *app_id, const agora_rtc_event_handler_t *event_ha
     if (event_handler) {
         s_handler = *event_handler;
     }
+    if (s_init_result < 0) {
+        return s_init_result;
+    }
     /* Mirror the real Agora SDK's independent AOSL ownership. */
     aosl_ctor();
-    return 0;
+    return s_init_result;
 }
 
 int agora_rtc_fini(void) {
@@ -71,14 +81,17 @@ int agora_rtc_fini(void) {
 
 int agora_rtc_create_connection(connection_id_t *conn_id) {
     s_create_calls++;
+    if (s_create_result < 0) {
+        return s_create_result;
+    }
     *conn_id = s_next_conn++;
-    return 0;
+    return s_create_result;
 }
 
 int agora_rtc_destroy_connection(connection_id_t conn_id) {
     (void)conn_id;
     s_destroy_calls++;
-    return 0;
+    return s_destroy_result;
 }
 
 int agora_rtc_join_channel_with_user_account(connection_id_t conn_id, const char *channel_name,
@@ -91,17 +104,17 @@ int agora_rtc_join_channel_with_user_account(connection_id_t conn_id, const char
     assert(options != NULL);
     s_join_options = *options;
     s_join_calls++;
-    return 0;
+    return s_join_result;
 }
 
 int agora_rtc_leave_channel(connection_id_t conn_id) {
     (void)conn_id;
     s_leave_calls++;
-    return 0;
+    return s_leave_result;
 }
 
 int agora_rtc_renew_token(connection_id_t conn_id, const char *token) {
-    assert(conn_id == 1);
+    assert(conn_id != 0);
     assert(token != NULL);
     snprintf(s_renewed_token, sizeof(s_renewed_token), "%s", token);
     s_renew_calls++;
@@ -114,7 +127,7 @@ int agora_rtc_set_bwe_param(connection_id_t conn_id, uint32_t min_bps, uint32_t 
     (void)min_bps;
     (void)max_bps;
     (void)start_bps;
-    return 0;
+    return s_bwe_result;
 }
 
 int agora_rtc_send_audio_data(connection_id_t conn_id, const void *data_ptr, size_t data_len,
@@ -125,7 +138,7 @@ int agora_rtc_send_audio_data(connection_id_t conn_id, const void *data_ptr, siz
     s_last_send_len = data_len;
     s_last_send_info = *info_ptr;
     s_send_calls++;
-    return 0;
+    return s_send_result;
 }
 
 /* ---- app callbacks ---- */
@@ -154,6 +167,18 @@ int main(void) {
     mybot_rtc_session_t session = {0};
     unsigned char pcm_frame[RTC_PCM_FRAME_BYTES] = {0};
 
+    assert(mybot_rtc_session_get_state(NULL) == MYBOT_RTC_STATE_IDLE);
+    assert(!mybot_rtc_session_is_connected(NULL));
+    assert(mybot_rtc_session_init(NULL, "app", NULL) < 0);
+    assert(mybot_rtc_session_init(&session, NULL, NULL) < 0);
+    assert(mybot_rtc_session_init(&session, "", NULL) < 0);
+
+    s_init_result = -1;
+    assert(mybot_rtc_session_init(&session, "test-app", NULL) < 0);
+    assert(s_init_calls == 1);
+    assert(session.lock == NULL);
+    s_init_result = 0;
+
     /* Not initialized yet. */
     assert(mybot_rtc_session_get_state(&session) == MYBOT_RTC_STATE_IDLE);
     assert(!mybot_rtc_session_is_connected(&session));
@@ -162,6 +187,8 @@ int main(void) {
     mybot_rtc_session_fini(&session); /* no agora_rtc_fini when uninitialized */
     assert(s_fini_calls == 0);
     assert(mybot_rtc_session_renew_token(&session, "renewed-token") < 0);
+    assert(mybot_rtc_session_renew_token(&session, NULL) < 0);
+    assert(mybot_rtc_session_renew_token(&session, "") < 0);
     assert(s_renew_calls == 0);
 
     mybot_rtc_session_callbacks_t cbs;
@@ -172,21 +199,37 @@ int main(void) {
     cbs.user_data = &s_callback_owner;
 
     assert(mybot_rtc_session_init(&session, "test-app", &cbs) == 0);
-    assert(s_init_calls == 1);
+    assert(s_init_calls == 2);
     assert(mybot_rtc_session_get_state(&session) == MYBOT_RTC_STATE_INITIALIZED);
+
+    mybot_rtc_session_t other_session = {0};
+    assert(mybot_rtc_session_init(&other_session, "other-app", &cbs) < 0);
 
     /* Double init is a no-op. */
     assert(mybot_rtc_session_init(&session, "test-app", &cbs) == 0);
-    assert(s_init_calls == 1);
+    assert(s_init_calls == 2);
 
     /* Cannot send before joining. */
     assert(mybot_rtc_session_send_audio(&session, pcm_frame, sizeof(pcm_frame)) < 0);
     assert(s_send_calls == 0);
 
+    s_create_result = -1;
+    assert(mybot_rtc_session_join(&session, "room", "token", "user1") < 0);
+    assert(s_create_calls == 1);
+    s_create_result = 0;
+
+    s_join_result = -1;
+    assert(mybot_rtc_session_join(&session, "room", "token", "user1") < 0);
+    assert(mybot_rtc_session_get_state(&session) == MYBOT_RTC_STATE_ERROR);
+    assert(s_destroy_calls == 1);
+    s_join_result = 0;
+    s_bwe_result = -1;
+
     /* Join: connecting until the SDK reports success. */
     assert(mybot_rtc_session_join(&session, "room", "token", "user1") == 0);
-    assert(s_join_calls == 1);
-    assert(s_create_calls == 1);
+    s_bwe_result = 0;
+    assert(s_join_calls == 2);
+    assert(s_create_calls == 3);
     assert(s_join_options.audio_codec_opt.audio_codec_type == AUDIO_CODEC_TYPE_G722);
     assert(s_join_options.audio_codec_opt.pcm_sample_rate == 16000);
     assert(s_join_options.audio_codec_opt.pcm_channel_num == 1);
@@ -200,6 +243,10 @@ int main(void) {
     s_handler.on_join_channel_success(1, 42, 100);
     assert(mybot_rtc_session_is_connected(&session));
     assert(mybot_rtc_session_get_state(&session) == MYBOT_RTC_STATE_CONNECTED);
+    s_handler.on_reconnecting(1);
+    assert(mybot_rtc_session_get_state(&session) == MYBOT_RTC_STATE_RECONNECTING);
+    s_handler.on_rejoin_channel_success(1, 42, 10);
+    assert(mybot_rtc_session_is_connected(&session));
 
     s_handler.on_token_privilege_will_expire(1, "old-token");
     assert(s_token_expiry_calls == 1);
@@ -211,10 +258,13 @@ int main(void) {
     assert(s_renew_calls == 2);
     s_renew_result = 0;
 
+    s_send_result = -1;
+    assert(mybot_rtc_session_send_audio(&session, pcm_frame, sizeof(pcm_frame)) < 0);
+    s_send_result = 0;
     assert(mybot_rtc_session_send_audio(&session, pcm_frame, sizeof(pcm_frame)) == 0);
     assert(s_last_send_len == sizeof(pcm_frame));
     assert(s_last_send_info.data_type == AUDIO_DATA_TYPE_PCM);
-    assert(s_send_calls == 1);
+    assert(s_send_calls == 2);
 
     /* Connection loss blocks sends until the rejoin callback. */
     s_handler.on_connection_lost(1);
@@ -223,7 +273,7 @@ int main(void) {
     s_handler.on_rejoin_channel_success(1, 42, 50);
     assert(mybot_rtc_session_is_connected(&session));
     assert(mybot_rtc_session_send_audio(&session, pcm_frame, sizeof(pcm_frame)) == 0);
-    assert(s_send_calls == 2);
+    assert(s_send_calls == 3);
     assert(s_last_send_len == sizeof(pcm_frame));
 
     /* License failure moves to ERROR. */
@@ -236,14 +286,29 @@ int main(void) {
     assert(mybot_rtc_session_is_connected(&session));
     assert(mybot_rtc_session_join(&session, "room2", "token", "user2") < 0);
 
+    user_info_t user = {0};
+    user.uid = 9;
+    snprintf(user.user_account, sizeof(user.user_account), "%s", "remote-user");
+    s_handler.on_user_joined_with_user_account(1, &user, 1);
+    s_handler.on_user_offline_with_user_account(1, &user, 2);
+    rtc_stats_t stats = {0};
+    s_handler.on_rtc_stats(1, stats);
+    s_handler.on_error(1, -1, NULL);
+    assert(mybot_rtc_session_get_state(&session) == MYBOT_RTC_STATE_ERROR);
+    s_handler.on_join_channel_success(1, 42, 0);
+
     /* Remote audio forwards to the application callback. */
     s_handler.on_audio_data(1, 7, 0, "audio", 5, NULL);
     assert(s_remote_audio_calls == 1);
 
     /* Leave tears down the connection and returns to INITIALIZED. */
+    s_leave_result = -1;
+    s_destroy_result = -1;
     assert(mybot_rtc_session_leave(&session) == 0);
+    s_leave_result = 0;
+    s_destroy_result = 0;
     assert(s_leave_calls == 1);
-    assert(s_destroy_calls == 1);
+    assert(s_destroy_calls == 2);
     assert(mybot_rtc_session_get_state(&session) == MYBOT_RTC_STATE_INITIALIZED);
     assert(mybot_rtc_session_leave(&session) == 0); /* idempotent without a connection */
     assert(s_leave_calls == 1);
@@ -259,6 +324,15 @@ int main(void) {
     mybot_rtc_session_fini(&session); /* now uninitialized again */
     assert(s_fini_calls == 1);
     assert(s_state_changes > 0);
+
+    s_handler.on_join_channel_success(1, 42, 0);
+    s_handler.on_reconnecting(1);
+    s_handler.on_connection_lost(1);
+    s_handler.on_rejoin_channel_success(1, 42, 0);
+    s_handler.on_audio_data(1, 7, 0, "audio", 5, NULL);
+    s_handler.on_error(1, 1, "late");
+    s_handler.on_license_validation_failure(1, 1);
+    s_handler.on_token_privilege_will_expire(1, "late");
 
     aosl_dtor();
     puts("rtc_session_test: ok");

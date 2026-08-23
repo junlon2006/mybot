@@ -14,12 +14,30 @@
 static char s_tls_host[128];
 static uint16_t s_tls_port;
 static char s_tls_request[2048];
+static size_t s_tls_request_len;
 static size_t s_tls_response_offset;
 static int s_tls_closed;
 static int s_tls_connect_count;
+static int s_tls_send_count;
+static int s_tls_recv_count;
+static int s_tls_connect_result;
+static int s_tls_send_limit;
+static int s_tls_recv_limit;
+static int s_tls_send_fail_at;
+static int s_tls_recv_fail_at;
 
-static const char s_tls_response[] =
+static const char s_default_tls_response[] =
     "HTTP/1.1 200 OK\r\nContent-Length: 6\r\nConnection: close\r\n\r\nsecure";
+static const char *s_tls_response = s_default_tls_response;
+
+static void reset_tls_script(const char *response) {
+    s_tls_response = response ? response : s_default_tls_response;
+    s_tls_connect_result = 0;
+    s_tls_send_limit = 0;
+    s_tls_recv_limit = 0;
+    s_tls_send_fail_at = 0;
+    s_tls_recv_fail_at = 0;
+}
 
 static int fake_tls_connect(void **connection, const char *host, uint16_t port, int timeout_ms) {
     assert(timeout_ms > 0);
@@ -27,6 +45,12 @@ static int fake_tls_connect(void **connection, const char *host, uint16_t port, 
     assert(snprintf(s_tls_host, sizeof(s_tls_host), "%s", host) < (int)sizeof(s_tls_host));
     s_tls_port = port;
     s_tls_response_offset = 0;
+    s_tls_request_len = 0;
+    s_tls_send_count = 0;
+    s_tls_recv_count = 0;
+    if (s_tls_connect_result < 0) {
+        return s_tls_connect_result;
+    }
     *connection = &s_tls_port;
     return 0;
 }
@@ -34,20 +58,37 @@ static int fake_tls_connect(void **connection, const char *host, uint16_t port, 
 static int fake_tls_send(void *connection, const void *data, size_t len, int timeout_ms) {
     assert(connection == &s_tls_port);
     assert(timeout_ms > 0);
-    assert(len < sizeof(s_tls_request));
-    memcpy(s_tls_request, data, len);
-    s_tls_request[len] = '\0';
-    return (int)len;
+    s_tls_send_count++;
+    if (s_tls_send_fail_at == s_tls_send_count) {
+        return -1;
+    }
+    size_t count = len;
+    if (s_tls_send_limit > 0 && count > (size_t)s_tls_send_limit) {
+        count = (size_t)s_tls_send_limit;
+    }
+    assert(count < sizeof(s_tls_request) - s_tls_request_len);
+    memcpy(s_tls_request + s_tls_request_len, data, count);
+    s_tls_request_len += count;
+    s_tls_request[s_tls_request_len] = '\0';
+    return (int)count;
 }
 
 static int fake_tls_recv(void *connection, void *data, size_t capacity, int timeout_ms) {
     assert(connection == &s_tls_port);
     assert(timeout_ms > 0);
-    size_t remaining = sizeof(s_tls_response) - 1 - s_tls_response_offset;
+    s_tls_recv_count++;
+    if (s_tls_recv_fail_at == s_tls_recv_count) {
+        return -1;
+    }
+    size_t response_len = strlen(s_tls_response);
+    size_t remaining = response_len - s_tls_response_offset;
     if (remaining == 0) {
         return 0;
     }
     size_t count = remaining < capacity ? remaining : capacity;
+    if (s_tls_recv_limit > 0 && count > (size_t)s_tls_recv_limit) {
+        count = (size_t)s_tls_recv_limit;
+    }
     memcpy(data, s_tls_response + s_tls_response_offset, count);
     s_tls_response_offset += count;
     return (int)count;
@@ -82,6 +123,115 @@ static void expect_failure(const char *raw, int stream_closed) {
     int rc = parse_response(raw, strlen(raw), stream_closed, &resp);
     assert(rc < 0);
     mybot_http_client_response_free(&resp);
+}
+
+static void test_url_and_header_validation(void) {
+    url_parts_t parts;
+    char long_url[700];
+
+    assert(parse_url(NULL, &parts) < 0);
+    assert(parse_url("https://service.example", NULL) < 0);
+    assert(parse_url("ftp://service.example/path", &parts) < 0);
+    assert(parse_url("https:///path", &parts) < 0);
+    assert(parse_url("https://service.example", &parts) == 0);
+    assert(strcmp(parts.path, "/") == 0);
+    assert(parse_url("https://service.example:65535/a?b=c", &parts) == 0);
+    assert(parts.port == 65535);
+    assert(parse_url("https://service.example:/path", &parts) < 0);
+    assert(parse_url("https://service.example:65536/path", &parts) < 0);
+    assert(parse_url("https://service.example:-1/path", &parts) < 0);
+    assert(parse_url("https://service.example\\evil/path", &parts) < 0);
+    assert(parse_url("https://service.example/path with space", &parts) < 0);
+    assert(parse_url("https://service.example/path\\name", &parts) < 0);
+
+    memcpy(long_url, "https://", 8);
+    memset(long_url + 8, 'h', 128);
+    long_url[136] = '\0';
+    assert(parse_url(long_url, &parts) < 0);
+
+    memcpy(long_url, "https://h/", 10);
+    memset(long_url + 10, 'p', 512);
+    long_url[522] = '\0';
+    assert(parse_url(long_url, &parts) < 0);
+
+    assert(!host_is_safe(NULL));
+    assert(!host_is_safe(""));
+    assert(!host_is_safe("bad@host"));
+    assert(!host_is_safe("bad\x7fhost"));
+    assert(host_is_safe("good-host.example"));
+    assert(!request_target_is_safe(NULL));
+    assert(!request_target_is_safe("relative"));
+    assert(request_target_is_safe("/safe?query=yes"));
+    assert(!header_value_is_safe(NULL));
+    assert(!header_value_is_safe(""));
+    assert(header_value_is_safe("value\twith-tab"));
+    assert(!header_value_is_safe("value\nnewline"));
+    assert(header_name_char('A'));
+    assert(header_name_char('9'));
+    assert(header_name_char('!'));
+    assert(!header_name_char(':'));
+    assert(extra_headers_are_safe(NULL));
+    assert(extra_headers_are_safe(""));
+    assert(extra_headers_are_safe("X-Test: one\r\nY_Test:\ttwo\r\n"));
+    assert(!extra_headers_are_safe("No-Colon\r\n"));
+    assert(!extra_headers_are_safe(": no-name\r\n"));
+    assert(!extra_headers_are_safe("Bad Name: value\r\n"));
+    assert(!extra_headers_are_safe("X-Test: bad\x7f\r\n"));
+    assert(!extra_headers_are_safe("X-Test: value\r\n\r\n"));
+}
+
+static void test_response_boundaries(void) {
+    mybot_http_client_response_t resp;
+
+    assert(parse_status_line("HTTP/2 404") == 404);
+    assert(parse_status_line("HTTP/1.1    204") == 204);
+    assert(parse_status_line("NOTHTTP/1.1 200") == 0);
+    assert(deadline_remaining_ms(0) == 0);
+    assert(deadline_remaining_ms(UINT64_MAX) == INT_MAX);
+
+    int ret = parse_response("HTTP/1.1 204 No Content\r\n\r\n", 27, 1, &resp);
+    assert(ret == 0);
+    assert(resp.status_code == 204);
+    assert(resp.body == NULL);
+    assert(resp.body_len == 0);
+    mybot_http_client_response_free(&resp);
+
+    {
+        const char raw[] = "HTTP/1.1 404 Not Found\r\nContent-Length: 3\r\n\r\nno!trailing";
+        ret = parse_response(raw, sizeof(raw) - 1, 1, &resp);
+        assert(ret == 0);
+        assert(resp.status_code == 404);
+        assert(resp.body_len == 3);
+        assert(strcmp(resp.body, "no!") == 0);
+        mybot_http_client_response_free(&resp);
+    }
+
+    expect_success("HTTP/1.1 200 OK\r\n"
+                   "Content-Length: 5\r\n"
+                   "Content-Length:\t5 \r\n"
+                   "\r\n"
+                   "helloignored",
+                   0, "hello");
+    expect_failure("HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Length: 6\r\n\r\nhello", 1);
+    expect_failure("HTTP/1.1 200 OK\r\nContent-Length: x\r\n\r\n", 1);
+    expect_failure("HTTP/1.1 200 OK\r\nContent-Length: 5x\r\n\r\nhello", 1);
+    expect_failure("HTTP/1.1 200 OK\r\nContent-Length: 999999999999999999999999\r\n\r\n", 1);
+    expect_failure("HTTP/1.1 200 OK\r\nHeader: value\r\n", 1);
+    expect_failure("invalid status\r\n\r\n", 1);
+    expect_failure("HTTP/1.1 200 OK", 1);
+
+    expect_success("HTTP/1.1 200 OK\r\n"
+                   "Content-Length: 999\r\n"
+                   "Transfer-Encoding: chunked\r\n"
+                   "\r\n"
+                   "5;name=value\r\nhello\r\n6\r\n world\r\n0\r\nX-Trailer: yes\r\n\r\n",
+                   0, "hello world");
+    expect_failure("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nZ\r\nbad\r\n0\r\n\r\n", 1);
+    expect_failure("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n1\r\naX\r\n0\r\n\r\n", 1);
+    expect_failure("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\r\n", 1);
+    expect_failure("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n", 1);
+    expect_failure("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\nextra", 1);
+    expect_failure("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nFFFFFFFFFFFFFFFFF\r\n", 1);
 }
 
 /* ---- deterministic parser fuzz ---- */
@@ -144,6 +294,7 @@ static void test_oom_injection(void) {
     /* The GET against the fake TLS transport performs a small, bounded number
      * of allocations. Fail each one in turn and require a clean -1; past the
      * real allocation count the request must succeed. */
+    reset_tls_script(NULL);
     for (size_t fail_at = 1; fail_at <= 32; fail_at++) {
         s_alloc_count = 0;
         s_fail_on_alloc = fail_at;
@@ -164,6 +315,88 @@ static void test_oom_injection(void) {
     }
 }
 
+static void test_tls_transport_and_requests(void) {
+    mybot_http_client_response_t resp;
+    char long_headers[2100];
+    char large_response[6200];
+
+    memset(&resp, 0, sizeof(resp));
+    assert(mybot_http_client_get(NULL, &resp) < 0);
+    assert(mybot_http_client_get("https://api.example.test", NULL) < 0);
+    assert(mybot_http_client_post(NULL, "application/json", "{}", &resp) < 0);
+    assert(mybot_http_client_post("https://api.example.test", "application/json", "{}", NULL) < 0);
+
+    reset_tls_script(NULL);
+    assert(mybot_http_client_post_ex("https://api.example.test:9443/v1/items", NULL, "payload",
+                                     "X-Test: yes\r\n", &resp) == 0);
+    assert(strcmp(s_tls_host, "api.example.test") == 0);
+    assert(s_tls_port == 9443);
+    assert(strstr(s_tls_request, "POST /v1/items HTTP/1.1\r\n") == s_tls_request);
+    assert(strstr(s_tls_request, "Content-Type: application/octet-stream\r\n") != NULL);
+    assert(strstr(s_tls_request, "Content-Length: 7\r\n") != NULL);
+    assert(strstr(s_tls_request, "X-Test: yes\r\n\r\npayload") != NULL);
+    mybot_http_client_response_free(&resp);
+
+    reset_tls_script(NULL);
+    s_tls_send_limit = 7;
+    s_tls_recv_limit = 3;
+    assert(mybot_http_client_post("https://api.example.test/data", "application/json", "{}",
+                                  &resp) == 0);
+    assert(s_tls_send_count > 1);
+    assert(s_tls_recv_count > 1);
+    assert(strstr(s_tls_request, "POST /data HTTP/1.1\r\n") == s_tls_request);
+    assert(strstr(s_tls_request, "Content-Type: application/json\r\n") != NULL);
+    assert(strcmp(resp.body, "secure") == 0);
+    mybot_http_client_response_free(&resp);
+
+    reset_tls_script(NULL);
+    s_tls_connect_result = -1;
+    assert(mybot_http_client_get("https://api.example.test/fail", &resp) < 0);
+
+    reset_tls_script(NULL);
+    s_tls_send_fail_at = 1;
+    assert(mybot_http_client_get("https://api.example.test/fail", &resp) < 0);
+
+    reset_tls_script(NULL);
+    s_tls_recv_fail_at = 1;
+    assert(mybot_http_client_get("https://api.example.test/fail", &resp) < 0);
+
+    long_headers[0] = 'X';
+    long_headers[1] = ':';
+    long_headers[2] = ' ';
+    memset(long_headers + 3, 'a', 2050);
+    memcpy(long_headers + 2053, "\r\n", 3);
+    reset_tls_script(NULL);
+    assert(mybot_http_client_get_ex("https://api.example.test/too-large", long_headers, &resp) < 0);
+
+    int header_len = snprintf(large_response, sizeof(large_response),
+                              "HTTP/1.1 200 OK\r\nContent-Length: 5000\r\n\r\n");
+    assert(header_len > 0);
+    assert((size_t)header_len + 5000 < sizeof(large_response));
+    memset(large_response + header_len, 'z', 5000);
+    large_response[header_len + 5000] = '\0';
+
+    reset_tls_script(large_response);
+    assert(mybot_http_client_get("https://api.example.test/large", &resp) == 0);
+    assert(resp.body_len == 5000);
+    assert(resp.body[0] == 'z');
+    assert(resp.body[4999] == 'z');
+    mybot_http_client_response_free(&resp);
+
+    reset_tls_script(large_response);
+    s_alloc_count = 0;
+    s_alloc_failures = 0;
+    s_fail_on_alloc = 2;
+    assert(mybot_http_client_get("https://api.example.test/realloc-fail", &resp) < 0);
+    assert(s_alloc_failures == 1);
+    s_fail_on_alloc = 0;
+    reset_tls_script(NULL);
+
+    mybot_http_client_response_free(NULL);
+    memset(&resp, 0, sizeof(resp));
+    mybot_http_client_response_free(&resp);
+}
+
 int main(void) {
     aosl_ctor();
     mybot_http_client_response_t response;
@@ -182,6 +415,7 @@ int main(void) {
     assert(parse_url("http://service.example/v1", &parts) < 0);
     assert(parse_url("https://service.example:0/v1", &parts) < 0);
     assert(parse_url("https://service.example:443x/v1", &parts) < 0);
+    test_url_and_header_validation();
 
     expect_success("HTTP/1.1 200 OK\r\n"
                    "Content-Length: 5\r\n"
@@ -264,6 +498,8 @@ int main(void) {
     assert(s_tls_connect_count == connect_count + 1);
     mybot_http_client_response_free(&response);
 
+    test_response_boundaries();
+    test_tls_transport_and_requests();
     test_parse_fuzz();
     test_oom_injection();
 

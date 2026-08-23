@@ -69,6 +69,8 @@ static mybot_device_state_t s_device_state = MYBOT_DEVICE_STATE_RUNTIME;
 static bool s_device_start_requested;
 static bool s_device_network_available = true;
 static bool s_announce_active;
+static bool s_wifi_init_fails;
+static bool s_kv_init_fails;
 
 static mybot_rtc_session_callbacks_t s_rtc_callbacks;
 static bool s_rtc_initialized;
@@ -102,6 +104,11 @@ static int s_rtc_fini_calls;
 static int s_rtc_send_calls;
 static int s_rtc_renew_calls;
 static int s_token_renewal_requests;
+static int s_pair_requests;
+static int s_stop_requests;
+static int s_conversation_ended_notifications;
+static int s_media_volume_set_calls;
+static int s_last_media_volume;
 static char s_renewed_token[512];
 
 static size_t s_sent_lengths[TEST_MAX_SENT_FRAMES];
@@ -300,8 +307,9 @@ int mybot_kv_store_init(mybot_kv_store_t *store) {
     assert(store != NULL);
     mock_lock();
     s_kv_init_calls++;
+    bool fails = s_kv_init_fails;
     mock_unlock();
-    return 0;
+    return fails ? -1 : 0;
 }
 
 void mybot_kv_store_deinit(mybot_kv_store_t *store) {
@@ -535,7 +543,14 @@ int mybot_audio_device_get_volume(mybot_audio_t *audio, int *volume) {
 
 int mybot_audio_set_media_volume(mybot_audio_t *audio, int volume) {
     assert(audio != NULL);
-    return volume >= MYBOT_AUDIO_VOLUME_MIN && volume <= MYBOT_AUDIO_VOLUME_MAX ? 0 : -1;
+    if (volume < MYBOT_AUDIO_VOLUME_MIN || volume > MYBOT_AUDIO_VOLUME_MAX) {
+        return -1;
+    }
+    mock_lock();
+    s_media_volume_set_calls++;
+    s_last_media_volume = volume;
+    mock_unlock();
+    return 0;
 }
 
 int mybot_audio_get_media_volume(const mybot_audio_t *audio) {
@@ -587,8 +602,9 @@ int mybot_wifi_init(mybot_wifi_t *wifi, const char *device_id, mybot_wifi_event_
     s_wifi_handler = handler;
     s_wifi_user_data = user_data;
     s_wifi_init_calls++;
+    bool fails = s_wifi_init_fails;
     mock_unlock();
-    return 0;
+    return fails ? -1 : 0;
 }
 
 void mybot_wifi_deinit(mybot_wifi_t *wifi) {
@@ -604,6 +620,9 @@ int mybot_device_lifecycle_init(mybot_device_lifecycle_t *lifecycle, mybot_kv_st
                                 const char *server_base, const char *device_id,
                                 const char *firmware_ver, const char *hw_model,
                                 const mybot_device_lifecycle_callbacks_t *callbacks) {
+    if (!lifecycle || !kv_store || !server_base || !device_id || !callbacks) {
+        return -1;
+    }
     assert(kv_store != NULL);
     assert(strcmp(server_base, TEST_SERVER_BASE) == 0);
     assert(strcmp(device_id, "device-1") == 0);
@@ -690,6 +709,9 @@ mybot_device_state_t mybot_device_lifecycle_get_state(const mybot_device_lifecyc
 
 void mybot_device_lifecycle_request_pair(mybot_device_lifecycle_t *lifecycle) {
     assert(lifecycle == s_device_lifecycle);
+    mock_lock();
+    s_pair_requests++;
+    mock_unlock();
 }
 
 void mybot_device_lifecycle_request_start(mybot_device_lifecycle_t *lifecycle) {
@@ -701,12 +723,16 @@ void mybot_device_lifecycle_request_start(mybot_device_lifecycle_t *lifecycle) {
 
 void mybot_device_lifecycle_request_stop(mybot_device_lifecycle_t *lifecycle) {
     assert(lifecycle == s_device_lifecycle);
+    mock_lock();
+    s_stop_requests++;
+    mock_unlock();
 }
 
 void mybot_device_lifecycle_notify_conversation_ended(mybot_device_lifecycle_t *lifecycle) {
     assert(lifecycle == s_device_lifecycle);
     mock_lock();
     s_device_state = MYBOT_DEVICE_STATE_RUNTIME;
+    s_conversation_ended_notifications++;
     mock_unlock();
 }
 
@@ -719,6 +745,9 @@ void mybot_device_lifecycle_request_rtc_token_renewal(mybot_device_lifecycle_t *
 
 int mybot_rtc_session_init(mybot_rtc_session_t *session, const char *app_id,
                            const mybot_rtc_session_callbacks_t *callbacks) {
+    if (!session || !app_id || !callbacks) {
+        return -1;
+    }
     assert(strcmp(app_id, "rtc-app") == 0);
     assert(callbacks != NULL);
     mock_lock();
@@ -823,6 +852,29 @@ int main(void) {
     snprintf(config.hw_model, sizeof(config.hw_model), "%s", "test-hw");
 
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+    assert(mybot_start(NULL) < 0);
+    mybot_config_t invalid = config;
+    invalid.server_base[0] = '\0';
+    assert(mybot_start(&invalid) < 0);
+    invalid = config;
+    invalid.device_id[0] = '\0';
+    assert(mybot_start(&invalid) < 0);
+    invalid = config;
+    memset(invalid.server_base, 'x', sizeof(invalid.server_base));
+    assert(mybot_start(&invalid) < 0);
+    invalid = config;
+    memset(invalid.device_id, 'x', sizeof(invalid.device_id));
+    assert(mybot_start(&invalid) < 0);
+    invalid = config;
+    memset(invalid.firmware_ver, 'x', sizeof(invalid.firmware_ver));
+    assert(mybot_start(&invalid) < 0);
+    invalid = config;
+    memset(invalid.hw_model, 'x', sizeof(invalid.hw_model));
+    assert(mybot_start(&invalid) < 0);
+    invalid = config;
+    snprintf(invalid.server_base, sizeof(invalid.server_base), "%s", "ftp://server");
+    assert(mybot_start(&invalid) < 0);
+
     s_missing_platform_capabilities = MYBOT_PLATFORM_CAP_WIFI;
     assert(mybot_start(&config) < 0);
     assert(!mybot_is_running());
@@ -836,6 +888,7 @@ int main(void) {
     assert(mybot_is_running());
     assert(mybot_get_state() == MYBOT_STATE_WIFI_PROVISIONING);
     assert(read_counter(&s_wifi_init_calls) == 1);
+    assert(mybot_start(&config) < 0);
 
     emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
     assert(wait_for_app_state(MYBOT_STATE_READY, 3000));
@@ -846,6 +899,17 @@ int main(void) {
     assert(read_counter(&s_playback_init_calls) == 1);
     assert(read_counter(&s_playback_start_calls) == 1);
     assert(read_counter(&s_device_init_calls) == 1);
+
+    s_device_callbacks.on_pair_code("123456", s_device_callbacks.user_data);
+    s_device_callbacks.on_state_changed(MYBOT_DEVICE_STATE_AWAITING_CLAIM,
+                                        s_device_callbacks.user_data);
+    s_device_callbacks.on_state_changed(MYBOT_DEVICE_STATE_RUNTIME, s_device_callbacks.user_data);
+    emit_key_event(MYBOT_KEY_EVENT_PAIR);
+    emit_key_event(MYBOT_KEY_EVENT_VOLUME_UP);
+    emit_key_event(MYBOT_KEY_EVENT_VOLUME_DOWN);
+    assert(read_counter(&s_pair_requests) == 1);
+    assert(read_counter(&s_media_volume_set_calls) == 2);
+    assert(read_counter(&s_last_media_volume) == 90);
 
     emit_wifi_event(MYBOT_WIFI_EVENT_STA_DISCONNECTED);
     assert(wait_for_app_state(MYBOT_STATE_WIFI_DISCONNECTED, 1000));
@@ -872,6 +936,10 @@ int main(void) {
     assert(strcmp(s_join_channel, "rtc-channel") == 0);
     assert(strcmp(s_join_user, "device-uid") == 0);
     mock_unlock();
+    emit_key_event(MYBOT_KEY_EVENT_CONVERSATION_STOP);
+    emit_key_event(MYBOT_KEY_EVENT_PAIR);
+    assert(read_counter(&s_stop_requests) == 1);
+    assert(read_counter(&s_pair_requests) == 2);
 
     mock_lock();
     void (*token_will_expire)(void *) = s_rtc_callbacks.on_token_will_expire;
@@ -925,6 +993,14 @@ int main(void) {
     assert(wait_for_flag(&s_capture_read_blocked, 1000));
     assert(wait_for_flag(&s_playback_write_blocked, 1000));
 
+    emit_key_event(MYBOT_KEY_EVENT_EXIT);
+    assert(!mybot_is_running());
+    mybot_request_exit();
+    int renewals_before_stop = read_counter(&s_token_renewal_requests);
+    token_will_expire(rtc_user_data);
+    assert(read_counter(&s_token_renewal_requests) == renewals_before_stop);
+    assert(token_renewed("too-late", device_user_data) < 0);
+
     mybot_stop();
     assert(!s_capture_read_timed_out);
     assert(!s_playback_write_timed_out);
@@ -943,9 +1019,29 @@ int main(void) {
     assert(read_counter(&s_key_deinit_calls) == 1);
     assert(read_counter(&s_wifi_deinit_calls) == 1);
 
+    mybot_conversation_params_t late_params;
+    memset(&late_params, 0, sizeof(late_params));
+    s_device_callbacks.on_conversation_start(&late_params, s_device_callbacks.user_data);
+    assert(read_counter(&s_conversation_ended_notifications) == 1);
+
     mybot_stop();
     assert(read_counter(&s_device_shutdown_calls) == 1);
     assert(read_counter(&s_rtc_fini_calls) == 1);
+
+    s_wifi_init_fails = true;
+    assert(mybot_start(&config) < 0);
+    s_wifi_init_fails = false;
+    assert(!mybot_is_running());
+    assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+
+    s_kv_init_fails = true;
+    assert(mybot_start(&config) == 0);
+    emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
+    assert(wait_for_app_state(MYBOT_STATE_FAILED, 1000));
+    assert(!mybot_is_running());
+    mybot_stop();
+    s_kv_init_fails = false;
+    assert(mybot_get_state() == MYBOT_STATE_STOPPED);
 
     puts("app_test: ok");
     return 0;
