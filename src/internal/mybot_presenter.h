@@ -2,10 +2,8 @@
 #ifndef MYBOT_PRESENTER_H_
 #define MYBOT_PRESENTER_H_
 
-#include "mybot_device_lifecycle.h"
 #include "mybot_lcd_internal.h"
-
-#include <mybot/mybot.h>
+#include "mybot_state_model.h"
 
 #include <stdbool.h>
 
@@ -22,9 +20,8 @@ int mybot_presenter_init(mybot_presenter_t *presenter);
 void mybot_presenter_deinit(mybot_presenter_t *presenter);
 void mybot_presenter_show_screen(mybot_presenter_t *presenter, mybot_lcd_screen_t screen);
 void mybot_presenter_show_pair_code(mybot_presenter_t *presenter, const char *code);
-void mybot_presenter_render_device_state(mybot_presenter_t *presenter,
-                                         mybot_device_state_t device_state,
-                                         mybot_state_t app_state);
+void mybot_presenter_render_state(mybot_presenter_t *presenter,
+                                  const mybot_state_model_t *state_model);
 
 #ifdef __cplusplus
 }

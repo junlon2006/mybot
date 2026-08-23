@@ -37,6 +37,7 @@ int main(void) {
         .destroy = lcd_destroy,
     };
     mybot_presenter_t presenter = {0};
+    mybot_state_model_t state_model;
 
     aosl_ctor();
     assert(mybot_lcd_register(&ops) == 0);
@@ -50,16 +51,21 @@ int main(void) {
     assert(s_last_content.screen == MYBOT_LCD_SCREEN_PAIR_CODE);
     assert(strcmp(s_last_content.pair_code, "123456") == 0);
 
-    mybot_presenter_render_device_state(&presenter, MYBOT_DEVICE_STATE_RUNTIME, MYBOT_STATE_READY);
+    mybot_state_model_reset(&state_model);
+    assert(mybot_state_model_begin_start(&state_model));
+    assert(mybot_state_model_begin_services(&state_model));
+    assert(mybot_state_model_set_device_state(&state_model, MYBOT_DEVICE_STATE_IN_CONVERSATION));
+    int renders_before_startup = s_render_count;
+    mybot_presenter_render_state(&presenter, &state_model);
+    assert(s_render_count == renders_before_startup);
+
+    assert(mybot_state_model_set_device_state(&state_model, MYBOT_DEVICE_STATE_RUNTIME));
+    assert(mybot_state_model_services_ready(&state_model));
+    mybot_presenter_render_state(&presenter, &state_model);
     assert(s_last_content.screen == MYBOT_LCD_SCREEN_READY);
 
-    int renders_before_mismatch = s_render_count;
-    mybot_presenter_render_device_state(&presenter, MYBOT_DEVICE_STATE_IN_CONVERSATION,
-                                        MYBOT_STATE_READY);
-    assert(s_render_count == renders_before_mismatch);
-
-    mybot_presenter_render_device_state(&presenter, MYBOT_DEVICE_STATE_IN_CONVERSATION,
-                                        MYBOT_STATE_IN_CONVERSATION);
+    assert(mybot_state_model_set_device_state(&state_model, MYBOT_DEVICE_STATE_IN_CONVERSATION));
+    mybot_presenter_render_state(&presenter, &state_model);
     assert(s_last_content.screen == MYBOT_LCD_SCREEN_IN_CONVERSATION);
 
     mybot_presenter_deinit(&presenter);

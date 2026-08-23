@@ -10,6 +10,7 @@
 #include "mybot_kv_store_internal.h"
 #include "mybot_media_pipeline.h"
 #include "mybot_presenter.h"
+#include "mybot_state_model.h"
 #include "mybot_wifi_internal.h"
 
 #include <api/aosl.h>
@@ -26,7 +27,7 @@
 
 struct mybot_runtime {
     aosl_atomic_t running;
-    aosl_atomic_t state;
+    mybot_state_model_t state_model;
     aosl_atomic_t aosl_ref_held;
     mybot_config_t config;
 
@@ -46,7 +47,7 @@ struct mybot_runtime {
 static mybot_runtime_t s_default_runtime;
 
 static mybot_state_t runtime_get_state(const mybot_runtime_t *runtime) {
-    return (mybot_state_t)aosl_atomic_read(&runtime->state);
+    return mybot_state_model_get(&runtime->state_model);
 }
 
 static void runtime_request_exit(mybot_runtime_t *runtime) {
@@ -56,9 +57,9 @@ static void runtime_request_exit(mybot_runtime_t *runtime) {
 
 static void sync_wake_words(mybot_runtime_t *runtime) {
 #if MYBOT_WAKE_WORDS
+    mybot_state_view_t state = mybot_state_model_get_view(&runtime->state_model);
     bool enabled =
-        runtime_get_state(runtime) == MYBOT_STATE_READY &&
-        mybot_device_lifecycle_get_state(&runtime->lifecycle) == MYBOT_DEVICE_STATE_RUNTIME;
+        state.app_state == MYBOT_STATE_READY && state.device_state == MYBOT_DEVICE_STATE_RUNTIME;
     mybot_media_pipeline_set_wake_words_enabled(&runtime->media, enabled);
 #else
     (void)runtime;
@@ -151,21 +152,13 @@ static void dev_on_conversation_stop(void *user_data) {
 
 static void dev_on_state_changed(mybot_device_state_t state, void *user_data) {
     mybot_runtime_t *runtime = user_data;
-    mybot_state_t expected = state == MYBOT_DEVICE_STATE_IN_CONVERSATION
-                                 ? MYBOT_STATE_READY
-                                 : MYBOT_STATE_IN_CONVERSATION;
-    mybot_state_t next = state == MYBOT_DEVICE_STATE_IN_CONVERSATION ? MYBOT_STATE_IN_CONVERSATION
-                                                                     : MYBOT_STATE_READY;
-    mybot_state_t previous = (mybot_state_t)aosl_atomic_cmpxchg(&runtime->state, expected, next);
-    if (previous != expected && previous != next) {
-        return;
-    }
+    (void)mybot_state_model_set_device_state(&runtime->state_model, state);
 
     if (state != MYBOT_DEVICE_STATE_AWAITING_CLAIM) {
         mybot_media_pipeline_stop_announcement(&runtime->media);
     }
     sync_wake_words(runtime);
-    mybot_presenter_render_device_state(&runtime->presenter, state, runtime_get_state(runtime));
+    mybot_presenter_render_state(&runtime->presenter, &runtime->state_model);
 }
 
 static void on_key_event(mybot_key_event_t event, void *user_data) {
@@ -294,8 +287,7 @@ static void handle_wifi_event(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
     }
 
     if (event == MYBOT_WIFI_EVENT_FAILED && state == MYBOT_STATE_WIFI_PROVISIONING) {
-        if (aosl_atomic_cmpxchg(&runtime->state, MYBOT_STATE_WIFI_PROVISIONING,
-                                MYBOT_STATE_FAILED) == MYBOT_STATE_WIFI_PROVISIONING) {
+        if (mybot_state_model_fail(&runtime->state_model)) {
             mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_FAILED);
             runtime_request_exit(runtime);
         }
@@ -304,47 +296,43 @@ static void handle_wifi_event(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
 
     if (event == MYBOT_WIFI_EVENT_STA_DISCONNECTED ||
         (event == MYBOT_WIFI_EVENT_FAILED && state != MYBOT_STATE_WIFI_PROVISIONING)) {
-        if (state != MYBOT_STATE_WIFI_DISCONNECTED) {
+        if (state != MYBOT_STATE_WIFI_DISCONNECTED &&
+            mybot_state_model_network_lost(&runtime->state_model)) {
             mybot_device_lifecycle_set_network_available(&runtime->lifecycle, false);
-            aosl_atomic_set(&runtime->state, MYBOT_STATE_WIFI_DISCONNECTED);
             sync_wake_words(runtime);
         }
-        mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_WIFI_DISCONNECTED);
+        if (runtime_get_state(runtime) == MYBOT_STATE_WIFI_DISCONNECTED) {
+            mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_WIFI_DISCONNECTED);
+        }
         return;
     }
 
     if (event == MYBOT_WIFI_EVENT_STA_CONNECTED && state == MYBOT_STATE_WIFI_DISCONNECTED) {
-        mybot_device_lifecycle_set_network_available(&runtime->lifecycle, true);
-        aosl_atomic_set(&runtime->state, MYBOT_STATE_READY);
-        sync_wake_words(runtime);
-        mybot_presenter_render_device_state(&runtime->presenter,
-                                            mybot_device_lifecycle_get_state(&runtime->lifecycle),
-                                            runtime_get_state(runtime));
+        if (mybot_state_model_network_restored(&runtime->state_model)) {
+            mybot_device_lifecycle_set_network_available(&runtime->lifecycle, true);
+            sync_wake_words(runtime);
+            mybot_presenter_render_state(&runtime->presenter, &runtime->state_model);
+        }
         return;
     }
 
     if (event != MYBOT_WIFI_EVENT_STA_CONNECTED ||
-        aosl_atomic_cmpxchg(&runtime->state, MYBOT_STATE_WIFI_PROVISIONING,
-                            MYBOT_STATE_STARTING_SERVICES) != MYBOT_STATE_WIFI_PROVISIONING) {
+        !mybot_state_model_begin_services(&runtime->state_model)) {
         return;
     }
 
     mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_STARTING_SERVICES);
     if (start_services(runtime) < 0) {
-        if (runtime_get_state(runtime) != MYBOT_STATE_STOPPING) {
-            aosl_atomic_set(&runtime->state, MYBOT_STATE_FAILED);
+        if (mybot_state_model_fail(&runtime->state_model)) {
             mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_FAILED);
             runtime_request_exit(runtime);
         }
         return;
     }
 
-    if (aosl_atomic_cmpxchg(&runtime->state, MYBOT_STATE_STARTING_SERVICES, MYBOT_STATE_READY) ==
-        MYBOT_STATE_STARTING_SERVICES) {
+    if (mybot_state_model_services_ready(&runtime->state_model)) {
         sync_wake_words(runtime);
-        mybot_presenter_render_device_state(&runtime->presenter,
-                                            mybot_device_lifecycle_get_state(&runtime->lifecycle),
-                                            runtime_get_state(runtime));
+        mybot_presenter_render_state(&runtime->presenter, &runtime->state_model);
     }
 }
 
@@ -359,7 +347,7 @@ static void on_wifi_event(mybot_wifi_event_t event, void *user_data) {
     if (aosl_mpq_queue(runtime->startup_mpq, AOSL_MPQ_INVALID, AOSL_REF_INVALID,
                        "handle_wifi_event", handle_wifi_event, 2, (uintptr_t)runtime,
                        (uintptr_t)event) < 0 &&
-        aosl_atomic_cmpxchg(&runtime->state, state, MYBOT_STATE_FAILED) == state) {
+        mybot_state_model_fail(&runtime->state_model)) {
         mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_FAILED);
         runtime_request_exit(runtime);
     }
@@ -404,7 +392,8 @@ int mybot_start(const mybot_config_t *cfg) {
     runtime->state_mpq = AOSL_MPQ_INVALID;
     runtime->state_timer = AOSL_MPQ_TIMER_INVALID;
     aosl_atomic_set(&runtime->running, true);
-    aosl_atomic_set(&runtime->state, MYBOT_STATE_STOPPED);
+    mybot_state_model_reset(&runtime->state_model);
+    (void)mybot_state_model_begin_start(&runtime->state_model);
 
     aosl_ctor();
     aosl_atomic_set(&runtime->aosl_ref_held, true);
@@ -420,7 +409,6 @@ int mybot_start(const mybot_config_t *cfg) {
         goto fail;
     }
 
-    aosl_atomic_set(&runtime->state, MYBOT_STATE_WIFI_PROVISIONING);
     mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_WIFI_PROVISIONING);
     if (mybot_wifi_init(&runtime->wifi, runtime->config.device_id, on_wifi_event, runtime) < 0) {
         goto fail;
@@ -428,7 +416,7 @@ int mybot_start(const mybot_config_t *cfg) {
     return 0;
 
 fail:
-    aosl_atomic_set(&runtime->state, MYBOT_STATE_FAILED);
+    (void)mybot_state_model_fail(&runtime->state_model);
     mybot_stop();
     return -1;
 }
@@ -471,7 +459,7 @@ void mybot_stop(void) {
     }
 
     mybot_state_t previous = runtime_get_state(runtime);
-    aosl_atomic_set(&runtime->state, MYBOT_STATE_STOPPING);
+    mybot_state_model_begin_stop(&runtime->state_model);
     runtime_request_exit(runtime);
     if (previous != MYBOT_STATE_FAILED) {
         mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_STOPPING);
@@ -493,7 +481,7 @@ void mybot_stop(void) {
     mybot_conversation_fini(&runtime->conversation);
     mybot_media_pipeline_destroy(&runtime->media);
 
-    aosl_atomic_set(&runtime->state, MYBOT_STATE_STOPPED);
+    mybot_state_model_stopped(&runtime->state_model);
     aosl_dtor();
     aosl_atomic_set(&runtime->aosl_ref_held, false);
 }

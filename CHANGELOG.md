@@ -22,6 +22,8 @@ This project follows Semantic Versioning.
   globals.
 - Split `mybot_app.c` orchestration into dedicated media-pipeline, RTC-conversation, and LCD
   presenter modules without changing the public API.
+- Derive public application state and LCD presentation from one atomic state-model snapshot fed by
+  runtime-phase, connectivity, and device-lifecycle events.
 - Limit host clang-format and clang-tidy checks to the SDK core, Linux platform, Linux example, and
   tests; BK725x Armino sources are validated by the BK firmware build environment instead.
 - Update the pinned AOSL submodule to upstream commit `84e0860`, which adds reference-counted
