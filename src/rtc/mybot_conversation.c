@@ -31,6 +31,7 @@ int mybot_conversation_start(mybot_conversation_t *conversation,
                              const mybot_conversation_params_t *params,
                              const mybot_conversation_callbacks_t *callbacks) {
     if (!conversation || !params) {
+        AOSL_LOG_ERR("invalid conversation start arguments");
         return -1;
     }
 
@@ -45,28 +46,23 @@ int mybot_conversation_start(mybot_conversation_t *conversation,
     snprintf(conversation->token, sizeof(conversation->token), "%s", params->rtc_token);
     snprintf(conversation->uid, sizeof(conversation->uid), "%s", params->rtc_uid);
 
-    mybot_rtc_session_callbacks_t rtc_cbs;
+    mybot_agora_rtc_callbacks_t rtc_cbs;
     memset(&rtc_cbs, 0, sizeof(rtc_cbs));
     rtc_cbs.on_remote_audio = rtc_on_remote_audio;
     rtc_cbs.on_token_will_expire = rtc_on_token_will_expire;
     rtc_cbs.on_state_changed = rtc_on_state_changed;
     rtc_cbs.user_data = conversation;
 
-    int ret = mybot_rtc_session_init(&conversation->rtc, conversation->app_id, &rtc_cbs);
+    int ret = mybot_agora_rtc_init(conversation->app_id, &rtc_cbs);
     if (ret < 0) {
-        AOSL_LOG_ERR("mybot_rtc_session_init failed");
+        AOSL_LOG_ERR("mybot_agora_rtc_init failed");
         return ret;
     }
 
     AOSL_LOG_NTC("joining RTC channel=%s uid=%s", conversation->channel, conversation->uid);
-    ret = mybot_rtc_session_join(&conversation->rtc, conversation->channel, conversation->token,
-                                 conversation->uid);
+    ret = mybot_agora_rtc_join(conversation->channel, conversation->token, conversation->uid);
     if (ret < 0) {
-        AOSL_LOG_ERR("mybot_rtc_session_join failed");
-        /* Join owns the connection only after it succeeds. If initialization
-         * succeeded but join failed, release the process-wide RTC service as
-         * well so the next start cannot reuse stale app/session state. */
-        mybot_rtc_session_fini(&conversation->rtc);
+        AOSL_LOG_ERR("mybot_agora_rtc_join failed");
         return ret;
     }
 
@@ -76,27 +72,30 @@ int mybot_conversation_start(mybot_conversation_t *conversation,
 
 int mybot_conversation_stop(mybot_conversation_t *conversation) {
     if (!conversation) {
+        AOSL_LOG_ERR("invalid conversation stop argument");
         return -1;
     }
 
     AOSL_LOG_NTC("leaving RTC channel=%s uid=%s", conversation->channel, conversation->uid);
-    return mybot_rtc_session_leave(&conversation->rtc);
+    return mybot_agora_rtc_leave();
 }
 
 int mybot_conversation_send_audio(mybot_conversation_t *conversation, const void *data,
                                   size_t len) {
     if (!conversation) {
+        AOSL_LOG_ERR("invalid conversation audio argument");
         return -1;
     }
-    return mybot_rtc_session_send_audio(&conversation->rtc, data, len);
+    return mybot_agora_rtc_send_audio(data, len);
 }
 
 int mybot_conversation_renew_token(mybot_conversation_t *conversation, const char *token) {
     if (!conversation || !token) {
+        AOSL_LOG_ERR("invalid conversation token argument");
         return -1;
     }
 
-    int ret = mybot_rtc_session_renew_token(&conversation->rtc, token);
+    int ret = mybot_agora_rtc_renew_token(token);
     if (ret == 0) {
         snprintf(conversation->token, sizeof(conversation->token), "%s", token);
     }
@@ -107,7 +106,7 @@ void mybot_conversation_fini(mybot_conversation_t *conversation) {
     if (!conversation) {
         return;
     }
-    mybot_rtc_session_fini(&conversation->rtc);
+    mybot_agora_rtc_fini();
     memset(&conversation->cbs, 0, sizeof(conversation->cbs));
     conversation->app_id[0] = '\0';
     conversation->channel[0] = '\0';

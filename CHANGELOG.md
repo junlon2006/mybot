@@ -21,6 +21,9 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- Align the Agora RTSA wrapper with the single-instance, one-call-at-a-time product model: initialize
+  RTSA once per mybot run, use one AOSL CAS lifecycle gate for callback, audio-send, and teardown
+  ordering, and create one connection per conversation, with explicit lifecycle and error logging.
 - Align the English and Chinese README lifecycle and architecture guidance, document strict
   descriptor and legacy registration contracts in the public headers, match local format commands
   to CI scope, and refresh stale BK725x ownership and generator comments.
@@ -60,10 +63,9 @@ This project follows Semantic Versioning.
   buffer's single-producer/single-consumer access and giving announcements priority.
 - Remove the HTTP response parser's POSIX `strncasecmp()` dependency by using
   an ASCII-only case-insensitive comparison, preserving mixed-case header support on non-POSIX platforms.
-- Synchronize RTC callback teardown with the RTSA callback queue, reject stale connection IDs, and
-  wait for in-flight callbacks before releasing session resources; add concurrent teardown coverage.
-- Release the initialized RTC service when conversation join fails, preventing subsequent starts from
-  reusing stale session resources or application state.
+- Serialize Agora RTC callbacks, audio sends, and connection teardown, reject stale connection IDs,
+  and cover concurrent teardown ordering.
+- Destroy a failed Agora RTC connection without reinitializing the process-wide RTSA service.
 - Serialize application start and stop across threads so runtime initialization, failure cleanup, and
   teardown cannot concurrently mutate the process-wide runtime.
 - Correct the public key-input contract to document the forwarded `user_data` context and its

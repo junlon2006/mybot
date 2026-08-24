@@ -271,7 +271,7 @@ flowchart TB
         presenter["LCD presenter<br/>state projection · semantic screens"]
         state_m["Device state machine<br/>pairing · claim · conversation lifecycle"]
         svc_c["Device-service client<br/>pair / claim / conversation polling"]
-        rtc_c["RTC session<br/>Agora RTSA wrapper"]
+        rtc_c["Agora RTC<br/>RTSA wrapper"]
         media_c["Audio pipeline<br/>ring buffers · AEC reference · wake words"]
     end
 

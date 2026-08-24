@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static mybot_rtc_session_callbacks_t s_rtc_callbacks;
+static mybot_agora_rtc_callbacks_t s_rtc_callbacks;
 static int s_init_result;
 static int s_join_result;
 static int s_leave_result;
@@ -19,9 +19,7 @@ static int s_state_calls;
 static int s_expiry_calls;
 static void *s_callback_owner;
 
-int mybot_rtc_session_init(mybot_rtc_session_t *session, const char *app_id,
-                           const mybot_rtc_session_callbacks_t *callbacks) {
-    assert(session != NULL);
+int mybot_agora_rtc_init(const char *app_id, const mybot_agora_rtc_callbacks_t *callbacks) {
     assert(app_id != NULL);
     assert(callbacks != NULL);
     s_rtc_callbacks = *callbacks;
@@ -29,35 +27,29 @@ int mybot_rtc_session_init(mybot_rtc_session_t *session, const char *app_id,
     return s_init_result;
 }
 
-int mybot_rtc_session_join(mybot_rtc_session_t *session, const char *channel, const char *token,
-                           const char *user_account) {
-    assert(session != NULL);
-    assert(channel != NULL);
-    assert(token != NULL);
-    assert(user_account != NULL);
+int mybot_agora_rtc_join(const char *channel, const char *token, const char *user_account) {
+    if (!channel || !token || !user_account) {
+        return -1;
+    }
     s_join_calls++;
     return s_join_result;
 }
 
-int mybot_rtc_session_leave(mybot_rtc_session_t *session) {
-    assert(session != NULL);
+int mybot_agora_rtc_leave(void) {
     return s_leave_result;
 }
 
-void mybot_rtc_session_fini(mybot_rtc_session_t *session) {
-    assert(session != NULL);
+void mybot_agora_rtc_fini(void) {
     s_fini_calls++;
 }
 
-int mybot_rtc_session_send_audio(mybot_rtc_session_t *session, const void *data, size_t len) {
-    assert(session != NULL);
+int mybot_agora_rtc_send_audio(const void *data, size_t len) {
     assert(data != NULL);
     assert(len > 0);
     return s_send_result;
 }
 
-int mybot_rtc_session_renew_token(mybot_rtc_session_t *session, const char *token) {
-    assert(session != NULL);
+int mybot_agora_rtc_renew_token(const char *token) {
     assert(token != NULL);
     return s_renew_result;
 }
@@ -123,7 +115,7 @@ int main(void) {
     assert(mybot_conversation_start(&conversation, &value, &callbacks) < 0);
     assert(s_init_calls == 2);
     assert(s_join_calls == 1);
-    assert(s_fini_calls == 1);
+    assert(s_fini_calls == 0);
 
     s_join_result = 0;
     assert(mybot_conversation_start(&conversation, &value, &callbacks) == 0);
@@ -159,7 +151,7 @@ int main(void) {
     assert(mybot_conversation_stop(&conversation) == 0);
 
     mybot_conversation_fini(&conversation);
-    assert(s_fini_calls == 2);
+    assert(s_fini_calls == 1);
     assert(conversation.app_id[0] == '\0');
     assert(conversation.channel[0] == '\0');
     assert(conversation.token[0] == '\0');
