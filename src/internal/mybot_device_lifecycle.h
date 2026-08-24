@@ -69,14 +69,14 @@ typedef struct {
     char conversation_id[MYBOT_DEVICE_CLIENT_MAX_ID];
     char rtc_channel[128];
     char rtc_uid[64];
-    aosl_atomic_t conversation_requested;
+    bool conversation_requested;
     aosl_atomic_t stop_request;
     aosl_atomic_t rtc_token_renewal_requested;
     bool rtc_token_renewal_pending;
     int rtc_token_retry_delay_ticks;
     int rtc_token_retry_ticks_remaining;
 
-    aosl_atomic_t start_pairing_flag;
+    bool pairing_requested;
     aosl_atomic_t shutting_down;
     aosl_atomic_t network_available;
     aosl_atomic_t network_loss_pending;
@@ -102,20 +102,20 @@ int mybot_device_lifecycle_init(mybot_device_lifecycle_t *lifecycle, mybot_kv_st
                                 const char *firmware_ver, const char *hw_model,
                                 const mybot_device_lifecycle_callbacks_t *cbs);
 
-/** Called every 100 ms from the state machine's owning worker thread.
+/** Called every 100 ms by the application control owner.
  *  Drives polling and state transitions; calls must be serialized. */
 void mybot_device_lifecycle_tick(mybot_device_lifecycle_t *lifecycle);
 
 /**
  * Notify the state machine whether device-service networking is available.
- * May be called from any thread. While offline, tick() performs no HTTP actions;
- * an active conversation is ended locally on the state-machine thread.
+ * May be called from any thread as an atomic network input. While offline, tick()
+ * performs no HTTP actions; the control owner ends an active conversation locally.
  */
 void mybot_device_lifecycle_set_network_available(mybot_device_lifecycle_t *lifecycle,
                                                   bool available);
 
 /** Stop state-machine activity and close any active conversation.
- *  Must be called from the same thread that calls mybot_device_lifecycle_tick(). */
+ *  Must be called by the application control owner. */
 void mybot_device_lifecycle_shutdown(mybot_device_lifecycle_t *lifecycle);
 
 /** Get current state. */
@@ -127,16 +127,16 @@ const char *mybot_device_lifecycle_state_name(mybot_device_state_t s);
 /** Return the current device_token (NULL unless runtime or in a conversation). */
 const char *mybot_device_lifecycle_get_token(const mybot_device_lifecycle_t *lifecycle);
 
-/** Request a fresh pairing flow from any lifecycle state. */
+/** Request a fresh pairing flow from the application control owner. */
 void mybot_device_lifecycle_request_pair(mybot_device_lifecycle_t *lifecycle);
 
-/** Trigger conversation start (user pressed button). */
+/** Trigger conversation start from the application control owner. */
 void mybot_device_lifecycle_request_start(mybot_device_lifecycle_t *lifecycle);
 
-/** Trigger conversation stop (user hung up). */
+/** Trigger conversation stop from the application control owner. */
 void mybot_device_lifecycle_request_stop(mybot_device_lifecycle_t *lifecycle);
 
-/** Notify state machine that conversation RTC connection ended. */
+/** Publish from an RTC callback that the active connection ended. */
 void mybot_device_lifecycle_notify_conversation_ended(mybot_device_lifecycle_t *lifecycle);
 
 /** Request RTC-token renewal for the active conversation. May be called from any thread. */

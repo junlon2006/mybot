@@ -47,18 +47,18 @@ x86_64 Linux 参考构建（GCC 13，默认优化），**仅供参考**——请
 
 | MPQ 线程 | 职责 | 栈 |
 | --- | --- | --- |
-| `startup_mpq` | 串行化 Wi-Fi 事件处理与启动过渡 | 16 KB |
-| `state_mpq` | 设备状态机、阻塞 HTTP 轮询 | 16 KB |
+| `control_mpq` | 应用状态、设备生命周期、阻塞式 HTTP / RTC 控制、UI / 音量和资源转换 | 16 KB |
 | `mybot_mpq` | 按 ptime 节奏上行发送音频 | 16 KB |
 | `cap_mpq` | 麦克风采集 | 16 KB |
 | `pb_mpq` | 播放与 AEC 参考 | 16 KB |
 | `key_stdin_mpq`（仅 Linux 参考） | 标准输入按键事件 | 4 KB |
 
-核心栈预算合计 5 × 16 KB = 80 KB。栈大小为编译期常量：
+核心栈预算合计 4 × 16 KB = 64 KB。栈大小为编译期常量：
 控制线程使用 `src/core/mybot_app.c` 中的
-`APP_MPQ_STACK_SIZE`，音频线程使用 `src/media/mybot_media_pipeline.c` 中的
-`MEDIA_MPQ_STACK_SIZE`；请在目标上实测后再调整。实时音频定时器位于独立 MPQ，单个阻塞实现不会
-拖垮整条音频通路；状态机因 HTTP 轮询会阻塞而独占线程。Agora RTSA SDK 内部另有厂商管理的
+`CONTROL_MPQ_STACK_SIZE`，音频线程使用 `src/media/mybot_media_pipeline.c` 中的
+`MEDIA_MPQ_STACK_SIZE`；请在目标上实测后再调整。实时音频定时器位于独立 MPQ，PCM 保持
+数据面直达而不经过 `control_mpq`，因此阻塞式 HTTP 或控制工作不会拖垮音频通路。控制回调
+（包括唤醒词回调）只投递短事件或发布原子 mailbox。Agora RTSA SDK 内部另有厂商管理的
 线程。
 
 ## 时序与实时性
@@ -71,6 +71,10 @@ x86_64 Linux 参考构建（GCC 13，默认优化），**仅供参考**——请
 - 状态机每 100 ms tick 一次；设备服务轮询由服务端驱动，`poll_after_seconds` 会被限制在
   3..60 s。运行时在收到第一次 binding-status 响应前使用 30 s 初始默认值。
 - HTTP 请求总时限 5 s。
+- 设备服务 HTTP 在 `control_mpq` 上同步执行；已排队的 UI 或控制动作可能在在途请求后等待最长
+  该时限，但 PCM 数据面仍独立运行。
+- `mybot_start()` 与 `mybot_stop()` 是线程安全的。stop 会等待工作线程与回调，禁止从平台或
+  SDK 回调内调用。
 
 ## 功耗管理
 

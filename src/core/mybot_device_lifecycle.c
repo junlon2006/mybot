@@ -139,7 +139,7 @@ static void clear_device_auth(mybot_device_lifecycle_t *lifecycle) {
 static void restart_pairing_after_auth_rejection(mybot_device_lifecycle_t *lifecycle) {
     clear_device_auth(lifecycle);
     set_state(lifecycle, MYBOT_DEVICE_STATE_UNPROVISIONED);
-    aosl_atomic_set(&lifecycle->start_pairing_flag, true);
+    lifecycle->pairing_requested = true;
 }
 
 const char *mybot_device_lifecycle_get_token(const mybot_device_lifecycle_t *lifecycle) {
@@ -163,7 +163,7 @@ static void action_create_pair_code(mybot_device_lifecycle_t *lifecycle) {
     intptr_t network_generation = aosl_atomic_read(&lifecycle->network_generation);
     if (!aosl_atomic_read(&lifecycle->network_available)) {
         set_state(lifecycle, MYBOT_DEVICE_STATE_UNPROVISIONED);
-        aosl_atomic_set(&lifecycle->start_pairing_flag, true);
+        lifecycle->pairing_requested = true;
         return;
     }
 
@@ -173,7 +173,7 @@ static void action_create_pair_code(mybot_device_lifecycle_t *lifecycle) {
     if (!network_request_is_current(lifecycle, network_generation)) {
         AOSL_LOG_WRN("discarding pair-code response after network change");
         set_state(lifecycle, MYBOT_DEVICE_STATE_UNPROVISIONED);
-        aosl_atomic_set(&lifecycle->start_pairing_flag, true);
+        lifecycle->pairing_requested = true;
         return;
     }
     if (ret != 0) {
@@ -235,7 +235,7 @@ static void action_poll_binding_pair(mybot_device_lifecycle_t *lifecycle) {
     }
     if (api_rejected_device_auth(ret)) {
         AOSL_LOG_WRN("pair credential rejected (HTTP %d), requesting a new pair code", ret);
-        aosl_atomic_set(&lifecycle->start_pairing_flag, true);
+        lifecycle->pairing_requested = true;
         return;
     }
     if (ret != 0) {
@@ -269,7 +269,7 @@ static void action_poll_binding_pair(mybot_device_lifecycle_t *lifecycle) {
         AOSL_LOG_NTC("pairing status %s, re-pairing", resp.status);
         /* The top-level pairing handler in tick() re-runs the pair-code
          * request on the next tick. */
-        aosl_atomic_set(&lifecycle->start_pairing_flag, true);
+        lifecycle->pairing_requested = true;
     } else if (strcmp(resp.status, "unbound") == 0) {
         /* Unexpected during pairing, but handle it gracefully. */
         AOSL_LOG_NTC("unexpected unbound during pairing");
@@ -555,7 +555,7 @@ int mybot_device_lifecycle_init(mybot_device_lifecycle_t *lifecycle, mybot_kv_st
         AOSL_LOG_NTC("restored persisted device credential");
     } else {
         set_state(lifecycle, MYBOT_DEVICE_STATE_UNPROVISIONED);
-        aosl_atomic_set(&lifecycle->start_pairing_flag, true);
+        lifecycle->pairing_requested = true;
     }
 
     return 0;
@@ -569,7 +569,7 @@ void mybot_device_lifecycle_tick(mybot_device_lifecycle_t *lifecycle) {
     /* Consume every observed network loss even when Wi-Fi reconnects before
      * this worker gets its next tick. */
     if (aosl_atomic_xchg(&lifecycle->network_loss_pending, false)) {
-        aosl_atomic_set(&lifecycle->conversation_requested, false);
+        lifecycle->conversation_requested = false;
         aosl_atomic_set(&lifecycle->stop_request, MYBOT_STOP_REQUEST_NONE);
         if (current_state(lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
             complete_conversation_locally(lifecycle);
@@ -578,7 +578,7 @@ void mybot_device_lifecycle_tick(mybot_device_lifecycle_t *lifecycle) {
     }
 
     if (!aosl_atomic_read(&lifecycle->network_available)) {
-        aosl_atomic_set(&lifecycle->conversation_requested, false);
+        lifecycle->conversation_requested = false;
         aosl_atomic_set(&lifecycle->stop_request, MYBOT_STOP_REQUEST_NONE);
         return;
     }
@@ -587,7 +587,8 @@ void mybot_device_lifecycle_tick(mybot_device_lifecycle_t *lifecycle) {
      * re-pair request) starts a fresh pair-code request from any state. If a
      * conversation is active, end it first so the RTC connection is torn down
      * before the device is rebound. */
-    if (aosl_atomic_xchg(&lifecycle->start_pairing_flag, false)) {
+    if (lifecycle->pairing_requested) {
+        lifecycle->pairing_requested = false;
         if (current_state(lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
             action_stop_conversation(lifecycle, MYBOT_CONVERSATION_STOP_REASON_USER_REQUESTED);
         }
@@ -627,7 +628,8 @@ void mybot_device_lifecycle_tick(mybot_device_lifecycle_t *lifecycle) {
 
     if (current_state(lifecycle) == MYBOT_DEVICE_STATE_RUNTIME) {
         /* Check for user requests */
-        if (aosl_atomic_xchg(&lifecycle->conversation_requested, false)) {
+        if (lifecycle->conversation_requested) {
+            lifecycle->conversation_requested = false;
             aosl_atomic_set(&lifecycle->stop_request, MYBOT_STOP_REQUEST_NONE);
             action_start_conversation(lifecycle);
             return;
@@ -669,19 +671,18 @@ void mybot_device_lifecycle_tick(mybot_device_lifecycle_t *lifecycle) {
 
 void mybot_device_lifecycle_set_network_available(mybot_device_lifecycle_t *lifecycle,
                                                   bool available) {
-    aosl_atomic_set(&lifecycle->network_available, available);
-    if (!available) {
+    bool was_available = aosl_atomic_xchg(&lifecycle->network_available, available) != 0;
+    if (!available && was_available) {
         aosl_atomic_inc(&lifecycle->network_generation);
         aosl_atomic_set(&lifecycle->network_loss_pending, true);
-        /* Do not start a conversation automatically after a later reconnect. */
-        aosl_atomic_set(&lifecycle->conversation_requested, false);
+        /* The control owner consumes this loss before accepting another command. */
     }
 }
 
 void mybot_device_lifecycle_shutdown(mybot_device_lifecycle_t *lifecycle) {
     aosl_atomic_set(&lifecycle->shutting_down, true);
-    aosl_atomic_set(&lifecycle->start_pairing_flag, false);
-    aosl_atomic_set(&lifecycle->conversation_requested, false);
+    lifecycle->pairing_requested = false;
+    lifecycle->conversation_requested = false;
     aosl_atomic_set(&lifecycle->stop_request, MYBOT_STOP_REQUEST_NONE);
     aosl_atomic_set(&lifecycle->rtc_token_renewal_requested, false);
 
@@ -698,7 +699,7 @@ void mybot_device_lifecycle_request_pair(mybot_device_lifecycle_t *lifecycle) {
     if (aosl_atomic_read(&lifecycle->shutting_down)) {
         return;
     }
-    aosl_atomic_set(&lifecycle->start_pairing_flag, true);
+    lifecycle->pairing_requested = true;
 }
 
 void mybot_device_lifecycle_request_start(mybot_device_lifecycle_t *lifecycle) {
@@ -710,7 +711,7 @@ void mybot_device_lifecycle_request_start(mybot_device_lifecycle_t *lifecycle) {
         AOSL_LOG_ERR("cannot start: not in runtime");
         return;
     }
-    aosl_atomic_set(&lifecycle->conversation_requested, true);
+    lifecycle->conversation_requested = true;
 }
 
 void mybot_device_lifecycle_request_stop(mybot_device_lifecycle_t *lifecycle) {
@@ -728,10 +729,8 @@ void mybot_device_lifecycle_notify_conversation_ended(mybot_device_lifecycle_t *
     if (aosl_atomic_read(&lifecycle->shutting_down)) {
         return;
     }
-    /* Called from an RTC SDK callback thread on connection loss/error. Only
-     * flag the stop here — the actual teardown (HTTP stop + RTC leave) runs
-     * on the state_mpq thread via mybot_device_lifecycle_tick(), avoiding
-     * re-entrant SDK calls from inside an SDK callback. */
+    /* RTC callbacks only publish this mailbox. The control owner performs the
+     * HTTP stop and RTC leave from tick(), avoiding re-entrant SDK calls. */
     if (current_state(lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
         aosl_atomic_set(&lifecycle->stop_request, MYBOT_STOP_REQUEST_ERROR);
     }

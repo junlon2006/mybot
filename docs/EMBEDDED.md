@@ -51,20 +51,20 @@ reports `MYBOT_STATE_IN_CONVERSATION` until normal teardown returns to `MYBOT_ST
 
 | MPQ thread | Responsibility | Stack |
 | --- | --- | --- |
-| `startup_mpq` | Serializes Wi-Fi event handling and startup transitions | 16 KB |
-| `state_mpq` | Device state machine, blocking HTTP polling | 16 KB |
+| `control_mpq` | App state, device lifecycle, blocking HTTP/RTC control, UI/volume, resource transitions | 16 KB |
 | `mybot_mpq` | Uplink audio send at the ptime cadence | 16 KB |
 | `cap_mpq` | Microphone capture | 16 KB |
 | `pb_mpq` | Playback and AEC reference | 16 KB |
 | `key_stdin_mpq` (Linux reference only) | Stdin key events | 4 KB |
 
-Core stack budget is therefore 5 × 16 KB = 80 KB. Stack sizes are compile-time
-constants: control workers use `APP_MPQ_STACK_SIZE` in
+Core stack budget is therefore 4 × 16 KB = 64 KB. Stack sizes are compile-time
+constants: the control worker uses `CONTROL_MPQ_STACK_SIZE` in
 `src/core/mybot_app.c`, while audio workers use `MEDIA_MPQ_STACK_SIZE` in
 `src/media/mybot_media_pipeline.c`; profile on the target before tuning. The real-time
-audio timers live on separate MPQs so a single blocking implementation cannot
-stall the whole audio path, and the state machine runs on its own thread because HTTP polling
-blocks. The Agora RTSA SDK owns
+audio timers live on separate MPQs, and PCM stays on the direct data path rather than passing
+through `control_mpq`, so blocking HTTP or control work cannot stall audio. Control callbacks,
+including wake-word callbacks, only enqueue short events or publish atomic mailboxes.
+The Agora RTSA SDK owns
 additional internal threads whose stacks are vendor-managed.
 
 ## Timing and real-time behavior
@@ -78,6 +78,10 @@ additional internal threads whose stacks are vendor-managed.
   `poll_after_seconds` hint clamped to 3..60 s. Runtime polling starts at a 30 s default until the
   first binding-status response is received.
 - HTTP requests have a 5 s total deadline.
+- Device-service HTTP runs synchronously on `control_mpq`; a queued UI or control action may wait
+  up to that deadline behind an in-flight request, while the PCM data path continues independently.
+- `mybot_start()` and `mybot_stop()` are thread-safe. Because stop waits for workers and callbacks,
+  never call it from a platform or SDK callback.
 
 ## Power management
 

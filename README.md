@@ -198,10 +198,12 @@ mybot_stop();
 `mybot_start()` is non-blocking: it starts provisioning first, then initializes storage,
 buttons, audio, and the device service asynchronously once usable network connectivity is
 reported. RTC is initialized on demand when a conversation starts.
-`mybot_stop()` waits for all worker threads to exit and must not be called from inside a
-platform event callback. The application acquires one reference to the process-wide AOSL runtime
-inside `mybot_start()` and releases it at the end of `mybot_stop()`. Agora RTC acquires and releases
-its own independent AOSL reference in `agora_rtc_init()` / `agora_rtc_fini()`. A host that uses AOSL
+`mybot_start()` and `mybot_stop()` are thread-safe and serialize their work through the application
+lifecycle gate and control owner. `mybot_stop()` waits for all worker threads to exit and must not be
+called from inside a platform or SDK callback. The application acquires one reference to the
+process-wide AOSL runtime inside `mybot_start()` and releases it at the end of `mybot_stop()`.
+Agora RTC acquires and releases its own independent AOSL reference in `agora_rtc_init()` /
+`agora_rtc_fini()`. A host that uses AOSL
 directly must keep its own `aosl_ctor()` / `aosl_dtor()` pair balanced; the runtime is finalized only
 after every consumer has released its reference.
 
@@ -326,9 +328,11 @@ Layer notes:
   actions are triggered by platform key / wake-word events and handled inside the SDK core. Wi-Fi
   and device-lifecycle events update one atomic state-model snapshot; `mybot_get_state()` and the LCD
   presenter derive their views from that same snapshot.
-- **SDK core** ([src/](src/)): startup orchestration, the device state machine, the device-service
-  HTTP client, the Agora RTSA session wrapper, audio ring buffers, and the optional local
-  wake-word engine. Core code never touches any OS or peripheral API directly.
+- **SDK core** ([src/](src/)): one control owner serializes application state, the device lifecycle,
+  RTC control, UI and volume actions, and resource startup and shutdown. Control callbacks only
+  publish short events or atomic mailboxes to that owner. The core also contains the
+  device-service HTTP client, the Agora RTSA session wrapper, audio ring buffers, and the optional
+  local wake-word engine. Core code never touches any OS or peripheral API directly.
 - **Foundation layer**: AOSL provides portable threads / MPQ queues / timers / logging; the
   platform `ops` contract defines the device capabilities the SDK requires. Both are implementable
   per platform.
@@ -340,20 +344,20 @@ Layer notes:
 
 ### Threading model
 
-`mybot_start()` creates five worker threads (AOSL MPQ queues) with strictly separated
+`mybot_start()` creates four core worker threads (AOSL MPQ queues) with strictly separated
 responsibilities:
 
 | Thread (MPQ) | Driven by | Responsibility |
 | --- | --- | --- |
-| `startup_mpq` | Wi-Fi connectivity events | Serializes startup transitions; initializes services asynchronously when the network is ready |
-| `state_mpq` | 100 ms timer | Device state-machine tick; blocking HTTP polling stays on this thread |
+| `control_mpq` | Events and 100 ms timer | Owns application state, device lifecycle, blocking HTTP/RTC control, UI/volume actions, and resource transitions |
 | `mybot_mpq` | ptime timer | Sends uplink audio at the packetization cadence (Agora RTSA) |
 | `cap_mpq` | ptime timer | Mic capture → capture ring buffer → (optional) wake words |
 | `pb_mpq` | ptime timer | Playback ring buffer → speaker; also feeds the AEC reference channel |
 
-The real-time audio timers (cap / pb / send) are independent, so a single blocking
-implementation cannot stall the whole audio path; the state machine and startup flow run on
-dedicated threads and never contend with the audio cadence.
+Callbacks keep their work bounded: they enqueue a short control event or publish an atomic mailbox.
+PCM capture, RTC uplink/downlink, and playback stay on the direct data path and never pass through
+`control_mpq`. The real-time audio timers (cap / pb / send) are independent, so blocking control or
+device-service work cannot stall the audio cadence.
 
 ### Workflows
 
