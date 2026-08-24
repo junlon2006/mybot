@@ -149,10 +149,10 @@ MYBOT_API mybot_state_t mybot_get_state(void);
 /**
  * @brief Request a graceful application exit.
  *
- * Non-blocking: only clears the running flag so mybot_is_running() starts
- * returning false; no worker thread or resource is torn down here. The host
- * main loop observes the flag change and should then call mybot_stop() to
- * release threads and devices.
+ * Non-blocking: publishes an exit request so mybot_is_running() starts returning
+ * false; no worker thread or resource is torn down here. The host main loop
+ * observes the request and should then call mybot_stop() to release threads and
+ * devices.
  *
  * Safe to call from any normal thread or event callback (key EXIT events, UI
  * commands) and idempotent — repeated calls are harmless. A POSIX signal

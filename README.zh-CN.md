@@ -172,10 +172,11 @@ mybot_stop();
 ```
 
 `mybot_start()` 非阻塞：先启动配网，收到网络可用事件后才异步初始化存储、
-按键、音频和设备服务；RTC 仅在会话开始时按需初始化。`mybot_stop()` 会等待全部工作线程
-退出，因此不应从平台事件回调内部调用。应用在 `mybot_start()` 内获取一份 AOSL 引用，并在
-`mybot_stop()` 末尾释放；Agora RTC 在 `agora_rtc_init()` / `agora_rtc_fini()` 中管理
-自己独立的一份 AOSL 引用。宿主若直接使用 AOSL，必须自行配对 `aosl_ctor()` /
+按键、音频和设备服务；RTC 仅在会话开始时按需初始化。`mybot_start()` 与 `mybot_stop()`
+是线程安全的，并通过应用生命周期 gate 与控制 owner 串行执行。`mybot_stop()` 会等待全部
+工作线程退出，因此不应从平台或 SDK 回调内部调用。应用在 `mybot_start()` 内获取一份 AOSL
+引用，并在 `mybot_stop()` 末尾释放；Agora RTC 在 `agora_rtc_init()` /
+`agora_rtc_fini()` 中管理自己独立的一份 AOSL 引用。宿主若直接使用 AOSL，必须自行配对 `aosl_ctor()` /
 `aosl_dtor()`，只有所有消费者都释放引用后运行时才会最终释放。
 
 ## 构建配置
@@ -294,8 +295,10 @@ flowchart TB
   仅用于显示，不是生命周期状态来源。会话与配对动作由平台按键 / 唤醒词事件触发，由 SDK
   核心内部处理。Wi-Fi 与设备生命周期事件共同更新一个原子状态模型快照；
   `mybot_get_state()` 与 LCD presenter 都从同一份快照派生各自视图。
-- **SDK 核心**（[src/](src/)）：启动编排、设备状态机、设备服务 HTTP 客户端、Agora
-  RTSA 会话封装、音频环形缓冲与可选本地唤醒词。核心代码不直接触碰任何 OS 或外设 API。
+- **SDK 核心**（[src/](src/)）：单一控制 owner 串行负责应用状态、设备生命周期、RTC 控制、
+  UI / 音量动作以及资源启停；控制回调只向 owner 投递短事件或原子 mailbox。
+  核心还包含设备服务 HTTP 客户端、Agora RTSA 会话封装、音频环形缓冲与可选本地唤醒词。
+  核心代码不直接触碰任何 OS 或外设 API。
 - **基础服务层**：AOSL 提供线程 / MPQ / 定时器 / 日志等可移植能力；平台 `ops` 契约
   定义 SDK 所需的设备能力接口，两者都可由具体平台实现。
 - **平台实现**：Linux 参考实现与各 MCU 平台按同一契约注册。
@@ -304,18 +307,18 @@ flowchart TB
 
 ### 线程模型
 
-`mybot_start()` 在 AOSL 上创建 5 个工作线程（MPQ），职责严格隔离：
+`mybot_start()` 在 AOSL 上创建 4 个核心工作线程（MPQ），职责严格隔离：
 
 | 线程 (MPQ) | 驱动 | 职责 |
 | --- | --- | --- |
-| `startup_mpq` | Wi-Fi 连接事件 | 串行化启动过渡；网络可用后异步初始化各项服务 |
-| `state_mpq` | 100 ms 定时器 | 设备状态机 tick；阻塞式 HTTP 轮询独立于此线程 |
+| `control_mpq` | 事件与 100 ms 定时器 | 负责应用状态、设备生命周期、阻塞式 HTTP / RTC 控制、UI / 音量动作和资源转换 |
 | `mybot_mpq` | ptime 定时器 | 按音频包长节奏发送上行音频（Agora RTSA） |
 | `cap_mpq` | ptime 定时器 | 麦克风采集 → 采集环形缓冲 →（可选）唤醒词 |
 | `pb_mpq` | ptime 定时器 | 播放环形缓冲 → 扬声器，同时生成 AEC 参考声道 |
 
-实时音频定时器（cap / pb / send）相互独立，单个阻塞实现不会拖垮整条音频链路；
-状态机与启动流程使用专用线程，不抢占音频节拍。
+回调只执行有界工作：投递短控制事件或发布原子 mailbox。PCM 采集、RTC 上下行与播放保持
+数据面直达，不经过 `control_mpq`。实时音频定时器（cap / pb / send）相互独立，阻塞的
+控制面或设备服务工作不会拖垮音频节拍。
 
 ### 工作流
 

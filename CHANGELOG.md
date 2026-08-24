@@ -28,6 +28,9 @@ This project follows Semantic Versioning.
   descriptor whose non-NULL ops pointers are the sole declarations of supported platform functions.
 - Remove the internal conversation forwarding layer; application orchestration now calls the
   process-wide Agora RTC module directly without copying RTC credentials into a second context.
+- Consolidate application control into one `control_mpq` owner for state, device lifecycle, RTC
+  control, UI and volume actions, and resource startup and shutdown. Control callbacks only publish
+  short events or atomic mailboxes, while PCM remains on the direct real-time data path.
 - Align the English and Chinese README lifecycle and architecture guidance, document the descriptor
   registration contract in the public headers, match local format commands to CI scope, and refresh
   stale BK725x ownership and generator comments.
@@ -166,16 +169,12 @@ This project follows Semantic Versioning.
   internal lifecycle/query functions (`init` / `deinit` / `is_registered`, LCD rendering,
   wake-word PCM feed, KV-store access, capture/playback accessors and volume control) moved to
   `src/internal/mybot_*_internal.h` and are no longer part of the public API surface.
-- Move conversation-control requests (`mybot_app_start_conversation()`,
-  `mybot_app_stop_conversation()`, `mybot_app_pair()`) out of the public header
-  `include/mybot/mybot.h` into the internal `src/internal/mybot_app.h`: host applications now
-  trigger them only through platform key / wake-word events, and the symbols are no longer
-  exported from the library.
+- Remove the conversation-control helper symbols and internal `mybot_app.h`; platform key and
+  wake-word callbacks now submit short commands directly to the application control owner.
 - Rename the public application entry points from the `mybot_app_*` prefix to the root
   `mybot_*` namespace (`mybot_start()`, `mybot_stop()`, `mybot_is_running()`,
   `mybot_get_state()`, `mybot_request_exit()`; types `mybot_config_t` / `mybot_state_t`; state
-  enumerators `MYBOT_STATE_*`). `mybot_app_*` is now reserved for internal app-shell control in
-  `src/`.
+  enumerators `MYBOT_STATE_*`).
 - Unify public API naming around `mybot_<module>_register / init / deinit`: drop redundant middle
   words (`mybot_audio_register_capture()`, `mybot_audio_register_playback()`, `mybot_key_register()`,
   `mybot_wifi_register()`, `mybot_https_register()`), rename the HTTPS transport header to
