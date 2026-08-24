@@ -66,6 +66,8 @@ This project follows Semantic Versioning.
   reusing stale session resources or application state.
 - Serialize application start and stop across threads so runtime initialization, failure cleanup, and
   teardown cannot concurrently mutate the process-wide runtime.
+- Correct the public key-input contract to document the forwarded `user_data` context and its
+  callback lifetime.
 
 ## [1.0.0] - 2026-08-10
 

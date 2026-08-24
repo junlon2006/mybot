@@ -52,7 +52,8 @@ typedef struct {
      *
      * @param ctx       [out] implementation context handle
      * @param emit      callback for reporting key events
-     * @param user_data opaque pointer forwarded to emit(); reserved, pass NULL
+     * @param user_data opaque context forwarded unchanged to emit(); it must remain
+     *                  valid until destroy() returns
      * @return 0 on success, -1 on error
      */
     int (*init)(void **ctx, mybot_key_event_handler_t emit, void *user_data);
