@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "linux_platform_adapters.h"
+#include "platform_test.h"
 
 #include "mybot_announce_internal.h"
 
@@ -72,7 +73,10 @@ int main(void) {
     setenv("MYBOT_LOCALE", "zh-CN", 1);
 
     aosl_ctor();
-    assert(linux_announce_platform_register() == 0);
+    mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
+    descriptor.capabilities |= MYBOT_PLATFORM_CAP_ANNOUNCE;
+    descriptor.announce = linux_announce_platform_file_ops();
+    assert(mybot_platform_register(&descriptor) == 0);
     assert(mybot_announce_is_registered());
     assert(mybot_announce_init(&s_announce) == 0);
 

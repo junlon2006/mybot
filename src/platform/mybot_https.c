@@ -7,10 +7,6 @@
 
 #include <stddef.h>
 
-int mybot_https_register(const mybot_https_ops_t *ops) {
-    return mybot_platform_registry_register_https(ops);
-}
-
 bool mybot_https_is_registered(void) {
     return mybot_platform_registry_https() != NULL;
 }

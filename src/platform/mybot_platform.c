@@ -7,14 +7,8 @@
     (MYBOT_PLATFORM_CAP_REQUIRED | MYBOT_PLATFORM_CAP_AUDIO_VOLUME | MYBOT_PLATFORM_CAP_HTTPS |    \
      MYBOT_PLATFORM_CAP_LCD | MYBOT_PLATFORM_CAP_ANNOUNCE | MYBOT_PLATFORM_CAP_WAKE_WORDS)
 
-typedef enum {
-    REGISTRY_EMPTY = 0,
-    REGISTRY_LEGACY,
-    REGISTRY_DESCRIPTOR,
-} registry_mode_t;
-
 static mybot_platform_descriptor_t s_registry;
-static registry_mode_t s_mode;
+static bool s_registered;
 static bool s_locked;
 
 static bool name_is_valid(const char *name) {
@@ -107,11 +101,11 @@ static bool descriptor_is_valid(const mybot_platform_descriptor_t *descriptor) {
 }
 
 int mybot_platform_register(const mybot_platform_descriptor_t *descriptor) {
-    if (s_locked || s_mode != REGISTRY_EMPTY || !descriptor_is_valid(descriptor)) {
+    if (s_locked || s_registered || !descriptor_is_valid(descriptor)) {
         return -1;
     }
     s_registry = *descriptor;
-    s_mode = REGISTRY_DESCRIPTOR;
+    s_registered = true;
     return 0;
 }
 
@@ -126,48 +120,6 @@ int mybot_platform_validate(uint64_t required_capabilities, uint64_t *missing_ca
     }
     return missing == 0 ? 0 : -1;
 }
-
-static bool legacy_slot_available(uint64_t capability) {
-    if (s_locked || s_mode == REGISTRY_DESCRIPTOR || (s_registry.capabilities & capability) != 0) {
-        return false;
-    }
-    s_mode = REGISTRY_LEGACY;
-    s_registry.api_version = MYBOT_PLATFORM_API_VERSION;
-    s_registry.struct_size = sizeof(s_registry);
-    s_registry.name = "legacy-registration";
-    return true;
-}
-
-#define DEFINE_LEGACY_REGISTER(function_name, type, field, capability, validator)                  \
-    int function_name(const type *ops) {                                                           \
-        if (!validator(ops) || !legacy_slot_available(capability)) {                               \
-            return -1;                                                                             \
-        }                                                                                          \
-        s_registry.field = ops;                                                                    \
-        s_registry.capabilities |= capability;                                                     \
-        return 0;                                                                                  \
-    }
-
-DEFINE_LEGACY_REGISTER(mybot_platform_registry_register_wifi, mybot_wifi_ops_t, wifi,
-                       MYBOT_PLATFORM_CAP_WIFI, wifi_is_valid)
-DEFINE_LEGACY_REGISTER(mybot_platform_registry_register_kv_store, mybot_kv_store_ops_t, kv_store,
-                       MYBOT_PLATFORM_CAP_KV_STORE, kv_store_is_valid)
-DEFINE_LEGACY_REGISTER(mybot_platform_registry_register_key, mybot_key_ops_t, key,
-                       MYBOT_PLATFORM_CAP_KEY, key_is_valid)
-DEFINE_LEGACY_REGISTER(mybot_platform_registry_register_audio_capture, mybot_audio_capture_ops_t,
-                       audio_capture, MYBOT_PLATFORM_CAP_AUDIO_CAPTURE, audio_capture_is_valid)
-DEFINE_LEGACY_REGISTER(mybot_platform_registry_register_audio_playback, mybot_audio_playback_ops_t,
-                       audio_playback, MYBOT_PLATFORM_CAP_AUDIO_PLAYBACK, audio_playback_is_valid)
-DEFINE_LEGACY_REGISTER(mybot_platform_registry_register_audio_volume, mybot_audio_volume_ops_t,
-                       audio_volume, MYBOT_PLATFORM_CAP_AUDIO_VOLUME, audio_volume_is_valid)
-DEFINE_LEGACY_REGISTER(mybot_platform_registry_register_https, mybot_https_ops_t, https,
-                       MYBOT_PLATFORM_CAP_HTTPS, https_is_valid)
-DEFINE_LEGACY_REGISTER(mybot_platform_registry_register_lcd, mybot_lcd_ops_t, lcd,
-                       MYBOT_PLATFORM_CAP_LCD, lcd_is_valid)
-DEFINE_LEGACY_REGISTER(mybot_platform_registry_register_announce, mybot_announce_ops_t, announce,
-                       MYBOT_PLATFORM_CAP_ANNOUNCE, announce_is_valid)
-DEFINE_LEGACY_REGISTER(mybot_platform_registry_register_wake_words, mybot_wake_words_ops_t,
-                       wake_words, MYBOT_PLATFORM_CAP_WAKE_WORDS, wake_words_is_valid)
 
 #define DEFINE_GETTER(function_name, type, field)                                                  \
     const type *function_name(void) {                                                              \

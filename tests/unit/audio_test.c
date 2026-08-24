@@ -2,6 +2,7 @@
 #include <mybot/platform/mybot_audio.h>
 
 #include "mybot_audio_internal.h"
+#include "platform_test.h"
 
 #include <assert.h>
 #include <stddef.h>
@@ -66,8 +67,6 @@ static void volume_destroy(void *ctx) {
 
 int main(void) {
     mybot_audio_t audio = {0};
-    const mybot_audio_capture_ops_t incomplete_capture = {0};
-    const mybot_audio_playback_ops_t incomplete_playback = {0};
     const mybot_audio_capture_ops_t capture = {
         .name = "test",
         .init = init,
@@ -84,7 +83,6 @@ int main(void) {
         .stop = stop,
         .destroy = destroy,
     };
-    const mybot_audio_volume_ops_t incomplete_volume = {0};
     const mybot_audio_volume_ops_t volume = {
         .name = "test",
         .init = volume_init,
@@ -93,26 +91,18 @@ int main(void) {
         .destroy = volume_destroy,
     };
 
-    assert(mybot_audio_register_capture(NULL) < 0);
-    assert(mybot_audio_register_capture(&incomplete_capture) < 0);
-    assert(mybot_audio_register_capture(&capture) == 0);
-    assert(mybot_audio_register_capture(&capture) < 0);
+    mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
+    descriptor.audio_capture = &capture;
+    descriptor.audio_playback = &playback;
+    descriptor.capabilities |= MYBOT_PLATFORM_CAP_AUDIO_VOLUME;
+    descriptor.audio_volume = &volume;
+    assert(mybot_platform_register(&descriptor) == 0);
+
     mybot_audio_context_init(&audio);
     assert(mybot_audio_get_capture(&audio) == &capture);
-
-    assert(mybot_audio_register_playback(NULL) < 0);
-    assert(mybot_audio_register_playback(&incomplete_playback) < 0);
-    assert(mybot_audio_register_playback(&playback) == 0);
-    assert(mybot_audio_register_playback(&playback) < 0);
-    mybot_audio_context_init(&audio);
     assert(mybot_audio_get_playback(&audio) == &playback);
 
     /* Device volume implementation registration and lifecycle. */
-    assert(mybot_audio_device_register_volume(NULL) < 0);
-    assert(mybot_audio_device_register_volume(&incomplete_volume) < 0);
-    assert(mybot_audio_device_register_volume(&volume) == 0);
-    assert(mybot_audio_device_register_volume(&volume) < 0);
-    mybot_audio_context_init(&audio);
     assert(mybot_audio_device_volume_is_registered(&audio));
     assert(!mybot_audio_device_volume_is_active(&audio));
 

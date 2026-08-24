@@ -106,9 +106,7 @@ typedef struct {
  * Atomically validate and register one complete platform descriptor.
  *
  * The call either commits the complete descriptor or leaves the registry unchanged.
- * One successful registration is allowed and must happen before mybot_start(). The
- * descriptor path cannot be mixed with legacy per-capability registration: a successful
- * call to either style makes calls to the other style fail.
+ * One successful registration is allowed and must happen before mybot_start().
  *
  * @param descriptor complete descriptor satisfying mybot_platform_descriptor_t's
  *                   version, capability, operations, and lifetime contract
@@ -118,7 +116,7 @@ typedef struct {
 MYBOT_API int mybot_platform_register(const mybot_platform_descriptor_t *descriptor);
 
 /**
- * Return the capabilities currently registered through either API style.
+ * Return the capabilities currently registered by the platform descriptor.
  *
  * @return registered MYBOT_PLATFORM_CAP_* bit mask, or 0 before registration
  */
@@ -127,8 +125,7 @@ MYBOT_API uint64_t mybot_platform_get_capabilities(void);
 /**
  * Check whether all requested capabilities are currently registered.
  *
- * This function does not register or lock anything. It may be used with either
- * descriptor or legacy registration and accepts any requested bit mask.
+ * This function does not register or lock anything and accepts any requested bit mask.
  *
  * @param required_capabilities capabilities required by the caller
  * @param missing_capabilities  [out] missing bits; may be NULL. When non-NULL,

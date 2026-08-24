@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "mybot_presenter.h"
+#include "platform_test.h"
 
 #include <api/aosl.h>
 
@@ -40,7 +41,10 @@ int main(void) {
     mybot_state_model_t state_model;
 
     aosl_ctor();
-    assert(mybot_lcd_register(&ops) == 0);
+    mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
+    descriptor.capabilities |= MYBOT_PLATFORM_CAP_LCD;
+    descriptor.lcd = &ops;
+    assert(mybot_platform_register(&descriptor) == 0);
     assert(mybot_presenter_init(&presenter) == 0);
     assert(s_init_count == 1);
 

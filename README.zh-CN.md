@@ -156,8 +156,8 @@ target_link_libraries(device_firmware PRIVATE mybot::sdk)
 平台应在 `mybot_start()` 之前注册一个版本化的 `mybot_platform_descriptor_t`。描述符通过
 能力位统一声明必需与可选能力，并携带 Wi-Fi、KV、按键、音频、HTTPS、LCD、播报、音量
 及唤醒词 `ops`。注册过程会先完整校验描述符再原子提交；`mybot_start()` 也会在创建任何
-平台资源之前校验必需能力，缺失时直接启动失败。各个 `mybot_*_register()` 函数继续作为
-旧版兼容入口保留，但不能与描述符注册混用。完整实现顺序、最小代码、线程约束和验收清单见
+平台资源之前校验必需能力，缺失时直接启动失败。所有平台能力均通过这个描述符一次性注册，
+不再提供独立的分项注册入口。完整实现顺序、最小代码、线程约束和验收清单见
 [docs/PORTING.md](docs/PORTING.md)。
 
 最小应用生命周期：

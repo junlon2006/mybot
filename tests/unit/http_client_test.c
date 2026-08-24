@@ -3,6 +3,7 @@
 #include <mybot/platform/mybot_https.h>
 
 #include "mybot_https_internal.h"
+#include "platform_test.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -466,12 +467,10 @@ int main(void) {
                    "5\r\nhell",
                    1);
 
-    mybot_https_ops_t incomplete_ops = s_fake_tls_ops;
-    incomplete_ops.recv = NULL;
-    assert(mybot_https_register(NULL) < 0);
-    assert(mybot_https_register(&incomplete_ops) < 0);
-    assert(mybot_https_register(&s_fake_tls_ops) == 0);
-    assert(mybot_https_register(&s_fake_tls_ops) < 0);
+    mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
+    descriptor.capabilities |= MYBOT_PLATFORM_CAP_HTTPS;
+    descriptor.https = &s_fake_tls_ops;
+    assert(mybot_platform_register(&descriptor) == 0);
 
     int connect_count = s_tls_connect_count;
     assert(mybot_http_client_get("https://good.example/path\r\nX-Injected: yes", &response) < 0);

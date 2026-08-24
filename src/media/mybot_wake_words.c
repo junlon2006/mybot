@@ -6,10 +6,6 @@
 
 #include <stddef.h>
 
-int mybot_wake_words_register(const mybot_wake_words_ops_t *ops) {
-    return mybot_platform_registry_register_wake_words(ops);
-}
-
 bool mybot_wake_words_is_registered(void) {
     return mybot_platform_registry_wake_words() != NULL;
 }

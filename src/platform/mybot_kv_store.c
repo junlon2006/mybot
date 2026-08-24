@@ -4,10 +4,6 @@
 #include "mybot_kv_store_internal.h"
 #include "mybot_platform_registry.h"
 
-int mybot_kv_store_register(const mybot_kv_store_ops_t *ops) {
-    return mybot_platform_registry_register_kv_store(ops);
-}
-
 int mybot_kv_store_init(mybot_kv_store_t *store) {
     if (!store) {
         return -1;

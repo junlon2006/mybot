@@ -1,6 +1,7 @@
 set(MYBOT_TEST_COMMON_INCLUDES
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/internal
+    ${CMAKE_CURRENT_SOURCE_DIR}/support
 )
 set(MYBOT_TEST_SYSTEM_LIBS pthread dl rt m)
 
@@ -78,11 +79,6 @@ target_link_libraries(mybot_state_model_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LI
 
 mybot_add_test(mybot_platform_registry_test
     unit/platform_registry_test.c
-    ../src/platform/mybot_platform.c
-)
-
-mybot_add_test(mybot_platform_registry_legacy_test
-    unit/platform_registry_legacy_test.c
     ../src/platform/mybot_platform.c
 )
 

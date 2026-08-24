@@ -9,10 +9,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-int mybot_announce_register(const mybot_announce_ops_t *ops) {
-    return mybot_platform_registry_register_announce(ops);
-}
-
 bool mybot_announce_is_registered(void) {
     return mybot_platform_registry_announce() != NULL;
 }

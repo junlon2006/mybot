@@ -17,7 +17,7 @@ typedef struct {
 /**
  * SDK-internal wake-word facade. The public mybot/platform/mybot_wake_words.h
  * only exposes the platform contract (handler typedef, ops table and
- * mybot_wake_words_register()); the SDK audio pipeline drives the registered
+ * mybot_platform_register()); the SDK audio pipeline drives the registered
  * implementation through the functions below.
  */
 

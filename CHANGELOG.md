@@ -9,8 +9,8 @@ This project follows Semantic Versioning.
 - Expand deterministic unit coverage for JSON allocation failures, HTTP and device-service
   protocol boundaries, device lifecycle recovery, RTC errors, application cleanup, and the
   conversation facade.
-- Add the versioned `mybot_platform_descriptor_t` capability registry with atomic registration,
-  legacy per-capability compatibility APIs, and synchronous startup validation of required ops.
+- Add the versioned `mybot_platform_descriptor_t` capability registry with atomic registration and
+  synchronous startup validation of required ops.
 - Add the BK725x platform port under `platforms/bk725x` and synchronize the complete BK7258
   reference project under `examples/bk725x`, with the full firmware implementation maintained at
   <https://github.com/junlon2006/mybot-bk7258>.
@@ -24,9 +24,11 @@ This project follows Semantic Versioning.
 - Align the Agora RTSA wrapper with the single-instance, one-call-at-a-time product model: initialize
   RTSA once per mybot run, use one AOSL CAS lifecycle gate for callback, audio-send, and teardown
   ordering, and create one connection per conversation, with explicit lifecycle and error logging.
-- Align the English and Chinese README lifecycle and architecture guidance, document strict
-  descriptor and legacy registration contracts in the public headers, match local format commands
-  to CI scope, and refresh stale BK725x ownership and generator comments.
+- Remove legacy per-capability platform registration; platform integrations must submit one
+  complete, atomically validated `mybot_platform_descriptor_t` before startup.
+- Align the English and Chinese README lifecycle and architecture guidance, document the descriptor
+  registration contract in the public headers, match local format commands to CI scope, and refresh
+  stale BK725x ownership and generator comments.
 - Refactor application, lifecycle, RTC, audio, storage, connectivity, input, display, announcement,
   and wake-word runtime state into caller-owned internal contexts. Public APIs retain the default
   process-wide compatibility facade, while active implementation state no longer lives in module

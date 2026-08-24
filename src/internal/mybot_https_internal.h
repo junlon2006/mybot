@@ -11,7 +11,7 @@ extern "C" {
 /**
  * SDK-internal HTTPS registry query. The public
  * mybot/platform/mybot_https.h only exposes the TLS transport contract
- * (ops table + mybot_https_register()); the SDK core checks registration
+ * (ops table + mybot_platform_register()); the SDK core checks registration
  * during startup.
  */
 

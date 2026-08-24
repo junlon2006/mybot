@@ -90,11 +90,11 @@ typedef enum {
  * development environments whose host already manages the network connection.
  *
  * Preconditions:
- * - Register a complete mybot_platform_descriptor_t first (recommended), or use the legacy
- *   individual registration functions. Wi-Fi, KV, key, audio capture and playback are required;
- *   HTTPS and wake words become required when selected by the build and configuration.
- * - With MYBOT_ENABLE_HTTPS=ON, a "https://" server requires a registered
- *   TLS transport (mybot_https_register()); plain "http://" is rejected
+ * - Register one complete mybot_platform_descriptor_t first. Wi-Fi, KV, key, audio capture and
+ *   playback are required; HTTPS and wake words become required when selected by the build and
+ *   configuration.
+ * - With MYBOT_ENABLE_HTTPS=ON, a "https://" server requires a TLS transport in the registered
+ *   platform descriptor; plain "http://" is rejected
  *   unless MYBOT_ALLOW_INSECURE_HTTP=ON is set for development builds.
  *
  * The configuration is validated (non-NULL cfg, NUL-terminated strings,

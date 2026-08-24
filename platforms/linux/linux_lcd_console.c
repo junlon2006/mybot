@@ -107,11 +107,3 @@ static const mybot_lcd_ops_t s_lcd_console_ops = {
 const mybot_lcd_ops_t *linux_lcd_platform_console_ops(void) {
     return &s_lcd_console_ops;
 }
-
-int linux_lcd_platform_register_console(void) {
-    int ret = mybot_lcd_register(&s_lcd_console_ops);
-    if (ret < 0) {
-        AOSL_LOG_ERR("LCD console platform registration failed");
-    }
-    return ret;
-}

@@ -43,9 +43,7 @@ An out-of-tree firmware project may use the same layout without changing this re
 
 ## Step 3: Implement the required platform capabilities
 
-Implement the operations tables below and expose them to the platform registration unit. New ports
-register them together through the descriptor in Step 4; the individual registration functions are
-only for existing integrations.
+Implement the operations tables below and expose them through the platform descriptor in Step 4.
 
 ### Audio
 
@@ -203,7 +201,7 @@ int my_mcu_platform_register(void) {
 
 Set a capability bit exactly when its ops pointer is present. `mybot_platform_register()` validates
 the complete descriptor before committing it, so a failure cannot leave a partially registered
-platform. The individual `mybot_*_register()` functions remain available for legacy integrations.
+platform. It is the only platform registration entry point.
 
 ## Step 5: Integrate with CMake
 

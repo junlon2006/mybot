@@ -15,7 +15,7 @@ typedef struct {
 
 /**
  * SDK-internal KV-store facade. The public mybot/platform/mybot_kv_store.h
- * only exposes the platform contract (ops table + mybot_kv_store_register());
+ * only exposes the platform contract (ops table + mybot_platform_register());
  * the SDK core uses the storage operations below, e.g. to persist device
  * credentials. Application code has no documented access to this store.
  */

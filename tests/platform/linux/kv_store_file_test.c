@@ -6,6 +6,7 @@
 #include "mybot_kv_store_internal.h"
 
 #include "linux_platform_adapters.h"
+#include "platform_test.h"
 
 #include <assert.h>
 #include <fcntl.h>
@@ -77,7 +78,9 @@ int main(void) {
     join_path(linked_store, sizeof(linked_store), base, "linked-store");
 
     assert(setenv("MYBOT_KV_STORE_DIR", store, 1) == 0);
-    assert(linux_kv_store_platform_register_file() == 0);
+    mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
+    descriptor.kv_store = linux_kv_store_platform_file_ops();
+    assert(mybot_platform_register(&descriptor) == 0);
     assert(mybot_kv_store_init(&s_store) == 0);
 
     s_fsync_count = 0;

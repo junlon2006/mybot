@@ -7,10 +7,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-int mybot_wifi_register(const mybot_wifi_ops_t *ops) {
-    return mybot_platform_registry_register_wifi(ops);
-}
-
 int mybot_wifi_init(mybot_wifi_t *wifi, const char *device_id, mybot_wifi_event_handler_t handler,
                     void *user_data) {
     if (!wifi || !device_id || !device_id[0] || !handler || !mybot_platform_registry_wifi() ||

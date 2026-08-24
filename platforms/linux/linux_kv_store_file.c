@@ -311,11 +311,3 @@ static const mybot_kv_store_ops_t s_kv_store_file_ops = {
 const mybot_kv_store_ops_t *linux_kv_store_platform_file_ops(void) {
     return &s_kv_store_file_ops;
 }
-
-int linux_kv_store_platform_register_file(void) {
-    int ret = mybot_kv_store_register(&s_kv_store_file_ops);
-    if (ret < 0) {
-        AOSL_LOG_ERR("kv store platform registration failed");
-    }
-    return ret;
-}

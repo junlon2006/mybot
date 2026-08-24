@@ -210,11 +210,3 @@ static const mybot_https_ops_t s_https_ops = {
 const mybot_https_ops_t *linux_https_platform_openssl_ops(void) {
     return &s_https_ops;
 }
-
-int linux_https_platform_register_openssl(void) {
-    int ret = mybot_https_register(&s_https_ops);
-    if (ret < 0) {
-        AOSL_LOG_ERR("HTTPS transport registration failed");
-    }
-    return ret;
-}
