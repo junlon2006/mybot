@@ -64,6 +64,8 @@ This project follows Semantic Versioning.
   wait for in-flight callbacks before releasing session resources; add concurrent teardown coverage.
 - Release the initialized RTC service when conversation join fails, preventing subsequent starts from
   reusing stale session resources or application state.
+- Serialize application start and stop across threads so runtime initialization, failure cleanup, and
+  teardown cannot concurrently mutate the process-wide runtime.
 
 ## [1.0.0] - 2026-08-10
 
