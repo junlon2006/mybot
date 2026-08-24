@@ -109,19 +109,12 @@ target_include_directories(mybot_agora_rtc_test PRIVATE
 target_compile_definitions(mybot_agora_rtc_test PRIVATE ${MYBOT_TEST_FEATURE_DEFINITIONS})
 target_link_libraries(mybot_agora_rtc_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
-mybot_add_test(mybot_conversation_test
-    unit/conversation_test.c
-    ../src/rtc/mybot_conversation.c
-)
-target_link_libraries(mybot_conversation_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
-
 mybot_add_test(mybot_app_test
     unit/app_test.c
     ../src/core/mybot_app.c
     ../src/core/mybot_state_model.c
     ../src/core/mybot_presenter.c
     ../src/media/mybot_media_pipeline.c
-    ../src/rtc/mybot_conversation.c
     ../src/support/mybot_ringbuf.c
 )
 target_compile_definitions(mybot_app_test PRIVATE ${MYBOT_TEST_FEATURE_DEFINITIONS})

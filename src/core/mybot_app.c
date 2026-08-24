@@ -3,8 +3,8 @@
 #include <mybot/mybot_build_config.h>
 #include <mybot/platform/mybot_platform.h>
 
+#include "mybot_agora_rtc.h"
 #include "mybot_app.h"
-#include "mybot_conversation.h"
 #include "mybot_device_lifecycle.h"
 #include "mybot_https_internal.h"
 #include "mybot_key_internal.h"
@@ -39,7 +39,6 @@ struct mybot_runtime {
     mybot_wifi_t wifi;
     mybot_presenter_t presenter;
     mybot_media_pipeline_t media;
-    mybot_conversation_t conversation;
     mybot_device_lifecycle_t lifecycle;
 
     aosl_mpq_t startup_mpq;
@@ -83,8 +82,8 @@ static void sync_wake_words(mybot_runtime_t *runtime) {
 }
 
 static int media_send_audio(const void *data, size_t len, void *user_data) {
-    mybot_runtime_t *runtime = user_data;
-    return mybot_conversation_send_audio(&runtime->conversation, data, len);
+    (void)user_data;
+    return mybot_agora_rtc_send_audio(data, len);
 }
 
 static void media_on_wake_word(const char *wake_word, void *user_data) {
@@ -93,14 +92,13 @@ static void media_on_wake_word(const char *wake_word, void *user_data) {
     mybot_app_start_conversation(runtime);
 }
 
-static void conversation_on_remote_audio(uint32_t uid, const void *data, size_t len,
-                                         void *user_data) {
+static void rtc_on_remote_audio(uint32_t uid, const void *data, size_t len, void *user_data) {
     (void)uid;
     mybot_runtime_t *runtime = user_data;
     mybot_media_pipeline_push_remote_audio(&runtime->media, data, len);
 }
 
-static void conversation_on_state_changed(mybot_rtc_state_t state, void *user_data) {
+static void rtc_on_state_changed(mybot_rtc_state_t state, void *user_data) {
     mybot_runtime_t *runtime = user_data;
     bool connected = state == MYBOT_RTC_STATE_CONNECTED;
     mybot_media_pipeline_set_rtc_connected(&runtime->media, connected);
@@ -111,7 +109,7 @@ static void conversation_on_state_changed(mybot_rtc_state_t state, void *user_da
     }
 }
 
-static void conversation_on_token_will_expire(void *user_data) {
+static void rtc_on_token_will_expire(void *user_data) {
     mybot_runtime_t *runtime = user_data;
     if (aosl_atomic_read(&runtime->running)) {
         mybot_device_lifecycle_request_rtc_token_renewal(&runtime->lifecycle);
@@ -136,7 +134,7 @@ static int dev_on_rtc_token_renewed(const char *token, void *user_data) {
     if (!aosl_atomic_read(&runtime->running)) {
         return -1;
     }
-    return mybot_conversation_renew_token(&runtime->conversation, token);
+    return mybot_agora_rtc_renew_token(token);
 }
 
 static void dev_on_conversation_start(const mybot_conversation_params_t *params, void *user_data) {
@@ -146,22 +144,32 @@ static void dev_on_conversation_start(const mybot_conversation_params_t *params,
         return;
     }
 
-    mybot_conversation_callbacks_t callbacks;
+    mybot_agora_rtc_callbacks_t callbacks;
     memset(&callbacks, 0, sizeof(callbacks));
-    callbacks.on_remote_audio = conversation_on_remote_audio;
-    callbacks.on_state_changed = conversation_on_state_changed;
-    callbacks.on_token_will_expire = conversation_on_token_will_expire;
+    callbacks.on_remote_audio = rtc_on_remote_audio;
+    callbacks.on_state_changed = rtc_on_state_changed;
+    callbacks.on_token_will_expire = rtc_on_token_will_expire;
     callbacks.user_data = runtime;
 
-    if (mybot_conversation_start(&runtime->conversation, params, &callbacks) < 0) {
+    if (mybot_agora_rtc_init(params->rtc_app_id, &callbacks) < 0) {
+        AOSL_LOG_ERR("failed to initialize Agora RTC");
         mybot_device_lifecycle_notify_conversation_ended(&runtime->lifecycle);
+        return;
     }
+
+    AOSL_LOG_NTC("joining RTC channel=%s uid=%s", params->rtc_channel, params->rtc_uid);
+    if (mybot_agora_rtc_join(params->rtc_channel, params->rtc_token, params->rtc_uid) < 0) {
+        AOSL_LOG_ERR("failed to join Agora RTC channel");
+        mybot_device_lifecycle_notify_conversation_ended(&runtime->lifecycle);
+        return;
+    }
+    AOSL_LOG_NTC("RTC join requested");
 }
 
 static void dev_on_conversation_stop(void *user_data) {
     mybot_runtime_t *runtime = user_data;
     mybot_media_pipeline_set_rtc_connected(&runtime->media, false);
-    if (mybot_conversation_stop(&runtime->conversation) < 0) {
+    if (mybot_agora_rtc_leave() < 0) {
         AOSL_LOG_ERR("failed to leave RTC conversation");
     }
 }
@@ -431,7 +439,7 @@ static void stop_runtime(mybot_runtime_t *runtime) {
                                                          : MYBOT_LCD_SCREEN_STOPPING);
     mybot_presenter_deinit(&runtime->presenter);
 
-    mybot_conversation_fini(&runtime->conversation);
+    mybot_agora_rtc_fini();
     mybot_media_pipeline_destroy(&runtime->media);
 
     mybot_state_model_stopped(&runtime->state_model);

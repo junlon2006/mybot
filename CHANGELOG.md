@@ -7,8 +7,7 @@ This project follows Semantic Versioning.
 ### Added
 
 - Expand deterministic unit coverage for JSON allocation failures, HTTP and device-service
-  protocol boundaries, device lifecycle recovery, RTC errors, application cleanup, and the
-  conversation facade.
+  protocol boundaries, device lifecycle recovery, RTC errors, and application cleanup.
 - Add the versioned `mybot_platform_descriptor_t` capability registry with atomic registration and
   synchronous startup validation of required ops.
 - Add the BK725x platform port under `platforms/bk725x` and synchronize the complete BK7258
@@ -26,6 +25,8 @@ This project follows Semantic Versioning.
   ordering, and create one connection per conversation, with explicit lifecycle and error logging.
 - Remove legacy per-capability platform registration; platform integrations must submit one
   complete, atomically validated `mybot_platform_descriptor_t` before startup.
+- Remove the internal conversation forwarding layer; application orchestration now calls the
+  process-wide Agora RTC module directly without copying RTC credentials into a second context.
 - Align the English and Chinese README lifecycle and architecture guidance, document the descriptor
   registration contract in the public headers, match local format commands to CI scope, and refresh
   stale BK725x ownership and generator comments.
@@ -33,8 +34,8 @@ This project follows Semantic Versioning.
   and wake-word runtime state into caller-owned internal contexts. Public APIs retain the default
   process-wide compatibility facade, while active implementation state no longer lives in module
   globals.
-- Split `mybot_app.c` orchestration into dedicated media-pipeline, RTC-conversation, and LCD
-  presenter modules without changing the public API.
+- Split `mybot_app.c` orchestration into dedicated media-pipeline, Agora RTC, and LCD presenter
+  modules without changing the public API.
 - Derive public application state and LCD presentation from one atomic state-model snapshot fed by
   runtime-phase, connectivity, and device-lifecycle events.
 - Limit host clang-format and clang-tidy checks to the SDK core, Linux platform, Linux example, and
