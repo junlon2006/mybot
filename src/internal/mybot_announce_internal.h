@@ -35,7 +35,7 @@ typedef struct {
  * implementation through the functions below. When a pair code is obtained the core
  * queues the fixed prompt followed by one sound per digit and streams those
  * sounds into the playback ring buffer, so the prompt plays once through the
- * normal speaker path without an RTC session.
+ * normal speaker path without an active RTC call.
  */
 
 /** Whether the current platform registered an announcement implementation. */

@@ -3,7 +3,7 @@
 #define MYBOT_CONVERSATION_H_
 
 #include "mybot_device_lifecycle.h"
-#include "mybot_rtc_session.h"
+#include "mybot_agora_rtc.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -20,7 +20,6 @@ typedef struct {
 } mybot_conversation_callbacks_t;
 
 typedef struct {
-    mybot_rtc_session_t rtc;
     mybot_conversation_callbacks_t cbs;
     char app_id[64];
     char channel[128];

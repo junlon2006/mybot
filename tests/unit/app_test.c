@@ -17,7 +17,7 @@
 #include "mybot_kv_store_internal.h"
 #include "mybot_lcd_internal.h"
 #include "mybot_platform_registry.h"
-#include "mybot_rtc_session.h"
+#include "mybot_agora_rtc.h"
 #include "mybot_wake_words_internal.h"
 #include "mybot_wifi_internal.h"
 
@@ -62,7 +62,6 @@ static void *s_wifi_user_data;
 static mybot_key_event_handler_t s_key_handler;
 static void *s_key_user_data;
 static mybot_device_lifecycle_t *s_device_lifecycle;
-static mybot_rtc_session_t *s_rtc_session;
 
 static mybot_device_lifecycle_callbacks_t s_device_callbacks;
 static mybot_device_state_t s_device_state = MYBOT_DEVICE_STATE_RUNTIME;
@@ -78,7 +77,7 @@ static bool s_stop_thread_returned;
 static int s_start_thread_result;
 static bool s_kv_init_fails;
 
-static mybot_rtc_session_callbacks_t s_rtc_callbacks;
+static mybot_agora_rtc_callbacks_t s_rtc_callbacks;
 static bool s_rtc_initialized;
 static bool s_rtc_joined;
 static uint64_t s_missing_platform_capabilities;
@@ -779,15 +778,13 @@ void mybot_device_lifecycle_request_rtc_token_renewal(mybot_device_lifecycle_t *
     mock_unlock();
 }
 
-int mybot_rtc_session_init(mybot_rtc_session_t *session, const char *app_id,
-                           const mybot_rtc_session_callbacks_t *callbacks) {
-    if (!session || !app_id || !callbacks) {
+int mybot_agora_rtc_init(const char *app_id, const mybot_agora_rtc_callbacks_t *callbacks) {
+    if (!app_id || !callbacks) {
         return -1;
     }
     assert(strcmp(app_id, "rtc-app") == 0);
     assert(callbacks != NULL);
     mock_lock();
-    s_rtc_session = session;
     s_rtc_callbacks = *callbacks;
     s_rtc_initialized = true;
     s_rtc_init_calls++;
@@ -797,9 +794,10 @@ int mybot_rtc_session_init(mybot_rtc_session_t *session, const char *app_id,
     return 0;
 }
 
-int mybot_rtc_session_join(mybot_rtc_session_t *session, const char *channel, const char *token,
-                           const char *user_account) {
-    assert(session == s_rtc_session);
+int mybot_agora_rtc_join(const char *channel, const char *token, const char *user_account) {
+    if (!channel || !token || !user_account) {
+        return -1;
+    }
     assert(strcmp(token, "rtc-token") == 0);
     mock_lock();
     assert(s_rtc_initialized);
@@ -816,8 +814,7 @@ int mybot_rtc_session_join(mybot_rtc_session_t *session, const char *channel, co
     return 0;
 }
 
-int mybot_rtc_session_leave(mybot_rtc_session_t *session) {
-    assert(session == s_rtc_session);
+int mybot_agora_rtc_leave(void) {
     mock_lock();
     bool was_joined = s_rtc_joined;
     s_rtc_joined = false;
@@ -833,8 +830,7 @@ int mybot_rtc_session_leave(mybot_rtc_session_t *session) {
     return 0;
 }
 
-void mybot_rtc_session_fini(mybot_rtc_session_t *session) {
-    assert(session == s_rtc_session);
+void mybot_agora_rtc_fini(void) {
     mock_lock();
     if (!s_rtc_initialized) {
         mock_unlock();
@@ -870,8 +866,7 @@ static void *stop_thread(void *arg) {
     return NULL;
 }
 
-int mybot_rtc_session_send_audio(mybot_rtc_session_t *session, const void *data, size_t len) {
-    assert(session == s_rtc_session);
+int mybot_agora_rtc_send_audio(const void *data, size_t len) {
     mock_lock();
     if (!s_rtc_joined) {
         mock_unlock();
@@ -888,8 +883,7 @@ int mybot_rtc_session_send_audio(mybot_rtc_session_t *session, const void *data,
     return 0;
 }
 
-int mybot_rtc_session_renew_token(mybot_rtc_session_t *session, const char *token) {
-    assert(session == s_rtc_session);
+int mybot_agora_rtc_renew_token(const char *token) {
     mock_lock();
     if (!s_rtc_joined || !token || !token[0]) {
         mock_unlock();

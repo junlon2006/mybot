@@ -107,11 +107,11 @@ mybot_add_test(mybot_announce_test unit/announce_test.c ../src/platform/mybot_an
 target_link_libraries(mybot_announce_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 target_sources(mybot_announce_test PRIVATE ../src/platform/mybot_platform.c)
 
-mybot_add_test(mybot_rtc_session_test unit/rtc_session_test.c ../src/rtc/mybot_agora_rtc.c)
-target_include_directories(mybot_rtc_session_test PRIVATE
+mybot_add_test(mybot_agora_rtc_test unit/agora_rtc_test.c ../src/rtc/mybot_agora_rtc.c)
+target_include_directories(mybot_agora_rtc_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/agora_rtsa_sdk/agora_sdk/include)
-target_compile_definitions(mybot_rtc_session_test PRIVATE ${MYBOT_TEST_FEATURE_DEFINITIONS})
-target_link_libraries(mybot_rtc_session_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
+target_compile_definitions(mybot_agora_rtc_test PRIVATE ${MYBOT_TEST_FEATURE_DEFINITIONS})
+target_link_libraries(mybot_agora_rtc_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
 mybot_add_test(mybot_conversation_test
     unit/conversation_test.c

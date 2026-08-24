@@ -39,7 +39,7 @@ target-architecture package (the bundled archive is x86_64 Linux only).
 - **Heap**: HTTP responses allocate 4 KB initially and grow to at most 32 KB per request (freed
   after use); JSON parsing and platform implementations (ALSA, OpenSSL, file KV) allocate transiently.
   All core allocations go through `aosl_hal_malloc`, which each platform can re-point.
-- Control-plane state (app, device lifecycle, RTC session) is statically allocated; there are no
+- Control-plane state (app, device lifecycle, Agora RTC) is statically allocated; there are no
   per-conversation heap allocations in the core besides the HTTP/JSON temporaries above.
 
 The thread-safe application state model stores runtime phase, connectivity, and the device-lifecycle
@@ -102,7 +102,7 @@ power-aware (it is the natural place to keep only the microphone path alive whil
 
 - Logging comes from AOSL; set the runtime level with `aosl_set_log_level()` (debug through
   error). The Linux reference prints to stdout.
-- The RTC session initializes the Agora RTSA SDK at its default NOTICE threshold; lower-priority
+- The Agora RTC module initializes the RTSA SDK at its default NOTICE threshold; lower-priority
   SDK informational logs are suppressed unless a platform port overrides the level.
 - Keep hot-path logging (audio timers) minimal — formatting happens per call.
 - Never log device tokens. The reference app logs the pairing code at INFO level; production
