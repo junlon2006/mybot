@@ -63,6 +63,10 @@ int mybot_conversation_start(mybot_conversation_t *conversation,
                                  conversation->uid);
     if (ret < 0) {
         AOSL_LOG_ERR("mybot_rtc_session_join failed");
+        /* Join owns the connection only after it succeeds. If initialization
+         * succeeded but join failed, release the process-wide RTC service as
+         * well so the next start cannot reuse stale app/session state. */
+        mybot_rtc_session_fini(&conversation->rtc);
         return ret;
     }
 
