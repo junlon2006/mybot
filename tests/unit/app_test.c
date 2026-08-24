@@ -70,6 +70,12 @@ static bool s_device_start_requested;
 static bool s_device_network_available = true;
 static bool s_announce_active;
 static bool s_wifi_init_fails;
+static bool s_block_wifi_init;
+static bool s_wifi_init_entered;
+static bool s_start_thread_returned;
+static bool s_stop_thread_entered;
+static bool s_stop_thread_returned;
+static int s_start_thread_result;
 static bool s_kv_init_fails;
 
 static mybot_rtc_session_callbacks_t s_rtc_callbacks;
@@ -142,6 +148,13 @@ static int read_counter(const int *counter) {
     return value;
 }
 
+static bool read_bool(const bool *flag) {
+    mock_lock();
+    bool value = *flag;
+    mock_unlock();
+    return value;
+}
+
 static bool wait_for_flag(const bool *flag, int timeout_ms) {
     for (int elapsed = 0; elapsed < timeout_ms; elapsed++) {
         mock_lock();
@@ -186,6 +199,19 @@ static bool wait_for_app_state(mybot_state_t expected, int timeout_ms) {
 static bool wait_for_counter(const int *counter, int minimum, int timeout_ms) {
     for (int elapsed = 0; elapsed < timeout_ms; elapsed++) {
         if (read_counter(counter) >= minimum) {
+            return true;
+        }
+        aosl_hal_msleep(1);
+    }
+    return false;
+}
+
+static bool wait_for_flag_value(const bool *flag, bool expected, int timeout_ms) {
+    for (int elapsed = 0; elapsed < timeout_ms; elapsed++) {
+        mock_lock();
+        bool value = *flag;
+        mock_unlock();
+        if (value == expected) {
             return true;
         }
         aosl_hal_msleep(1);
@@ -603,7 +629,17 @@ int mybot_wifi_init(mybot_wifi_t *wifi, const char *device_id, mybot_wifi_event_
     s_wifi_user_data = user_data;
     s_wifi_init_calls++;
     bool fails = s_wifi_init_fails;
+    s_wifi_init_entered = true;
     mock_unlock();
+    while (true) {
+        mock_lock();
+        bool blocked = s_block_wifi_init;
+        mock_unlock();
+        if (!blocked) {
+            break;
+        }
+        aosl_hal_msleep(1);
+    }
     return fails ? -1 : 0;
 }
 
@@ -810,6 +846,28 @@ void mybot_rtc_session_fini(mybot_rtc_session_t *session) {
     mock_unlock();
     /* Release the mock SDK's independent AOSL ownership. */
     aosl_dtor();
+}
+
+static void *start_thread(void *arg) {
+    mybot_config_t *config = arg;
+    int result = mybot_start(config);
+    mock_lock();
+    s_start_thread_result = result;
+    s_start_thread_returned = true;
+    mock_unlock();
+    return NULL;
+}
+
+static void *stop_thread(void *arg) {
+    (void)arg;
+    mock_lock();
+    s_stop_thread_entered = true;
+    mock_unlock();
+    mybot_stop();
+    mock_lock();
+    s_stop_thread_returned = true;
+    mock_unlock();
+    return NULL;
 }
 
 int mybot_rtc_session_send_audio(mybot_rtc_session_t *session, const void *data, size_t len) {
@@ -1041,6 +1099,41 @@ int main(void) {
     assert(!mybot_is_running());
     mybot_stop();
     s_kv_init_fails = false;
+    assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+
+    /* Concurrent stop must wait for a start that is still constructing the
+     * runtime instead of tearing down partially initialized resources. */
+    mock_lock();
+    s_block_wifi_init = true;
+    s_wifi_init_entered = false;
+    s_start_thread_returned = false;
+    s_stop_thread_entered = false;
+    s_stop_thread_returned = false;
+    s_start_thread_result = -1;
+    int wifi_deinit_before_race = s_wifi_deinit_calls;
+    mock_unlock();
+
+    pthread_t start_tid;
+    pthread_t stop_tid;
+    int thread_result = pthread_create(&start_tid, NULL, start_thread, &config);
+    assert(thread_result == 0);
+    assert(wait_for_flag_value(&s_wifi_init_entered, true, 1000));
+    thread_result = pthread_create(&stop_tid, NULL, stop_thread, NULL);
+    assert(thread_result == 0);
+    assert(wait_for_flag_value(&s_stop_thread_entered, true, 1000));
+    aosl_hal_msleep(20);
+    assert(!read_bool(&s_stop_thread_returned));
+    assert(read_counter(&s_wifi_deinit_calls) == wifi_deinit_before_race);
+
+    mock_lock();
+    s_block_wifi_init = false;
+    mock_unlock();
+    assert(pthread_join(start_tid, NULL) == 0);
+    assert(pthread_join(stop_tid, NULL) == 0);
+    assert(read_bool(&s_start_thread_returned));
+    assert(read_counter(&s_start_thread_result) == 0);
+    assert(read_bool(&s_stop_thread_returned));
+    assert(read_counter(&s_wifi_deinit_calls) == wifi_deinit_before_race + 1);
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
 
     puts("app_test: ok");

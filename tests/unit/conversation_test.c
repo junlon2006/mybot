@@ -123,9 +123,11 @@ int main(void) {
     assert(mybot_conversation_start(&conversation, &value, &callbacks) < 0);
     assert(s_init_calls == 2);
     assert(s_join_calls == 1);
+    assert(s_fini_calls == 1);
 
     s_join_result = 0;
     assert(mybot_conversation_start(&conversation, &value, &callbacks) == 0);
+    assert(s_init_calls == 3);
     assert(strcmp(conversation.app_id, "app-id") == 0);
     assert(strcmp(conversation.channel, "channel") == 0);
     assert(strcmp(conversation.token, "token") == 0);
@@ -157,7 +159,7 @@ int main(void) {
     assert(mybot_conversation_stop(&conversation) == 0);
 
     mybot_conversation_fini(&conversation);
-    assert(s_fini_calls == 1);
+    assert(s_fini_calls == 2);
     assert(conversation.app_id[0] == '\0');
     assert(conversation.channel[0] == '\0');
     assert(conversation.token[0] == '\0');

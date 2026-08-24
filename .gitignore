@@ -25,3 +25,6 @@ compile_commands.json
 
 # Internal, not for public distribution
 /DEVICE_API.md
+
+# Repository-local Codex skills; do not publish with source changes
+/skills/

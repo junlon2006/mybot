@@ -20,6 +20,7 @@
 #include <api/aosl_log.h>
 #include <api/aosl_mpq.h>
 #include <api/aosl_mpq_timer.h>
+#include <api/aosl_time.h>
 
 #include <string.h>
 
@@ -47,6 +48,19 @@ struct mybot_runtime {
 };
 
 static mybot_runtime_t s_default_runtime;
+static aosl_atomic_t s_lifecycle_gate;
+
+/* This gate must work before aosl_ctor(), so it intentionally uses only the
+ * HAL-backed atomic primitive, matching AOSL's own lifecycle gate. */
+static void lifecycle_lock(void) {
+    while (aosl_atomic_cmpxchg(&s_lifecycle_gate, 0, 1) != 0) {
+        aosl_msleep(5);
+    }
+}
+
+static void lifecycle_unlock(void) {
+    aosl_atomic_set(&s_lifecycle_gate, 0);
+}
 
 static mybot_state_t runtime_get_state(const mybot_runtime_t *runtime) {
     return mybot_state_model_get(&runtime->state_model);
@@ -392,10 +406,47 @@ static bool server_scheme_is_supported(const char *server_base) {
     return false;
 }
 
+static void stop_runtime(mybot_runtime_t *runtime) {
+    if (!aosl_atomic_read(&runtime->aosl_ref_held)) {
+        return;
+    }
+
+    mybot_state_t previous = runtime_get_state(runtime);
+    mybot_state_model_begin_stop(&runtime->state_model);
+    runtime_request_exit(runtime);
+    if (previous != MYBOT_STATE_FAILED) {
+        mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_STOPPING);
+    }
+
+    if (!aosl_mpq_invalid(runtime->startup_mpq)) {
+        aosl_mpq_destroy_wait(runtime->startup_mpq);
+        runtime->startup_mpq = AOSL_MPQ_INVALID;
+    }
+
+    cleanup_services(runtime);
+    mybot_wifi_deinit(&runtime->wifi);
+
+    mybot_presenter_show_screen(&runtime->presenter, previous == MYBOT_STATE_FAILED
+                                                         ? MYBOT_LCD_SCREEN_FAILED
+                                                         : MYBOT_LCD_SCREEN_STOPPING);
+    mybot_presenter_deinit(&runtime->presenter);
+
+    mybot_conversation_fini(&runtime->conversation);
+    mybot_media_pipeline_destroy(&runtime->media);
+
+    mybot_state_model_stopped(&runtime->state_model);
+    aosl_dtor();
+    aosl_atomic_set(&runtime->aosl_ref_held, false);
+}
+
 int mybot_start(const mybot_config_t *cfg) {
     mybot_runtime_t *runtime = &s_default_runtime;
+
+    lifecycle_lock();
+
     if (aosl_atomic_read(&runtime->aosl_ref_held) || !config_is_valid(cfg) ||
         !server_scheme_is_supported(cfg->server_base)) {
+        lifecycle_unlock();
         return -1;
     }
 
@@ -404,6 +455,7 @@ int mybot_start(const mybot_config_t *cfg) {
     if (mybot_platform_validate(required_capabilities, &missing_capabilities) < 0) {
         AOSL_LOG_ERR("missing platform capabilities: 0x%llx",
                      (unsigned long long)missing_capabilities);
+        lifecycle_unlock();
         return -1;
     }
     mybot_platform_registry_lock();
@@ -435,11 +487,13 @@ int mybot_start(const mybot_config_t *cfg) {
     if (mybot_wifi_init(&runtime->wifi, runtime->config.device_id, on_wifi_event, runtime) < 0) {
         goto fail;
     }
+    lifecycle_unlock();
     return 0;
 
 fail:
     (void)mybot_state_model_fail(&runtime->state_model);
-    mybot_stop();
+    stop_runtime(runtime);
+    lifecycle_unlock();
     return -1;
 }
 
@@ -476,34 +530,7 @@ void mybot_app_pair(mybot_runtime_t *runtime) {
 
 void mybot_stop(void) {
     mybot_runtime_t *runtime = &s_default_runtime;
-    if (!aosl_atomic_read(&runtime->aosl_ref_held)) {
-        return;
-    }
-
-    mybot_state_t previous = runtime_get_state(runtime);
-    mybot_state_model_begin_stop(&runtime->state_model);
-    runtime_request_exit(runtime);
-    if (previous != MYBOT_STATE_FAILED) {
-        mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_STOPPING);
-    }
-
-    if (!aosl_mpq_invalid(runtime->startup_mpq)) {
-        aosl_mpq_destroy_wait(runtime->startup_mpq);
-        runtime->startup_mpq = AOSL_MPQ_INVALID;
-    }
-
-    cleanup_services(runtime);
-    mybot_wifi_deinit(&runtime->wifi);
-
-    mybot_presenter_show_screen(&runtime->presenter, previous == MYBOT_STATE_FAILED
-                                                         ? MYBOT_LCD_SCREEN_FAILED
-                                                         : MYBOT_LCD_SCREEN_STOPPING);
-    mybot_presenter_deinit(&runtime->presenter);
-
-    mybot_conversation_fini(&runtime->conversation);
-    mybot_media_pipeline_destroy(&runtime->media);
-
-    mybot_state_model_stopped(&runtime->state_model);
-    aosl_dtor();
-    aosl_atomic_set(&runtime->aosl_ref_held, false);
+    lifecycle_lock();
+    stop_runtime(runtime);
+    lifecycle_unlock();
 }

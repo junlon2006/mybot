@@ -114,6 +114,9 @@ typedef enum {
  *       pair for the duration of that use.
  * @note Call from the main application thread, not from a platform event
  *       callback.
+ * @note Calls to mybot_start() and mybot_stop() are serialized internally. A
+ *       concurrent mybot_stop() waits for startup to finish; a concurrent
+ *       mybot_start() observes the completed active state and returns -1.
  */
 MYBOT_API int mybot_start(const mybot_config_t *cfg);
 
@@ -177,6 +180,8 @@ MYBOT_API void mybot_request_exit(void);
  * @warning Blocks until shutdown completes, so it must be called from the
  *          main application thread — never from inside a platform event
  *          callback, an SDK worker thread, or a signal handler.
+ * @note Calls concurrent with mybot_start() are serialized and wait for the
+ *       startup attempt to finish before teardown begins.
  */
 MYBOT_API void mybot_stop(void);
 
