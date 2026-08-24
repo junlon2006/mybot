@@ -60,6 +60,8 @@ This project follows Semantic Versioning.
   buffer's single-producer/single-consumer access and giving announcements priority.
 - Remove the HTTP response parser's POSIX `strncasecmp()` dependency by using
   an ASCII-only case-insensitive comparison, preserving mixed-case header support on non-POSIX platforms.
+- Synchronize RTC callback teardown with the RTSA callback queue, reject stale connection IDs, and
+  wait for in-flight callbacks before releasing session resources; add concurrent teardown coverage.
 
 ## [1.0.0] - 2026-08-10
 

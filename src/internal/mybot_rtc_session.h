@@ -25,7 +25,9 @@ typedef enum {
 } mybot_rtc_state_t;
 
 /* Callbacks from the RTC session to the application. State callbacks may run
- * on an SDK callback thread or on the thread invoking a session API. */
+ * on an SDK callback thread or on the thread invoking a session API. The owner
+ * must perform session teardown after the callback returns, not re-entrantly
+ * from an RTC callback. */
 typedef struct {
     /** Called when remote audio PCM data arrives.
      *  @param uid      remote user ID
@@ -49,6 +51,9 @@ typedef struct {
     aosl_atomic_t state;
     mybot_rtc_session_callbacks_t cbs;
     uint32_t conn_id;
+    uint32_t callback_conn_id;
+    unsigned int callback_count;
+    bool callback_closing;
     aosl_atomic_t initialized;
     aosl_mutex_t lock;
 } mybot_rtc_session_t;
