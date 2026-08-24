@@ -19,7 +19,7 @@ typedef struct {
 /**
  * SDK-internal key facade. The public mybot/platform/mybot_key.h only exposes
  * the platform contract (event enum, handler typedef, ops table and
- * mybot_key_register()); the SDK core manages the key implementation lifecycle.
+ * mybot_platform_register()); the SDK core manages the key implementation lifecycle.
  */
 
 /** Initialize the registered implementation and install the application event handler. */

@@ -143,19 +143,10 @@ static void key_stdin_destroy(void *opaque) {
 }
 
 static const mybot_key_ops_t s_key_stdin_ops = {
-    .name = "stdin",
     .init = key_stdin_init,
     .destroy = key_stdin_destroy,
 };
 
 const mybot_key_ops_t *linux_key_platform_stdin_ops(void) {
     return &s_key_stdin_ops;
-}
-
-int linux_key_platform_register_stdin(void) {
-    int ret = mybot_key_register(&s_key_stdin_ops);
-    if (ret < 0) {
-        AOSL_LOG_ERR("key platform registration failed");
-    }
-    return ret;
 }

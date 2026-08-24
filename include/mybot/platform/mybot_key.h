@@ -2,8 +2,6 @@
 #ifndef MYBOT_KEY_H_
 #define MYBOT_KEY_H_
 
-#include <mybot/mybot_export.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -44,9 +42,6 @@ typedef void (*mybot_key_event_handler_t)(mybot_key_event_t event, void *user_da
  * any in-flight event handler to return.
  */
 typedef struct {
-    /** Implementation name for logging and diagnostics. */
-    const char *name;
-
     /**
      * Allocate and start the key event source.
      *
@@ -68,22 +63,6 @@ typedef struct {
      */
     void (*destroy)(void *ctx);
 } mybot_key_ops_t;
-
-/**
- * Register key-input ops through the legacy per-capability API.
- *
- * @param ops key operations table; must remain valid for the process
- *            lifetime
- * @return 0 on success; -1 if ops is invalid, key input is already registered,
- *         registration is locked, or descriptor registration is active
- *
- * @note Compatibility entry point for existing ports. New ports should include
- *       mybot_platform.h and use mybot_platform_register(). Call before mybot_start().
- *       The first successful per-capability registration selects legacy mode and
- *       prevents later descriptor registration; a successful descriptor registration
- *       likewise prevents this call.
- */
-MYBOT_API int mybot_key_register(const mybot_key_ops_t *ops);
 
 #ifdef __cplusplus
 }

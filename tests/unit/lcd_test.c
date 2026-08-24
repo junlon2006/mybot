@@ -2,6 +2,7 @@
 #include <mybot/platform/mybot_lcd.h>
 
 #include "mybot_lcd_internal.h"
+#include "platform_test.h"
 
 #include "api/aosl.h"
 #include "api/aosl_atomic.h"
@@ -65,9 +66,7 @@ static void *render_screens(void *opaque) {
 }
 
 int main(void) {
-    const mybot_lcd_ops_t incomplete_ops = {0};
     const mybot_lcd_ops_t fake_ops = {
-        .name = "fake",
         .init = fake_init,
         .render = fake_render,
         .destroy = fake_destroy,
@@ -75,10 +74,10 @@ int main(void) {
 
     aosl_ctor();
     assert(!mybot_lcd_is_registered());
-    assert(mybot_lcd_register(NULL) < 0);
-    assert(mybot_lcd_register(&incomplete_ops) < 0);
     assert(mybot_lcd_init(&s_lcd) < 0);
-    assert(mybot_lcd_register(&fake_ops) == 0);
+    mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
+    descriptor.lcd = &fake_ops;
+    assert(mybot_platform_register(&descriptor) == 0);
     assert(mybot_lcd_is_registered());
 
     s_init_fails = true;
@@ -87,7 +86,6 @@ int main(void) {
     assert(mybot_lcd_init(&s_lcd) == 0);
     assert(s_init_count == 2);
     assert(mybot_lcd_init(&s_lcd) < 0);
-    assert(mybot_lcd_register(&fake_ops) < 0);
 
     assert(mybot_lcd_show_screen(&s_lcd, MYBOT_LCD_SCREEN_WIFI_PROVISIONING) == 0);
     assert(s_render_count == 1);

@@ -136,7 +136,6 @@ static void alsa_volume_destroy(void *ctx) {
 }
 
 static const mybot_audio_volume_ops_t g_alsa_volume_ops = {
-    .name = "alsa-mixer",
     .init = alsa_volume_init,
     .set_volume = alsa_volume_set,
     .get_volume = alsa_volume_get,
@@ -145,12 +144,4 @@ static const mybot_audio_volume_ops_t g_alsa_volume_ops = {
 
 const mybot_audio_volume_ops_t *linux_audio_platform_alsa_volume_ops(void) {
     return &g_alsa_volume_ops;
-}
-
-int linux_audio_platform_register_alsa_volume(void) {
-    int ret = mybot_audio_device_register_volume(&g_alsa_volume_ops);
-    if (ret == 0) {
-        AOSL_LOG_NTC("ALSA volume platform registered");
-    }
-    return ret;
 }

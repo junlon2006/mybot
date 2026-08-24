@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "mybot_presenter.h"
+#include "platform_test.h"
 
 #include <api/aosl.h>
 
@@ -31,7 +32,6 @@ static void lcd_destroy(void *ctx) {
 
 int main(void) {
     const mybot_lcd_ops_t ops = {
-        .name = "presenter-test",
         .init = lcd_init,
         .render = lcd_render,
         .destroy = lcd_destroy,
@@ -40,7 +40,9 @@ int main(void) {
     mybot_state_model_t state_model;
 
     aosl_ctor();
-    assert(mybot_lcd_register(&ops) == 0);
+    mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
+    descriptor.lcd = &ops;
+    assert(mybot_platform_register(&descriptor) == 0);
     assert(mybot_presenter_init(&presenter) == 0);
     assert(s_init_count == 1);
 

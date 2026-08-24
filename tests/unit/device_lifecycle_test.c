@@ -3,6 +3,7 @@
 #include <mybot/platform/mybot_kv_store.h>
 
 #include "mybot_kv_store_internal.h"
+#include "platform_test.h"
 
 #include <api/aosl.h>
 
@@ -115,7 +116,6 @@ static void mock_kv_store_destroy(void *ctx) {
 }
 
 static const mybot_kv_store_ops_t s_mock_kv_store_ops = {
-    .name = "mock",
     .init = mock_kv_store_init,
     .get = mock_kv_store_get,
     .set = mock_kv_store_set,
@@ -349,7 +349,9 @@ static void start_conversation(void) {
 
 int main(void) {
     aosl_ctor();
-    assert(mybot_kv_store_register(&s_mock_kv_store_ops) == 0);
+    mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
+    descriptor.kv_store = &s_mock_kv_store_ops;
+    assert(mybot_platform_register(&descriptor) == 0);
     assert(mybot_kv_store_init(&s_kv_store) == 0);
 
     assert(strcmp(mybot_device_lifecycle_state_name(MYBOT_DEVICE_STATE_UNPROVISIONED),

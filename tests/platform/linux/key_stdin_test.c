@@ -4,6 +4,7 @@
 #include "mybot_key_internal.h"
 
 #include "linux_platform_adapters.h"
+#include "platform_test.h"
 
 #include "api/aosl.h"
 #include "api/aosl_atomic.h"
@@ -45,7 +46,9 @@ int main(void) {
     close(pipe_fds[0]);
 
     aosl_ctor();
-    assert(linux_key_platform_register_stdin() == 0);
+    mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
+    descriptor.key = linux_key_platform_stdin_ops();
+    assert(mybot_platform_register(&descriptor) == 0);
     assert(mybot_key_init(&key, on_key, &s_event_count) == 0);
 
     assert(write(pipe_fds[1], "p", 1) == 1);

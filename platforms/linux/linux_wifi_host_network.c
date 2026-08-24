@@ -40,19 +40,10 @@ static void wifi_host_network_destroy(void *opaque) {
 }
 
 static const mybot_wifi_ops_t s_wifi_host_network_ops = {
-    .name = "linux-host-network",
     .init = wifi_host_network_init,
     .destroy = wifi_host_network_destroy,
 };
 
 const mybot_wifi_ops_t *linux_wifi_platform_host_network_ops(void) {
     return &s_wifi_host_network_ops;
-}
-
-int linux_wifi_platform_register_host_network(void) {
-    int ret = mybot_wifi_register(&s_wifi_host_network_ops);
-    if (ret < 0) {
-        AOSL_LOG_ERR("wifi provisioning platform registration failed");
-    }
-    return ret;
 }

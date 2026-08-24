@@ -6,10 +6,6 @@
 
 #include <stddef.h>
 
-int mybot_key_register(const mybot_key_ops_t *ops) {
-    return mybot_platform_registry_register_key(ops);
-}
-
 int mybot_key_init(mybot_key_t *key, mybot_key_event_handler_t handler, void *user_data) {
     if (!key || key->active || !mybot_platform_registry_key() || !handler) {
         return -1;

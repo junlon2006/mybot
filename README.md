@@ -176,13 +176,13 @@ add_subdirectory(third_party/mybot)
 target_link_libraries(device_firmware PRIVATE mybot::sdk)
 ```
 
-Register one versioned `mybot_platform_descriptor_t` before `mybot_start()`. It declares required and
-optional capability bits together with the Wi-Fi, KV, key, audio, HTTPS, LCD, announcement, volume,
-and wake-word ops. Registration is validated and committed atomically; `mybot_start()` rejects missing
-required capabilities before creating any platform resources. The individual `mybot_*_register()`
-functions remain available as a legacy compatibility path, but legacy and descriptor registration
-cannot be mixed. For the full implementation order, minimal code,
-threading constraints, and acceptance checklist, see [docs/PORTING.md](docs/PORTING.md).
+Register one `mybot_platform_descriptor_t` before `mybot_start()`. A non-NULL ops pointer is the sole
+declaration that the platform supports that function. Registration validates the complete descriptor,
+including the required Wi-Fi, KV, key, capture, and playback tables, before committing it atomically.
+`mybot_start()` then checks the ops required by the active build and runtime configuration before
+creating any platform resources. Every platform is submitted through this one descriptor. For the
+full implementation order, minimal code, threading constraints, and acceptance checklist, see
+[docs/PORTING.md](docs/PORTING.md).
 
 Minimal application lifecycle:
 

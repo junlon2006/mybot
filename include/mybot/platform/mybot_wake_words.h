@@ -3,8 +3,6 @@
 #define MYBOT_WAKE_WORDS_H_
 
 #include <stdbool.h>
-#include <mybot/mybot_export.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -26,9 +24,6 @@ typedef void (*mybot_wake_words_handler_t)(const char *wake_word, void *user_dat
  * The implementation receives captured PCM frames and reports local detections.
  */
 typedef struct {
-    /** Implementation name for logging and diagnostics. */
-    const char *name;
-
     /**
      * Allocate and start the local ASR engine.
      *
@@ -68,22 +63,6 @@ typedef struct {
      */
     void (*destroy)(void *ctx);
 } mybot_wake_words_ops_t;
-
-/**
- * Register wake-word ops through the legacy per-capability API.
- *
- * @param ops wake-word operations table; must remain valid for the process
- *            lifetime
- * @return 0 on success; -1 if ops is invalid, wake words are already registered,
- *         registration is locked, or descriptor registration is active
- *
- * @note Compatibility entry point for existing ports. New ports should include
- *       mybot_platform.h and use mybot_platform_register(). Call before mybot_start().
- *       The first successful per-capability registration selects legacy mode and
- *       prevents later descriptor registration; a successful descriptor registration
- *       likewise prevents this call. Required only when MYBOT_WAKE_WORDS=ON.
- */
-MYBOT_API int mybot_wake_words_register(const mybot_wake_words_ops_t *ops);
 
 #ifdef __cplusplus
 }

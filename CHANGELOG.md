@@ -7,10 +7,9 @@ This project follows Semantic Versioning.
 ### Added
 
 - Expand deterministic unit coverage for JSON allocation failures, HTTP and device-service
-  protocol boundaries, device lifecycle recovery, RTC errors, application cleanup, and the
-  conversation facade.
-- Add the versioned `mybot_platform_descriptor_t` capability registry with atomic registration,
-  legacy per-capability compatibility APIs, and synchronous startup validation of required ops.
+  protocol boundaries, device lifecycle recovery, RTC errors, and application cleanup.
+- Add one-shot `mybot_platform_descriptor_t` registration with complete atomic validation and
+  synchronous startup checks for configuration-required ops.
 - Add the BK725x platform port under `platforms/bk725x` and synchronize the complete BK7258
   reference project under `examples/bk725x`, with the full firmware implementation maintained at
   <https://github.com/junlon2006/mybot-bk7258>.
@@ -24,15 +23,20 @@ This project follows Semantic Versioning.
 - Align the Agora RTSA wrapper with the single-instance, one-call-at-a-time product model: initialize
   RTSA once per mybot run, use one AOSL CAS lifecycle gate for callback, audio-send, and teardown
   ordering, and create one connection per conversation, with explicit lifecycle and error logging.
-- Align the English and Chinese README lifecycle and architecture guidance, document strict
-  descriptor and legacy registration contracts in the public headers, match local format commands
-  to CI scope, and refresh stale BK725x ownership and generator comments.
+- **Breaking:** remove legacy per-capability registration; the descriptor's version, capability, and
+  name fields; and the name field from every ops table. Platform integrations must submit one complete
+  descriptor whose non-NULL ops pointers are the sole declarations of supported platform functions.
+- Remove the internal conversation forwarding layer; application orchestration now calls the
+  process-wide Agora RTC module directly without copying RTC credentials into a second context.
+- Align the English and Chinese README lifecycle and architecture guidance, document the descriptor
+  registration contract in the public headers, match local format commands to CI scope, and refresh
+  stale BK725x ownership and generator comments.
 - Refactor application, lifecycle, RTC, audio, storage, connectivity, input, display, announcement,
   and wake-word runtime state into caller-owned internal contexts. Public APIs retain the default
   process-wide compatibility facade, while active implementation state no longer lives in module
   globals.
-- Split `mybot_app.c` orchestration into dedicated media-pipeline, RTC-conversation, and LCD
-  presenter modules without changing the public API.
+- Split `mybot_app.c` orchestration into dedicated media-pipeline, Agora RTC, and LCD presenter
+  modules without changing the public API.
 - Derive public application state and LCD presentation from one atomic state-model snapshot fed by
   runtime-phase, connectivity, and device-lifecycle events.
 - Limit host clang-format and clang-tidy checks to the SDK core, Linux platform, Linux example, and

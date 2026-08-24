@@ -19,7 +19,7 @@ typedef struct {
 
 /**
  * SDK-internal LCD facade. The public mybot/platform/mybot_lcd.h only exposes
- * the platform contract (ops table + mybot_lcd_register()); the SDK core drives
+ * the platform contract (ops table + mybot_platform_register()); the SDK core drives
  * the registered implementation through the functions below.
  */
 

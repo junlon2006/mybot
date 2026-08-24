@@ -33,10 +33,6 @@ static int render_content(mybot_lcd_t *lcd, const mybot_lcd_content_t *content) 
     return ret;
 }
 
-int mybot_lcd_register(const mybot_lcd_ops_t *ops) {
-    return mybot_platform_registry_register_lcd(ops);
-}
-
 bool mybot_lcd_is_registered(void) {
     return mybot_platform_registry_lcd() != NULL;
 }

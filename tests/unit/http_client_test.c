@@ -2,7 +2,7 @@
 #include <api/aosl.h>
 #include <mybot/platform/mybot_https.h>
 
-#include "mybot_https_internal.h"
+#include "platform_test.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -100,7 +100,6 @@ static void fake_tls_close(void *connection) {
 }
 
 static const mybot_https_ops_t s_fake_tls_ops = {
-    .name = "fake-tls",
     .connect = fake_tls_connect,
     .send = fake_tls_send,
     .recv = fake_tls_recv,
@@ -402,7 +401,6 @@ int main(void) {
     mybot_http_client_response_t response;
     memset(&response, 0, sizeof(response));
 
-    assert(!mybot_https_is_registered());
     assert(mybot_http_client_get("https://api.example.test/status", &response) < 0);
     assert(response.body == NULL);
 
@@ -466,12 +464,9 @@ int main(void) {
                    "5\r\nhell",
                    1);
 
-    mybot_https_ops_t incomplete_ops = s_fake_tls_ops;
-    incomplete_ops.recv = NULL;
-    assert(mybot_https_register(NULL) < 0);
-    assert(mybot_https_register(&incomplete_ops) < 0);
-    assert(mybot_https_register(&s_fake_tls_ops) == 0);
-    assert(mybot_https_register(&s_fake_tls_ops) < 0);
+    mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
+    descriptor.https = &s_fake_tls_ops;
+    assert(mybot_platform_register(&descriptor) == 0);
 
     int connect_count = s_tls_connect_count;
     assert(mybot_http_client_get("https://good.example/path\r\nX-Injected: yes", &response) < 0);

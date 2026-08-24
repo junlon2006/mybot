@@ -5,8 +5,6 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
-#include <mybot/mybot_export.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -28,9 +26,6 @@ extern "C" {
  * are PCM frames (one sample per channel).
  */
 typedef struct {
-    /** Implementation name for logging and diagnostics. */
-    const char *name;
-
     /**
      * Allocate and open the capture device.
      *
@@ -94,9 +89,6 @@ typedef struct {
  * frame-count convention.
  */
 typedef struct {
-    /** Implementation name for logging and diagnostics. */
-    const char *name;
-
     /**
      * Allocate and open the playback device.
      *
@@ -180,9 +172,6 @@ typedef struct {
  * device volume control — playback and media volume keep working.
  */
 typedef struct {
-    /** Implementation name for logging and diagnostics. */
-    const char *name;
-
     /**
      * Allocate and open the hardware volume control.
      *
@@ -216,60 +205,6 @@ typedef struct {
      */
     void (*destroy)(void *ctx);
 } mybot_audio_volume_ops_t;
-
-/* ----------------------------------------------------------
- * Registration API — called by platform implementations
- * ---------------------------------------------------------- */
-
-/**
- * Register capture ops through the legacy per-capability API.
- *
- * @param ops capture operations table; must remain valid for the process
- *            lifetime
- * @return 0 on success; -1 if ops is invalid, capture is already registered,
- *         registration is locked, or descriptor registration is active
- *
- * @note Compatibility entry point for existing ports. New ports should include
- *       mybot_platform.h and use mybot_platform_register(). Call before mybot_start().
- *       The first successful per-capability registration selects legacy mode and
- *       prevents later descriptor registration; a successful descriptor registration
- *       likewise prevents this call.
- */
-MYBOT_API int mybot_audio_register_capture(const mybot_audio_capture_ops_t *ops);
-
-/**
- * Register playback ops through the legacy per-capability API.
- *
- * @param ops playback operations table; must remain valid for the process
- *            lifetime
- * @return 0 on success; -1 if ops is invalid, playback is already registered,
- *         registration is locked, or descriptor registration is active
- *
- * @note Compatibility entry point for existing ports. New ports should include
- *       mybot_platform.h and use mybot_platform_register(). Call before mybot_start().
- *       The first successful per-capability registration selects legacy mode and
- *       prevents later descriptor registration; a successful descriptor registration
- *       likewise prevents this call.
- */
-MYBOT_API int mybot_audio_register_playback(const mybot_audio_playback_ops_t *ops);
-
-/**
- * Register device-volume ops through the legacy per-capability API.
- *
- * @param ops volume operations table; must remain valid for the process
- *            lifetime
- * @return 0 on success; -1 if ops is invalid, volume is already registered,
- *         registration is locked, or descriptor registration is active
- *
- * @note Compatibility entry point for existing ports. New ports should include
- *       mybot_platform.h and use mybot_platform_register(). Call before mybot_start().
- *       The first successful per-capability registration selects legacy mode and
- *       prevents later descriptor registration; a successful descriptor registration
- *       likewise prevents this call. The SDK initializes the implementation during
- *       startup and drives it internally; no application code calls the volume control
- *       functions.
- */
-MYBOT_API int mybot_audio_device_register_volume(const mybot_audio_volume_ops_t *ops);
 
 #ifdef __cplusplus
 }

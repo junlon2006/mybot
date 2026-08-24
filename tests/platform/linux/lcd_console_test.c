@@ -4,6 +4,7 @@
 #include "mybot_lcd_internal.h"
 
 #include "linux_platform_adapters.h"
+#include "platform_test.h"
 
 #include "api/aosl.h"
 #include "api/aosl_log.h"
@@ -15,7 +16,9 @@ int main(void) {
     aosl_ctor();
     aosl_set_log_level(AOSL_LOG_INFO);
 
-    assert(linux_lcd_platform_register_console() == 0);
+    mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
+    descriptor.lcd = linux_lcd_platform_console_ops();
+    assert(mybot_platform_register(&descriptor) == 0);
     assert(mybot_lcd_is_registered());
     assert(mybot_lcd_init(&lcd) == 0);
 

@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "mybot_announce_internal.h"
+#include "platform_test.h"
 
 #include "api/aosl.h"
 
@@ -87,7 +88,6 @@ static void mock_destroy(void *ctx) {
 }
 
 static const mybot_announce_ops_t s_mock_ops = {
-    .name = "mock",
     .init = mock_init,
     .open = mock_open,
     .read = mock_read,
@@ -130,7 +130,6 @@ static void expect_value(const int16_t *buf, int start, int count, int16_t value
 }
 
 static void test_not_registered(void) {
-    assert(!mybot_announce_is_registered());
     assert(mybot_announce_play_pair_code(&s_announce, "42") == -1);
     assert(!mybot_announce_is_active(&s_announce));
     int16_t tmp[8];
@@ -138,7 +137,6 @@ static void test_not_registered(void) {
 }
 
 static void test_prompt_then_digits(void) {
-    assert(mybot_announce_register(&s_mock_ops) == 0);
     assert(mybot_announce_init(&s_announce) == 0);
 
     assert(mybot_announce_play_pair_code(&s_announce, "42") == 0);
@@ -221,6 +219,9 @@ int main(void) {
     aosl_ctor();
 
     test_not_registered();
+    mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
+    descriptor.announce = &s_mock_ops;
+    assert(mybot_platform_register(&descriptor) == 0);
     test_prompt_then_digits();
     test_non_digit_and_empty_code();
     test_stop_midway();

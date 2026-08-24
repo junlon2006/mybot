@@ -42,9 +42,6 @@ int mybot_audio_device_volume_init(mybot_audio_t *audio);
 /** Release the volume implementation. Idempotent. */
 void mybot_audio_device_volume_deinit(mybot_audio_t *audio);
 
-/** Return whether a device volume implementation is registered, regardless of active state. */
-bool mybot_audio_device_volume_is_registered(const mybot_audio_t *audio);
-
 /** Return whether the registered device volume implementation is initialized and active. */
 bool mybot_audio_device_volume_is_active(const mybot_audio_t *audio);
 

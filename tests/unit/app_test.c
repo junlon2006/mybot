@@ -12,7 +12,6 @@
 #include "mybot_app.h"
 #include "mybot_audio_internal.h"
 #include "mybot_device_lifecycle.h"
-#include "mybot_https_internal.h"
 #include "mybot_key_internal.h"
 #include "mybot_kv_store_internal.h"
 #include "mybot_lcd_internal.h"
@@ -76,12 +75,19 @@ static bool s_stop_thread_entered;
 static bool s_stop_thread_returned;
 static int s_start_thread_result;
 static bool s_kv_init_fails;
+static int s_rtc_init_result;
+static int s_rtc_join_result;
 
 static mybot_agora_rtc_callbacks_t s_rtc_callbacks;
 static bool s_rtc_initialized;
 static bool s_rtc_joined;
-static uint64_t s_missing_platform_capabilities;
+static bool s_platform_registered;
+static bool s_https_registered;
+static bool s_wake_words_registered;
 static int s_platform_registry_lock_calls;
+
+static const mybot_https_ops_t s_registered_https_ops;
+static const mybot_wake_words_ops_t s_registered_wake_words_ops;
 
 static int s_wifi_init_calls;
 static int s_wifi_deinit_calls;
@@ -287,16 +293,16 @@ static void emit_remote_audio(const int16_t *pcm, size_t len) {
     callback(7, pcm, len, user_data);
 }
 
-bool mybot_https_is_registered(void) {
-    return true;
+bool mybot_platform_registry_is_registered(void) {
+    return s_platform_registered;
 }
 
-int mybot_platform_validate(uint64_t required_capabilities, uint64_t *missing_capabilities) {
-    uint64_t missing = required_capabilities & s_missing_platform_capabilities;
-    if (missing_capabilities) {
-        *missing_capabilities = missing;
-    }
-    return missing == 0 ? 0 : -1;
+const mybot_https_ops_t *mybot_platform_registry_https(void) {
+    return s_https_registered ? &s_registered_https_ops : NULL;
+}
+
+const mybot_wake_words_ops_t *mybot_platform_registry_wake_words(void) {
+    return s_wake_words_registered ? &s_registered_wake_words_ops : NULL;
 }
 
 void mybot_platform_registry_lock(void) {
@@ -509,7 +515,6 @@ static void playback_destroy(void *ctx) {
 }
 
 static const mybot_audio_capture_ops_t s_capture_ops = {
-    .name = "test-capture",
     .init = capture_init,
     .start = capture_start,
     .read = capture_read,
@@ -518,7 +523,6 @@ static const mybot_audio_capture_ops_t s_capture_ops = {
 };
 
 static const mybot_audio_playback_ops_t s_playback_ops = {
-    .name = "test-playback",
     .init = playback_init,
     .start = playback_start,
     .write = playback_write,
@@ -587,10 +591,6 @@ void mybot_audio_apply_media_volume(const mybot_audio_t *audio, int16_t *pcm, in
     assert(audio != NULL);
     (void)pcm;
     (void)samples;
-}
-
-bool mybot_wake_words_is_registered(void) {
-    return true;
 }
 
 int mybot_wake_words_init(mybot_wake_words_t *wake_words, int sample_rate, int channels,
@@ -785,12 +785,20 @@ int mybot_agora_rtc_init(const char *app_id, const mybot_agora_rtc_callbacks_t *
     assert(strcmp(app_id, "rtc-app") == 0);
     assert(callbacks != NULL);
     mock_lock();
+    s_rtc_init_calls++;
+    int result = s_rtc_init_result;
+    if (result < 0) {
+        mock_unlock();
+        return result;
+    }
+    bool acquire_aosl_ref = !s_rtc_initialized;
     s_rtc_callbacks = *callbacks;
     s_rtc_initialized = true;
-    s_rtc_init_calls++;
     mock_unlock();
-    /* Mirror the real Agora SDK's independent AOSL ownership. */
-    aosl_ctor();
+    if (acquire_aosl_ref) {
+        /* Mirror the real Agora SDK's independent AOSL ownership. */
+        aosl_ctor();
+    }
     return 0;
 }
 
@@ -801,10 +809,15 @@ int mybot_agora_rtc_join(const char *channel, const char *token, const char *use
     assert(strcmp(token, "rtc-token") == 0);
     mock_lock();
     assert(s_rtc_initialized);
+    s_rtc_join_calls++;
+    int result = s_rtc_join_result;
+    if (result < 0) {
+        mock_unlock();
+        return result;
+    }
     snprintf(s_join_channel, sizeof(s_join_channel), "%s", channel);
     snprintf(s_join_user, sizeof(s_join_user), "%s", user_account);
     s_rtc_joined = true;
-    s_rtc_join_calls++;
     void (*callback)(mybot_rtc_state_t, void *) = s_rtc_callbacks.on_state_changed;
     void *user_data = s_rtc_callbacks.user_data;
     mock_unlock();
@@ -902,6 +915,8 @@ int main(void) {
     snprintf(config.device_id, sizeof(config.device_id), "%s", "device-1");
     snprintf(config.firmware_ver, sizeof(config.firmware_ver), "%s", "test-fw");
     snprintf(config.hw_model, sizeof(config.hw_model), "%s", "test-hw");
+    s_https_registered = true;
+    s_wake_words_registered = true;
 
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
     assert(mybot_start(NULL) < 0);
@@ -927,14 +942,31 @@ int main(void) {
     snprintf(invalid.server_base, sizeof(invalid.server_base), "%s", "ftp://server");
     assert(mybot_start(&invalid) < 0);
 
-    s_missing_platform_capabilities = MYBOT_PLATFORM_CAP_WIFI;
+    s_platform_registered = false;
     assert(mybot_start(&config) < 0);
     assert(!mybot_is_running());
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
     assert(read_counter(&s_wifi_init_calls) == 0);
     assert(s_platform_registry_lock_calls == 0);
 
-    s_missing_platform_capabilities = 0;
+    s_platform_registered = true;
+#if MYBOT_WAKE_WORDS
+    s_wake_words_registered = false;
+    assert(mybot_start(&config) < 0);
+    assert(!mybot_is_running());
+    assert(read_counter(&s_wifi_init_calls) == 0);
+    assert(s_platform_registry_lock_calls == 0);
+    s_wake_words_registered = true;
+#endif
+#if MYBOT_ENABLE_HTTPS
+    s_https_registered = false;
+    assert(mybot_start(&config) < 0);
+    assert(!mybot_is_running());
+    assert(read_counter(&s_wifi_init_calls) == 0);
+    assert(s_platform_registry_lock_calls == 0);
+    s_https_registered = true;
+#endif
+
     assert(mybot_start(&config) == 0);
     assert(s_platform_registry_lock_calls == 1);
     assert(mybot_is_running());
@@ -1035,6 +1067,16 @@ int main(void) {
     assert(wait_for_audio_frame(TEST_REF_SAMPLE, 2000));
 #endif
 
+    s_device_callbacks.on_conversation_stop(s_device_callbacks.user_data);
+    mybot_device_lifecycle_notify_conversation_ended(s_device_lifecycle);
+    s_device_callbacks.on_state_changed(MYBOT_DEVICE_STATE_RUNTIME, s_device_callbacks.user_data);
+    int sends_before_second_call = read_counter(&s_rtc_send_calls);
+    emit_key_event(MYBOT_KEY_EVENT_CONVERSATION_START);
+    assert(wait_for_counter(&s_rtc_join_calls, 2, 3000));
+    assert(wait_for_counter(&s_rtc_send_calls, sends_before_second_call + 1, 3000));
+    assert(read_counter(&s_rtc_init_calls) == 2);
+    assert(read_counter(&s_rtc_leave_calls) == 1);
+
     int16_t shutdown_frame[TEST_FRAME_SAMPLES];
     memset(shutdown_frame, 0, sizeof(shutdown_frame));
     mock_lock();
@@ -1059,9 +1101,9 @@ int main(void) {
     assert(!mybot_is_running());
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
     assert(read_counter(&s_device_shutdown_calls) == 1);
-    assert(read_counter(&s_rtc_init_calls) == 1);
-    assert(read_counter(&s_rtc_join_calls) == 1);
-    assert(read_counter(&s_rtc_leave_calls) == 1);
+    assert(read_counter(&s_rtc_init_calls) == 2);
+    assert(read_counter(&s_rtc_join_calls) == 2);
+    assert(read_counter(&s_rtc_leave_calls) == 2);
     assert(read_counter(&s_rtc_fini_calls) == 1);
     assert(read_counter(&s_capture_stop_calls) == 1);
     assert(read_counter(&s_capture_destroy_calls) == 1);
@@ -1073,8 +1115,9 @@ int main(void) {
 
     mybot_conversation_params_t late_params;
     memset(&late_params, 0, sizeof(late_params));
+    int notifications_before_late = read_counter(&s_conversation_ended_notifications);
     s_device_callbacks.on_conversation_start(&late_params, s_device_callbacks.user_data);
-    assert(read_counter(&s_conversation_ended_notifications) == 1);
+    assert(read_counter(&s_conversation_ended_notifications) == notifications_before_late + 1);
 
     mybot_stop();
     assert(read_counter(&s_device_shutdown_calls) == 1);
@@ -1129,6 +1172,41 @@ int main(void) {
     assert(read_bool(&s_stop_thread_returned));
     assert(read_counter(&s_wifi_deinit_calls) == wifi_deinit_before_race + 1);
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+
+    mybot_conversation_params_t failed_params;
+    memset(&failed_params, 0, sizeof(failed_params));
+    snprintf(failed_params.rtc_app_id, sizeof(failed_params.rtc_app_id), "%s", "rtc-app");
+    snprintf(failed_params.rtc_channel, sizeof(failed_params.rtc_channel), "%s", "rtc-channel");
+    snprintf(failed_params.rtc_uid, sizeof(failed_params.rtc_uid), "%s", "device-uid");
+    snprintf(failed_params.rtc_token, sizeof(failed_params.rtc_token), "%s", "rtc-token");
+
+    assert(mybot_start(&config) == 0);
+    emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
+    assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
+    int ended_before_failure = read_counter(&s_conversation_ended_notifications);
+    mock_lock();
+    s_rtc_join_result = -1;
+    mock_unlock();
+    s_device_callbacks.on_conversation_start(&failed_params, s_device_callbacks.user_data);
+    assert(read_counter(&s_conversation_ended_notifications) == ended_before_failure + 1);
+    mock_lock();
+    s_rtc_join_result = 0;
+    mock_unlock();
+    mybot_stop();
+
+    assert(mybot_start(&config) == 0);
+    emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
+    assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
+    ended_before_failure = read_counter(&s_conversation_ended_notifications);
+    mock_lock();
+    s_rtc_init_result = -1;
+    mock_unlock();
+    s_device_callbacks.on_conversation_start(&failed_params, s_device_callbacks.user_data);
+    assert(read_counter(&s_conversation_ended_notifications) == ended_before_failure + 1);
+    mybot_stop();
+    mock_lock();
+    s_rtc_init_result = 0;
+    mock_unlock();
 
     puts("app_test: ok");
     return 0;

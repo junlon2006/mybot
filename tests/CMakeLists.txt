@@ -1,6 +1,7 @@
 set(MYBOT_TEST_COMMON_INCLUDES
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/internal
+    ${CMAKE_CURRENT_SOURCE_DIR}/support
 )
 set(MYBOT_TEST_SYSTEM_LIBS pthread dl rt m)
 
@@ -81,11 +82,6 @@ mybot_add_test(mybot_platform_registry_test
     ../src/platform/mybot_platform.c
 )
 
-mybot_add_test(mybot_platform_registry_legacy_test
-    unit/platform_registry_legacy_test.c
-    ../src/platform/mybot_platform.c
-)
-
 mybot_add_test(mybot_wifi_test
     unit/wifi_provisioning_test.c
     ../src/platform/mybot_wifi.c
@@ -113,19 +109,12 @@ target_include_directories(mybot_agora_rtc_test PRIVATE
 target_compile_definitions(mybot_agora_rtc_test PRIVATE ${MYBOT_TEST_FEATURE_DEFINITIONS})
 target_link_libraries(mybot_agora_rtc_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
-mybot_add_test(mybot_conversation_test
-    unit/conversation_test.c
-    ../src/rtc/mybot_conversation.c
-)
-target_link_libraries(mybot_conversation_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
-
 mybot_add_test(mybot_app_test
     unit/app_test.c
     ../src/core/mybot_app.c
     ../src/core/mybot_state_model.c
     ../src/core/mybot_presenter.c
     ../src/media/mybot_media_pipeline.c
-    ../src/rtc/mybot_conversation.c
     ../src/support/mybot_ringbuf.c
 )
 target_compile_definitions(mybot_app_test PRIVATE ${MYBOT_TEST_FEATURE_DEFINITIONS})

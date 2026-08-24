@@ -1,19 +1,10 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <mybot/platform/mybot_https.h>
 
-#include "mybot_https_internal.h"
 #include "mybot_platform_registry.h"
 #include "mybot_https_transport.h"
 
 #include <stddef.h>
-
-int mybot_https_register(const mybot_https_ops_t *ops) {
-    return mybot_platform_registry_register_https(ops);
-}
-
-bool mybot_https_is_registered(void) {
-    return mybot_platform_registry_https() != NULL;
-}
 
 int mybot_https_transport_connect(void **connection, const char *host, uint16_t port,
                                   int timeout_ms) {

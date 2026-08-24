@@ -284,8 +284,7 @@ int mybot_media_pipeline_start(mybot_media_pipeline_t *pipeline,
     }
 
 #if MYBOT_WAKE_WORDS
-    if (!mybot_wake_words_is_registered() ||
-        mybot_wake_words_init(&pipeline->wake_words, MYBOT_MEDIA_SAMPLE_RATE, MYBOT_MEDIA_CHANNELS,
+    if (mybot_wake_words_init(&pipeline->wake_words, MYBOT_MEDIA_SAMPLE_RATE, MYBOT_MEDIA_CHANNELS,
                               MYBOT_MEDIA_BITS_PER_SAMPLE, on_wake_word, pipeline) < 0) {
         AOSL_LOG_ERR("wake words enabled but implementation initialization failed");
         goto fail;

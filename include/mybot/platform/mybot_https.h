@@ -5,8 +5,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <mybot/mybot_export.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -18,9 +16,6 @@ extern "C" {
  * chipset TLS socket API). The SDK core does not link OpenSSL.
  */
 typedef struct {
-    /** Implementation name for logging and diagnostics. */
-    const char *name;
-
     /**
      * Establish TCP and TLS to the server.
      *
@@ -65,24 +60,6 @@ typedef struct {
      */
     void (*close)(void *connection);
 } mybot_https_ops_t;
-
-/**
- * Register TLS transport ops through the legacy per-capability API.
- *
- * @param ops TLS operations table; must remain valid for the process
- *            lifetime
- * @return 0 on success; -1 if ops is invalid, HTTPS is already registered,
- *         registration is locked, or descriptor registration is active
- *
- * @note Compatibility entry point for existing ports. New ports should include
- *       mybot_platform.h and use mybot_platform_register(). Call before mybot_start().
- *       The first successful per-capability registration selects legacy mode and
- *       prevents later descriptor registration; a successful descriptor registration
- *       likewise prevents this call. Do not disable certificate or hostname verification
- *       for development certificates; install the required CA in the device trust store
- *       instead.
- */
-MYBOT_API int mybot_https_register(const mybot_https_ops_t *ops);
 
 #ifdef __cplusplus
 }

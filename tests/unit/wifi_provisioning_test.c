@@ -2,6 +2,7 @@
 #include <mybot/platform/mybot_wifi.h>
 
 #include "mybot_wifi_internal.h"
+#include "platform_test.h"
 
 #include "api/aosl.h"
 #include "api/aosl_atomic.h"
@@ -71,17 +72,15 @@ static void on_event(mybot_wifi_event_t event, void *user_data) {
 
 int main(void) {
     mybot_wifi_t wifi = {0};
-    const mybot_wifi_ops_t incomplete_ops = {0};
     const mybot_wifi_ops_t fake_ops = {
-        .name = "fake",
         .init = fake_init,
         .destroy = fake_destroy,
     };
 
     aosl_ctor();
-    assert(mybot_wifi_register(NULL) < 0);
-    assert(mybot_wifi_register(&incomplete_ops) < 0);
-    assert(mybot_wifi_register(&fake_ops) == 0);
+    mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
+    descriptor.wifi = &fake_ops;
+    assert(mybot_platform_register(&descriptor) == 0);
     assert(mybot_wifi_init(&wifi, NULL, on_event, &s_event_count) < 0);
     assert(mybot_wifi_init(&wifi, "device-001", NULL, &s_event_count) < 0);
 
@@ -90,7 +89,6 @@ int main(void) {
     assert(s_init_count == 1);
     assert(aosl_atomic_read(&s_event_count) == 1);
     assert(aosl_atomic_read(&s_last_event) == MYBOT_WIFI_EVENT_STA_CONNECTED);
-    assert(mybot_wifi_register(&fake_ops) < 0);
 
     s_fake.emit(MYBOT_WIFI_EVENT_STA_DISCONNECTED, s_fake.user_data);
     assert(aosl_atomic_read(&s_event_count) == 2);

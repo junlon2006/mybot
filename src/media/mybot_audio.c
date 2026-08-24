@@ -8,14 +8,6 @@
 
 #include <string.h>
 
-int mybot_audio_register_capture(const mybot_audio_capture_ops_t *ops) {
-    return mybot_platform_registry_register_audio_capture(ops);
-}
-
-int mybot_audio_register_playback(const mybot_audio_playback_ops_t *ops) {
-    return mybot_platform_registry_register_audio_playback(ops);
-}
-
 void mybot_audio_context_init(mybot_audio_t *audio) {
     if (!audio) {
         return;
@@ -34,14 +26,6 @@ const mybot_audio_capture_ops_t *mybot_audio_get_capture(const mybot_audio_t *au
 
 const mybot_audio_playback_ops_t *mybot_audio_get_playback(const mybot_audio_t *audio) {
     return audio ? audio->playback_ops : NULL;
-}
-
-int mybot_audio_device_register_volume(const mybot_audio_volume_ops_t *ops) {
-    return mybot_platform_registry_register_audio_volume(ops);
-}
-
-bool mybot_audio_device_volume_is_registered(const mybot_audio_t *audio) {
-    return audio && audio->volume_ops;
 }
 
 bool mybot_audio_device_volume_is_active(const mybot_audio_t *audio) {

@@ -19,7 +19,7 @@ typedef struct {
 /**
  * SDK-internal Wi-Fi facade. The public mybot/platform/mybot_wifi.h only
  * exposes the platform contract (event and handler types, ops table and
- * mybot_wifi_register()); the SDK core drives provisioning and state.
+ * mybot_platform_register()); the SDK core drives provisioning and state.
  */
 
 /**

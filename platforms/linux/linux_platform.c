@@ -8,11 +8,6 @@
 
 int linux_platform_register(void) {
     mybot_platform_descriptor_t descriptor = {
-        .api_version = MYBOT_PLATFORM_API_VERSION,
-        .struct_size = sizeof(descriptor),
-        .name = "linux-reference",
-        .capabilities = MYBOT_PLATFORM_CAP_REQUIRED | MYBOT_PLATFORM_CAP_AUDIO_VOLUME |
-                        MYBOT_PLATFORM_CAP_LCD | MYBOT_PLATFORM_CAP_ANNOUNCE,
         .wifi = linux_wifi_platform_host_network_ops(),
         .kv_store = linux_kv_store_platform_file_ops(),
         .key = linux_key_platform_stdin_ops(),
@@ -21,10 +16,9 @@ int linux_platform_register(void) {
         .audio_volume = linux_audio_platform_alsa_volume_ops(),
         .lcd = linux_lcd_platform_console_ops(),
         .announce = linux_announce_platform_file_ops(),
-    };
 #if MYBOT_LINUX_HTTPS_OPENSSL
-    descriptor.capabilities |= MYBOT_PLATFORM_CAP_HTTPS;
-    descriptor.https = linux_https_platform_openssl_ops();
+        .https = linux_https_platform_openssl_ops(),
 #endif
+    };
     return mybot_platform_register(&descriptor);
 }
