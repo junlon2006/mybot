@@ -80,12 +80,10 @@ static int mybot_test_audio_write(void *ctx, const void *data, int frames) {
 
 static inline mybot_platform_descriptor_t mybot_test_platform_descriptor(void) {
     static const mybot_wifi_ops_t wifi = {
-        .name = "test-wifi",
         .init = mybot_test_wifi_init,
         .destroy = mybot_test_destroy,
     };
     static const mybot_kv_store_ops_t kv_store = {
-        .name = "test-kv",
         .init = mybot_test_kv_init,
         .get = mybot_test_kv_get,
         .set = mybot_test_kv_set,
@@ -93,12 +91,10 @@ static inline mybot_platform_descriptor_t mybot_test_platform_descriptor(void) {
         .destroy = mybot_test_destroy,
     };
     static const mybot_key_ops_t key = {
-        .name = "test-key",
         .init = mybot_test_key_init,
         .destroy = mybot_test_destroy,
     };
     static const mybot_audio_capture_ops_t capture = {
-        .name = "test-capture",
         .init = mybot_test_audio_init,
         .start = mybot_test_audio_start_stop,
         .read = mybot_test_audio_read,
@@ -106,7 +102,6 @@ static inline mybot_platform_descriptor_t mybot_test_platform_descriptor(void) {
         .destroy = mybot_test_destroy,
     };
     static const mybot_audio_playback_ops_t playback = {
-        .name = "test-playback",
         .init = mybot_test_audio_init,
         .start = mybot_test_audio_start_stop,
         .write = mybot_test_audio_write,
@@ -115,10 +110,6 @@ static inline mybot_platform_descriptor_t mybot_test_platform_descriptor(void) {
     };
 
     mybot_platform_descriptor_t descriptor = {
-        .api_version = MYBOT_PLATFORM_API_VERSION,
-        .struct_size = sizeof(descriptor),
-        .name = "test-platform",
-        .capabilities = MYBOT_PLATFORM_CAP_REQUIRED,
         .wifi = &wifi,
         .kv_store = &kv_store,
         .key = &key,

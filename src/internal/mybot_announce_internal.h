@@ -38,9 +38,6 @@ typedef struct {
  * normal speaker path without an active RTC call.
  */
 
-/** Whether the current platform registered an announcement implementation. */
-bool mybot_announce_is_registered(void);
-
 /** Initialize the registered implementation. No-op when none is registered. */
 int mybot_announce_init(mybot_announce_t *announce);
 

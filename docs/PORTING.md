@@ -41,7 +41,7 @@ platforms/my_mcu/
 
 An out-of-tree firmware project may use the same layout without changing this repository.
 
-## Step 3: Implement the required platform capabilities
+## Step 3: Implement the required platform operations
 
 Implement the operations tables below and expose them through the platform descriptor in Step 4.
 
@@ -174,17 +174,12 @@ The Linux reference implementation reads raw PCM files per locale from
 `MYBOT_ASSETS_DIR` environment variable (default `./assets`) and the locale with `MYBOT_LOCALE`
 (default `zh-CN`).
 
-## Step 4: Register one versioned platform descriptor
+## Step 4: Register one platform descriptor
 
 ```c
 #include <mybot/platform/mybot_platform.h>
 
 static const mybot_platform_descriptor_t my_mcu_platform = {
-    .api_version = MYBOT_PLATFORM_API_VERSION,
-    .struct_size = sizeof(mybot_platform_descriptor_t),
-    .name = "my-mcu",
-    .capabilities = MYBOT_PLATFORM_CAP_REQUIRED | MYBOT_PLATFORM_CAP_HTTPS |
-                    MYBOT_PLATFORM_CAP_LCD,
     .wifi = &my_mcu_wifi_ops,
     .kv_store = &my_mcu_kv_ops,
     .key = &my_mcu_key_ops,
@@ -199,9 +194,12 @@ int my_mcu_platform_register(void) {
 }
 ```
 
-Set a capability bit exactly when its ops pointer is present. `mybot_platform_register()` validates
-the complete descriptor before committing it, so a failure cannot leave a partially registered
-platform. It is the only platform registration entry point.
+A non-NULL ops pointer is the sole declaration that the platform supports that function; leave an
+optional pointer NULL when it is unavailable. `mybot_platform_register()` validates every required
+table and every provided optional table before committing the complete descriptor, so a failure
+cannot leave a partially registered platform. It is the only platform registration entry point.
+`mybot_start()` separately checks the ops required by the active build and runtime configuration,
+such as HTTPS for an HTTPS server URL and wake words when enabled.
 
 ## Step 5: Integrate with CMake
 
@@ -243,7 +241,8 @@ mybot_stop();
 ```
 
 `server_base` must be an HTTPS URL and both fields must be non-empty NUL-terminated strings. Start
-fails before global initialization when no TLS transport is registered. Start is non-blocking;
+checks the registered descriptor against the active configuration and fails before global
+initialization when a required ops table, such as the TLS transport, is absent. Start is non-blocking;
 services continue after Wi-Fi reports usable network connectivity. Do not call stop from a platform callback because
 it waits for workers and callbacks. `mybot_start()` acquires one application reference to the
 process-wide AOSL runtime and `mybot_stop()` releases that reference last, after workers, buffers

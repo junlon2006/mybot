@@ -9,10 +9,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-bool mybot_announce_is_registered(void) {
-    return mybot_platform_registry_announce() != NULL;
-}
-
 int mybot_announce_init(mybot_announce_t *announce) {
     if (!announce) {
         return -1;

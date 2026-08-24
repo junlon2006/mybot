@@ -38,7 +38,7 @@ platforms/my_mcu/
 
 独立（out-of-tree）固件工程可使用相同布局，无需改动本仓库。
 
-## 第 3 步：实现必需平台能力
+## 第 3 步：实现必需平台操作
 
 实现以下 ops 表，并在第 4 步通过平台描述符一次性注册。
 
@@ -152,17 +152,12 @@ Linux 参考实现按语言从 `./assets/locales/<locale>/` 读取原始 PCM 文
 `0.pcm`~`9.pcm`）；可用环境变量 `MYBOT_ASSETS_DIR` 覆盖目录（默认 `./assets`），
 `MYBOT_LOCALE` 选择语言（默认 `zh-CN`）。
 
-## 第 4 步：注册一个带版本的平台描述符
+## 第 4 步：注册一个平台描述符
 
 ```c
 #include <mybot/platform/mybot_platform.h>
 
 static const mybot_platform_descriptor_t my_mcu_platform = {
-    .api_version = MYBOT_PLATFORM_API_VERSION,
-    .struct_size = sizeof(mybot_platform_descriptor_t),
-    .name = "my-mcu",
-    .capabilities = MYBOT_PLATFORM_CAP_REQUIRED | MYBOT_PLATFORM_CAP_HTTPS |
-                    MYBOT_PLATFORM_CAP_LCD,
     .wifi = &my_mcu_wifi_ops,
     .kv_store = &my_mcu_kv_ops,
     .key = &my_mcu_key_ops,
@@ -177,8 +172,11 @@ int my_mcu_platform_register(void) {
 }
 ```
 
-仅在对应 ops 指针存在时设置能力位。`mybot_platform_register()` 会在提交前校验完整描述符，
+非空 ops 指针是平台支持对应功能的唯一声明；不支持的可选功能将指针留为 NULL。
+`mybot_platform_register()` 会在提交前校验全部必需回调表以及每个已提供的可选回调表，
 因此失败不会留下只注册一半的平台。它是唯一的平台注册入口。
+`mybot_start()` 会另行按当前构建与运行配置检查所需 ops，例如 HTTPS URL 需要 HTTPS ops，
+启用唤醒词时需要唤醒词 ops。
 
 ## 第 5 步：与 CMake 集成
 
@@ -219,8 +217,9 @@ while (mybot_is_running()) platform_sleep_ms(100);
 mybot_stop();
 ```
 
-`server_base` 必须是 HTTPS URL，且两个字段都必须是非空、以 NUL 结尾的字符串。未注册 TLS
-传输时，启动会在全局初始化之前失败。启动是非阻塞的；Wi-Fi 上报网络可用后服务继续运行。不要
+`server_base` 必须是 HTTPS URL，且两个字段都必须是非空、以 NUL 结尾的字符串。启动会按
+当前配置检查已注册的描述符；缺少 TLS 传输等必需 ops 时，会在全局初始化之前失败。启动是
+非阻塞的；Wi-Fi 上报网络可用后服务继续运行。不要
 从平台回调中调用 stop，因为它会等待工作线程与回调。`mybot_start()` 获取一份应用持有的
  AOSL 引用，`mybot_stop()` 在工作线程、缓冲区和 RTC 回调队列全部销毁后最后释放该
 引用。`agora_rtc_init()` / `agora_rtc_fini()` 管理 SDK 独立的一份引用。宿主若直接使用

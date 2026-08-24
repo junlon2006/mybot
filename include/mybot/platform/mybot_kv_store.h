@@ -15,9 +15,6 @@ extern "C" {
  * device credentials through this interface). All callbacks are required.
  */
 typedef struct {
-    /** Implementation name for logging and diagnostics. */
-    const char *name;
-
     /**
      * Allocate and open the store.
      *

@@ -40,7 +40,6 @@ static void wifi_host_network_destroy(void *opaque) {
 }
 
 static const mybot_wifi_ops_t s_wifi_host_network_ops = {
-    .name = "linux-host-network",
     .init = wifi_host_network_init,
     .destroy = wifi_host_network_destroy,
 };

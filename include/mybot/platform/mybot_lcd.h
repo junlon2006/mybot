@@ -65,9 +65,6 @@ typedef struct {
  *       all calls.
  */
 typedef struct {
-    /** Implementation name for logging and diagnostics. */
-    const char *name;
-
     /**
      * Allocate and open the display.
      *

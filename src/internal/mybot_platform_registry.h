@@ -6,6 +6,8 @@
 
 #include <stdbool.h>
 
+bool mybot_platform_registry_is_registered(void);
+
 const mybot_wifi_ops_t *mybot_platform_registry_wifi(void);
 const mybot_kv_store_ops_t *mybot_platform_registry_kv_store(void);
 const mybot_key_ops_t *mybot_platform_registry_key(void);

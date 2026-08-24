@@ -17,7 +17,6 @@ int main(void) {
     aosl_set_log_level(AOSL_LOG_INFO);
 
     mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
-    descriptor.capabilities |= MYBOT_PLATFORM_CAP_LCD;
     descriptor.lcd = linux_lcd_platform_console_ops();
     assert(mybot_platform_register(&descriptor) == 0);
     assert(mybot_lcd_is_registered());

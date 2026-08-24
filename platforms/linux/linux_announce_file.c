@@ -165,7 +165,6 @@ static void file_destroy(void *ctx) {
 }
 
 static const mybot_announce_ops_t s_file_ops = {
-    .name = "file-pcm",
     .init = file_init,
     .open = file_open,
     .read = file_read,

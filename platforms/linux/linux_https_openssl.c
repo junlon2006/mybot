@@ -200,7 +200,6 @@ static void https_close(void *opaque) {
 }
 
 static const mybot_https_ops_t s_https_ops = {
-    .name = "openssl",
     .connect = https_connect,
     .send = https_send,
     .recv = https_recv,

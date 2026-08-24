@@ -54,9 +54,6 @@ typedef void (*mybot_wifi_event_handler_t)(mybot_wifi_event_t event, void *user_
  *       returns.
  */
 typedef struct {
-    /** Implementation name for logging and diagnostics. */
-    const char *name;
-
     /**
      * Start the platform Wi-Fi workflow without waiting for network connectivity.
      * Production implementations should normally start APSTA provisioning.

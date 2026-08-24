@@ -42,9 +42,6 @@ typedef void (*mybot_key_event_handler_t)(mybot_key_event_t event, void *user_da
  * any in-flight event handler to return.
  */
 typedef struct {
-    /** Implementation name for logging and diagnostics. */
-    const char *name;
-
     /**
      * Allocate and start the key event source.
      *

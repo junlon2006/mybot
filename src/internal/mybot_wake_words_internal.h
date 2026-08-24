@@ -21,9 +21,6 @@ typedef struct {
  * implementation through the functions below.
  */
 
-/** Return whether the current platform registered a local ASR implementation. */
-bool mybot_wake_words_is_registered(void);
-
 /** Initialize the registered implementation for the capture PCM format. */
 int mybot_wake_words_init(mybot_wake_words_t *wake_words, int sample_rate, int channels,
                           int bits_per_sample, mybot_wake_words_handler_t handler, void *user_data);

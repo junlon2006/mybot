@@ -6,7 +6,6 @@
 #include "mybot_agora_rtc.h"
 #include "mybot_app.h"
 #include "mybot_device_lifecycle.h"
-#include "mybot_https_internal.h"
 #include "mybot_key_internal.h"
 #include "mybot_kv_store_internal.h"
 #include "mybot_media_pipeline.h"
@@ -385,15 +384,22 @@ static bool config_is_valid(const mybot_config_t *cfg) {
            cfg->device_id[0];
 }
 
-static uint64_t required_platform_capabilities(const mybot_config_t *cfg) {
-    uint64_t required = MYBOT_PLATFORM_CAP_REQUIRED;
-#if MYBOT_WAKE_WORDS
-    required |= MYBOT_PLATFORM_CAP_WAKE_WORDS;
-#endif
-    if (strncmp(cfg->server_base, "https://", 8) == 0) {
-        required |= MYBOT_PLATFORM_CAP_HTTPS;
+static bool platform_requirements_are_met(const mybot_config_t *cfg) {
+    if (!mybot_platform_registry_is_registered()) {
+        AOSL_LOG_ERR("platform descriptor is not registered");
+        return false;
     }
-    return required;
+#if MYBOT_WAKE_WORDS
+    if (!mybot_platform_registry_wake_words()) {
+        AOSL_LOG_ERR("wake-word platform operations are required but unavailable");
+        return false;
+    }
+#endif
+    if (strncmp(cfg->server_base, "https://", 8) == 0 && !mybot_platform_registry_https()) {
+        AOSL_LOG_ERR("HTTPS platform operations are required but unavailable");
+        return false;
+    }
+    return true;
 }
 
 static bool server_scheme_is_supported(const char *server_base) {
@@ -458,11 +464,7 @@ int mybot_start(const mybot_config_t *cfg) {
         return -1;
     }
 
-    uint64_t missing_capabilities = 0;
-    uint64_t required_capabilities = required_platform_capabilities(cfg);
-    if (mybot_platform_validate(required_capabilities, &missing_capabilities) < 0) {
-        AOSL_LOG_ERR("missing platform capabilities: 0x%llx",
-                     (unsigned long long)missing_capabilities);
+    if (!platform_requirements_are_met(cfg)) {
         lifecycle_unlock();
         return -1;
     }

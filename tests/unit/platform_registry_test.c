@@ -149,12 +149,10 @@ static int audio_stop(void *ctx) {
 }
 
 static const mybot_wifi_ops_t s_wifi = {
-    .name = "wifi",
     .init = wifi_init,
     .destroy = destroy_simple,
 };
 static const mybot_kv_store_ops_t s_kv = {
-    .name = "kv",
     .init = init_simple,
     .get = kv_get,
     .set = kv_set,
@@ -162,31 +160,26 @@ static const mybot_kv_store_ops_t s_kv = {
     .destroy = destroy_simple,
 };
 static const mybot_key_ops_t s_key = {
-    .name = "key",
     .init = key_init,
     .destroy = destroy_simple,
 };
 static const mybot_lcd_ops_t s_lcd = {
-    .name = "lcd",
     .init = init_simple,
     .render = lcd_render,
     .destroy = destroy_simple,
 };
 static const mybot_audio_volume_ops_t s_volume = {
-    .name = "volume",
     .init = init_simple,
     .set_volume = volume_set,
     .destroy = destroy_simple,
 };
 static const mybot_https_ops_t s_https = {
-    .name = "https",
     .connect = https_connect,
     .send = https_send,
     .recv = https_recv,
     .close = destroy_simple,
 };
 static const mybot_announce_ops_t s_announce = {
-    .name = "announce",
     .init = init_simple,
     .open = announce_open,
     .read = announce_read,
@@ -194,13 +187,11 @@ static const mybot_announce_ops_t s_announce = {
     .destroy = destroy_simple,
 };
 static const mybot_wake_words_ops_t s_wake_words = {
-    .name = "wake-words",
     .init = wake_words_init,
     .process = wake_words_process,
     .destroy = destroy_simple,
 };
 static const mybot_audio_capture_ops_t s_capture = {
-    .name = "capture",
     .init = audio_init,
     .start = audio_start,
     .read = audio_read,
@@ -208,7 +199,6 @@ static const mybot_audio_capture_ops_t s_capture = {
     .destroy = destroy_simple,
 };
 static const mybot_audio_playback_ops_t s_playback = {
-    .name = "playback",
     .init = audio_init,
     .start = audio_start,
     .write = audio_write,
@@ -219,10 +209,6 @@ static const mybot_audio_playback_ops_t s_playback = {
 static mybot_platform_descriptor_t complete_descriptor(void) {
     mybot_platform_descriptor_t descriptor;
     memset(&descriptor, 0, sizeof(descriptor));
-    descriptor.api_version = MYBOT_PLATFORM_API_VERSION;
-    descriptor.struct_size = sizeof(descriptor);
-    descriptor.name = "test-platform";
-    descriptor.capabilities = MYBOT_PLATFORM_CAP_REQUIRED;
     descriptor.wifi = &s_wifi;
     descriptor.kv_store = &s_kv;
     descriptor.key = &s_key;
@@ -232,39 +218,15 @@ static mybot_platform_descriptor_t complete_descriptor(void) {
 }
 
 int main(void) {
-    mybot_platform_descriptor_t descriptor = complete_descriptor();
+    mybot_platform_descriptor_t descriptor;
 
     assert(mybot_platform_register(NULL) < 0);
-
-    descriptor.struct_size--;
-    assert(mybot_platform_register(&descriptor) < 0);
+    assert(!mybot_platform_registry_is_registered());
 
     descriptor = complete_descriptor();
-    descriptor.name = NULL;
-    assert(mybot_platform_register(&descriptor) < 0);
-
-    descriptor = complete_descriptor();
-    descriptor.api_version++;
-    assert(mybot_platform_register(&descriptor) < 0);
-    assert(mybot_platform_get_capabilities() == 0);
-
-    descriptor = complete_descriptor();
-    descriptor.capabilities &= ~MYBOT_PLATFORM_CAP_KEY;
     descriptor.key = NULL;
     assert(mybot_platform_register(&descriptor) < 0);
-    assert(mybot_platform_get_capabilities() == 0);
-
-    descriptor = complete_descriptor();
-    descriptor.lcd = &s_lcd;
-    assert(mybot_platform_register(&descriptor) < 0);
-    assert(mybot_platform_get_capabilities() == 0);
-
-    mybot_wifi_ops_t unnamed_wifi = s_wifi;
-    unnamed_wifi.name = NULL;
-    descriptor = complete_descriptor();
-    descriptor.wifi = &unnamed_wifi;
-    assert(mybot_platform_register(&descriptor) < 0);
-    assert(mybot_platform_get_capabilities() == 0);
+    assert(!mybot_platform_registry_is_registered());
 
     mybot_wifi_ops_t invalid_wifi = s_wifi;
     invalid_wifi.init = NULL;
@@ -299,58 +261,48 @@ int main(void) {
     mybot_audio_volume_ops_t invalid_volume = s_volume;
     invalid_volume.set_volume = NULL;
     descriptor = complete_descriptor();
-    descriptor.capabilities |= MYBOT_PLATFORM_CAP_AUDIO_VOLUME;
     descriptor.audio_volume = &invalid_volume;
     assert(mybot_platform_register(&descriptor) < 0);
 
     mybot_https_ops_t invalid_https = s_https;
     invalid_https.recv = NULL;
     descriptor = complete_descriptor();
-    descriptor.capabilities |= MYBOT_PLATFORM_CAP_HTTPS;
     descriptor.https = &invalid_https;
     assert(mybot_platform_register(&descriptor) < 0);
 
     mybot_lcd_ops_t invalid_lcd = s_lcd;
     invalid_lcd.render = NULL;
     descriptor = complete_descriptor();
-    descriptor.capabilities |= MYBOT_PLATFORM_CAP_LCD;
     descriptor.lcd = &invalid_lcd;
     assert(mybot_platform_register(&descriptor) < 0);
 
     mybot_announce_ops_t invalid_announce = s_announce;
     invalid_announce.read = NULL;
     descriptor = complete_descriptor();
-    descriptor.capabilities |= MYBOT_PLATFORM_CAP_ANNOUNCE;
     descriptor.announce = &invalid_announce;
     assert(mybot_platform_register(&descriptor) < 0);
 
     mybot_wake_words_ops_t invalid_wake_words = s_wake_words;
     invalid_wake_words.process = NULL;
     descriptor = complete_descriptor();
-    descriptor.capabilities |= MYBOT_PLATFORM_CAP_WAKE_WORDS;
     descriptor.wake_words = &invalid_wake_words;
     assert(mybot_platform_register(&descriptor) < 0);
 
     descriptor = complete_descriptor();
-    descriptor.capabilities |= UINT64_C(1) << 63;
-    assert(mybot_platform_register(&descriptor) < 0);
-
-    descriptor = complete_descriptor();
     assert(mybot_platform_register(&descriptor) == 0);
-    assert(mybot_platform_get_capabilities() == MYBOT_PLATFORM_CAP_REQUIRED);
+    assert(mybot_platform_registry_is_registered());
     assert(mybot_platform_registry_wifi() == &s_wifi);
     assert(mybot_platform_registry_kv_store() == &s_kv);
     assert(mybot_platform_registry_key() == &s_key);
     assert(mybot_platform_registry_audio_capture() == &s_capture);
     assert(mybot_platform_registry_audio_playback() == &s_playback);
+    assert(mybot_platform_registry_audio_volume() == NULL);
+    assert(mybot_platform_registry_https() == NULL);
+    assert(mybot_platform_registry_lcd() == NULL);
+    assert(mybot_platform_registry_announce() == NULL);
+    assert(mybot_platform_registry_wake_words() == NULL);
 
-    uint64_t missing = 0;
-    assert(mybot_platform_validate(MYBOT_PLATFORM_CAP_REQUIRED, &missing) == 0);
-    assert(missing == 0);
-    assert(mybot_platform_validate(MYBOT_PLATFORM_CAP_REQUIRED | MYBOT_PLATFORM_CAP_HTTPS,
-                                   &missing) < 0);
-    assert(missing == MYBOT_PLATFORM_CAP_HTTPS);
-
+    /* Registration is process-wide and succeeds only once. */
     assert(mybot_platform_register(&descriptor) < 0);
     mybot_platform_registry_lock();
     assert(mybot_platform_register(&descriptor) < 0);

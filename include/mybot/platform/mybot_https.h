@@ -16,9 +16,6 @@ extern "C" {
  * chipset TLS socket API). The SDK core does not link OpenSSL.
  */
 typedef struct {
-    /** Implementation name for logging and diagnostics. */
-    const char *name;
-
     /**
      * Establish TCP and TLS to the server.
      *

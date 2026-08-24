@@ -67,7 +67,6 @@ static void *render_screens(void *opaque) {
 
 int main(void) {
     const mybot_lcd_ops_t fake_ops = {
-        .name = "fake",
         .init = fake_init,
         .render = fake_render,
         .destroy = fake_destroy,
@@ -77,7 +76,6 @@ int main(void) {
     assert(!mybot_lcd_is_registered());
     assert(mybot_lcd_init(&s_lcd) < 0);
     mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
-    descriptor.capabilities |= MYBOT_PLATFORM_CAP_LCD;
     descriptor.lcd = &fake_ops;
     assert(mybot_platform_register(&descriptor) == 0);
     assert(mybot_lcd_is_registered());

@@ -136,7 +136,6 @@ static void alsa_volume_destroy(void *ctx) {
 }
 
 static const mybot_audio_volume_ops_t g_alsa_volume_ops = {
-    .name = "alsa-mixer",
     .init = alsa_volume_init,
     .set_volume = alsa_volume_set,
     .get_volume = alsa_volume_get,

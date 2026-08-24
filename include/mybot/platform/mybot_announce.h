@@ -44,9 +44,6 @@ typedef enum {
  * because the SDK calls it from the real-time playback worker.
  */
 typedef struct {
-    /** Implementation name for logging and diagnostics. */
-    const char *name;
-
     /** Allocate and initialize the announcement implementation.
      *  @param ctx [out] implementation context handle
      *  @return 0 on success, -1 on error */

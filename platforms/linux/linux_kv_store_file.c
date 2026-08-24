@@ -300,7 +300,6 @@ static void kv_store_file_destroy(void *opaque) {
 }
 
 static const mybot_kv_store_ops_t s_kv_store_file_ops = {
-    .name = "file",
     .init = kv_store_file_init,
     .get = kv_store_file_get,
     .set = kv_store_file_set,

@@ -6,10 +6,6 @@
 
 #include <stddef.h>
 
-bool mybot_wake_words_is_registered(void) {
-    return mybot_platform_registry_wake_words() != NULL;
-}
-
 int mybot_wake_words_init(mybot_wake_words_t *wake_words, int sample_rate, int channels,
                           int bits_per_sample, mybot_wake_words_handler_t handler,
                           void *user_data) {

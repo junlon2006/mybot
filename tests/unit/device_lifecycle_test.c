@@ -116,7 +116,6 @@ static void mock_kv_store_destroy(void *ctx) {
 }
 
 static const mybot_kv_store_ops_t s_mock_kv_store_ops = {
-    .name = "mock",
     .init = mock_kv_store_init,
     .get = mock_kv_store_get,
     .set = mock_kv_store_set,

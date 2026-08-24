@@ -26,9 +26,6 @@ extern "C" {
  * are PCM frames (one sample per channel).
  */
 typedef struct {
-    /** Implementation name for logging and diagnostics. */
-    const char *name;
-
     /**
      * Allocate and open the capture device.
      *
@@ -92,9 +89,6 @@ typedef struct {
  * frame-count convention.
  */
 typedef struct {
-    /** Implementation name for logging and diagnostics. */
-    const char *name;
-
     /**
      * Allocate and open the playback device.
      *
@@ -178,9 +172,6 @@ typedef struct {
  * device volume control — playback and media volume keep working.
  */
 typedef struct {
-    /** Implementation name for logging and diagnostics. */
-    const char *name;
-
     /**
      * Allocate and open the hardware volume control.
      *

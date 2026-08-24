@@ -72,22 +72,18 @@ static void on_wake_word(const char *wake_word, void *user_data) {
 int main(void) {
     mybot_wake_words_t wake_words = {0};
     const mybot_wake_words_ops_t fake_ops = {
-        .name = "fake",
         .init = fake_init,
         .process = fake_process,
         .destroy = fake_destroy,
     };
     int16_t pcm[960] = {0};
 
-    assert(!mybot_wake_words_is_registered());
     assert(mybot_wake_words_process(&wake_words, pcm, 960) < 0);
     assert(mybot_wake_words_init(&wake_words, 16000, 1, 16, on_wake_word, &s_handler_count) < 0);
 
     mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
-    descriptor.capabilities |= MYBOT_PLATFORM_CAP_WAKE_WORDS;
     descriptor.wake_words = &fake_ops;
     assert(mybot_platform_register(&descriptor) == 0);
-    assert(mybot_wake_words_is_registered());
     assert(mybot_wake_words_init(&wake_words, 0, 1, 16, on_wake_word, &s_handler_count) < 0);
     assert(mybot_wake_words_init(&wake_words, 16000, 0, 16, on_wake_word, &s_handler_count) < 0);
     assert(mybot_wake_words_init(&wake_words, 16000, 1, 0, on_wake_word, &s_handler_count) < 0);

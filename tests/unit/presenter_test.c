@@ -32,7 +32,6 @@ static void lcd_destroy(void *ctx) {
 
 int main(void) {
     const mybot_lcd_ops_t ops = {
-        .name = "presenter-test",
         .init = lcd_init,
         .render = lcd_render,
         .destroy = lcd_destroy,
@@ -42,7 +41,6 @@ int main(void) {
 
     aosl_ctor();
     mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
-    descriptor.capabilities |= MYBOT_PLATFORM_CAP_LCD;
     descriptor.lcd = &ops;
     assert(mybot_platform_register(&descriptor) == 0);
     assert(mybot_presenter_init(&presenter) == 0);

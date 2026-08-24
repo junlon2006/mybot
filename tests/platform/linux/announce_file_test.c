@@ -74,10 +74,8 @@ int main(void) {
 
     aosl_ctor();
     mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
-    descriptor.capabilities |= MYBOT_PLATFORM_CAP_ANNOUNCE;
     descriptor.announce = linux_announce_platform_file_ops();
     assert(mybot_platform_register(&descriptor) == 0);
-    assert(mybot_announce_is_registered());
     assert(mybot_announce_init(&s_announce) == 0);
 
     /* Prompt then digit 5, in order. */

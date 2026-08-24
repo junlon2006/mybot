@@ -98,7 +98,6 @@ static void lcd_console_destroy(void *opaque) {
 }
 
 static const mybot_lcd_ops_t s_lcd_console_ops = {
-    .name = "console",
     .init = lcd_console_init,
     .render = lcd_console_render,
     .destroy = lcd_console_destroy,

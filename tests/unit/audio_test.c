@@ -68,7 +68,6 @@ static void volume_destroy(void *ctx) {
 int main(void) {
     mybot_audio_t audio = {0};
     const mybot_audio_capture_ops_t capture = {
-        .name = "test",
         .init = init,
         .start = start,
         .read = read_pcm,
@@ -76,7 +75,6 @@ int main(void) {
         .destroy = destroy,
     };
     const mybot_audio_playback_ops_t playback = {
-        .name = "test",
         .init = init,
         .start = start,
         .write = write_pcm,
@@ -84,7 +82,6 @@ int main(void) {
         .destroy = destroy,
     };
     const mybot_audio_volume_ops_t volume = {
-        .name = "test",
         .init = volume_init,
         .set_volume = volume_set,
         .get_volume = volume_get,
@@ -94,7 +91,6 @@ int main(void) {
     mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
     descriptor.audio_capture = &capture;
     descriptor.audio_playback = &playback;
-    descriptor.capabilities |= MYBOT_PLATFORM_CAP_AUDIO_VOLUME;
     descriptor.audio_volume = &volume;
     assert(mybot_platform_register(&descriptor) == 0);
 
@@ -103,7 +99,6 @@ int main(void) {
     assert(mybot_audio_get_playback(&audio) == &playback);
 
     /* Device volume implementation registration and lifecycle. */
-    assert(mybot_audio_device_volume_is_registered(&audio));
     assert(!mybot_audio_device_volume_is_active(&audio));
 
     int v = -1;

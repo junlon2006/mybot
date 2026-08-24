@@ -24,9 +24,6 @@ typedef void (*mybot_wake_words_handler_t)(const char *wake_word, void *user_dat
  * The implementation receives captured PCM frames and reports local detections.
  */
 typedef struct {
-    /** Implementation name for logging and diagnostics. */
-    const char *name;
-
     /**
      * Allocate and start the local ASR engine.
      *

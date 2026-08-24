@@ -8,8 +8,8 @@ This project follows Semantic Versioning.
 
 - Expand deterministic unit coverage for JSON allocation failures, HTTP and device-service
   protocol boundaries, device lifecycle recovery, RTC errors, and application cleanup.
-- Add the versioned `mybot_platform_descriptor_t` capability registry with atomic registration and
-  synchronous startup validation of required ops.
+- Add one-shot `mybot_platform_descriptor_t` registration with complete atomic validation and
+  synchronous startup checks for configuration-required ops.
 - Add the BK725x platform port under `platforms/bk725x` and synchronize the complete BK7258
   reference project under `examples/bk725x`, with the full firmware implementation maintained at
   <https://github.com/junlon2006/mybot-bk7258>.
@@ -23,8 +23,9 @@ This project follows Semantic Versioning.
 - Align the Agora RTSA wrapper with the single-instance, one-call-at-a-time product model: initialize
   RTSA once per mybot run, use one AOSL CAS lifecycle gate for callback, audio-send, and teardown
   ordering, and create one connection per conversation, with explicit lifecycle and error logging.
-- Remove legacy per-capability platform registration; platform integrations must submit one
-  complete, atomically validated `mybot_platform_descriptor_t` before startup.
+- **Breaking:** remove legacy per-capability registration; the descriptor's version, capability, and
+  name fields; and the name field from every ops table. Platform integrations must submit one complete
+  descriptor whose non-NULL ops pointers are the sole declarations of supported platform functions.
 - Remove the internal conversation forwarding layer; application orchestration now calls the
   process-wide Agora RTC module directly without copying RTC credentials into a second context.
 - Align the English and Chinese README lifecycle and architecture guidance, document the descriptor

@@ -281,7 +281,6 @@ static void alsa_capture_destroy(void *ctx) {
 }
 
 static const mybot_audio_capture_ops_t g_alsa_capture_ops = {
-    .name = "alsa",
     .init = alsa_capture_init,
     .start = alsa_capture_start,
     .read = alsa_capture_read,

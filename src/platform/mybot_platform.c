@@ -1,19 +1,9 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "mybot_platform_registry.h"
 
-#include <string.h>
-
-#define MYBOT_PLATFORM_CAP_ALL                                                                     \
-    (MYBOT_PLATFORM_CAP_REQUIRED | MYBOT_PLATFORM_CAP_AUDIO_VOLUME | MYBOT_PLATFORM_CAP_HTTPS |    \
-     MYBOT_PLATFORM_CAP_LCD | MYBOT_PLATFORM_CAP_ANNOUNCE | MYBOT_PLATFORM_CAP_WAKE_WORDS)
-
 static mybot_platform_descriptor_t s_registry;
 static bool s_registered;
 static bool s_locked;
-
-static bool name_is_valid(const char *name) {
-    return name && name[0];
-}
 
 static bool wifi_is_valid(const mybot_wifi_ops_t *ops) {
     return ops && ops->init && ops->destroy;
@@ -40,7 +30,7 @@ static bool audio_volume_is_valid(const mybot_audio_volume_ops_t *ops) {
 }
 
 static bool https_is_valid(const mybot_https_ops_t *ops) {
-    return ops && name_is_valid(ops->name) && ops->connect && ops->send && ops->recv && ops->close;
+    return ops && ops->connect && ops->send && ops->recv && ops->close;
 }
 
 static bool lcd_is_valid(const mybot_lcd_ops_t *ops) {
@@ -55,41 +45,8 @@ static bool wake_words_is_valid(const mybot_wake_words_ops_t *ops) {
     return ops && ops->init && ops->process && ops->destroy;
 }
 
-static bool pointer_matches(uint64_t capabilities, uint64_t bit, const void *ops) {
-    return ((capabilities & bit) != 0) == (ops != NULL);
-}
-
-static bool ops_names_are_valid(const mybot_platform_descriptor_t *descriptor) {
-    return name_is_valid(descriptor->wifi->name) && name_is_valid(descriptor->kv_store->name) &&
-           name_is_valid(descriptor->key->name) && name_is_valid(descriptor->audio_capture->name) &&
-           name_is_valid(descriptor->audio_playback->name) &&
-           (!descriptor->audio_volume || name_is_valid(descriptor->audio_volume->name)) &&
-           (!descriptor->https || name_is_valid(descriptor->https->name)) &&
-           (!descriptor->lcd || name_is_valid(descriptor->lcd->name)) &&
-           (!descriptor->announce || name_is_valid(descriptor->announce->name)) &&
-           (!descriptor->wake_words || name_is_valid(descriptor->wake_words->name));
-}
-
 static bool descriptor_is_valid(const mybot_platform_descriptor_t *descriptor) {
-    if (!descriptor || descriptor->api_version != MYBOT_PLATFORM_API_VERSION ||
-        descriptor->struct_size < sizeof(*descriptor) || !name_is_valid(descriptor->name) ||
-        (descriptor->capabilities & ~MYBOT_PLATFORM_CAP_ALL) != 0 ||
-        (descriptor->capabilities & MYBOT_PLATFORM_CAP_REQUIRED) != MYBOT_PLATFORM_CAP_REQUIRED) {
-        return false;
-    }
-
-    uint64_t caps = descriptor->capabilities;
-    return pointer_matches(caps, MYBOT_PLATFORM_CAP_WIFI, descriptor->wifi) &&
-           pointer_matches(caps, MYBOT_PLATFORM_CAP_KV_STORE, descriptor->kv_store) &&
-           pointer_matches(caps, MYBOT_PLATFORM_CAP_KEY, descriptor->key) &&
-           pointer_matches(caps, MYBOT_PLATFORM_CAP_AUDIO_CAPTURE, descriptor->audio_capture) &&
-           pointer_matches(caps, MYBOT_PLATFORM_CAP_AUDIO_PLAYBACK, descriptor->audio_playback) &&
-           pointer_matches(caps, MYBOT_PLATFORM_CAP_AUDIO_VOLUME, descriptor->audio_volume) &&
-           pointer_matches(caps, MYBOT_PLATFORM_CAP_HTTPS, descriptor->https) &&
-           pointer_matches(caps, MYBOT_PLATFORM_CAP_LCD, descriptor->lcd) &&
-           pointer_matches(caps, MYBOT_PLATFORM_CAP_ANNOUNCE, descriptor->announce) &&
-           pointer_matches(caps, MYBOT_PLATFORM_CAP_WAKE_WORDS, descriptor->wake_words) &&
-           ops_names_are_valid(descriptor) && wifi_is_valid(descriptor->wifi) &&
+    return descriptor && wifi_is_valid(descriptor->wifi) &&
            kv_store_is_valid(descriptor->kv_store) && key_is_valid(descriptor->key) &&
            audio_capture_is_valid(descriptor->audio_capture) &&
            audio_playback_is_valid(descriptor->audio_playback) &&
@@ -109,16 +66,8 @@ int mybot_platform_register(const mybot_platform_descriptor_t *descriptor) {
     return 0;
 }
 
-uint64_t mybot_platform_get_capabilities(void) {
-    return s_registry.capabilities;
-}
-
-int mybot_platform_validate(uint64_t required_capabilities, uint64_t *missing_capabilities) {
-    uint64_t missing = required_capabilities & ~s_registry.capabilities;
-    if (missing_capabilities) {
-        *missing_capabilities = missing;
-    }
-    return missing == 0 ? 0 : -1;
+bool mybot_platform_registry_is_registered(void) {
+    return s_registered;
 }
 
 #define DEFINE_GETTER(function_name, type, field)                                                  \

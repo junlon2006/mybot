@@ -143,7 +143,6 @@ static void key_stdin_destroy(void *opaque) {
 }
 
 static const mybot_key_ops_t s_key_stdin_ops = {
-    .name = "stdin",
     .init = key_stdin_init,
     .destroy = key_stdin_destroy,
 };

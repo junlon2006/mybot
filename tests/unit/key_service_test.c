@@ -40,7 +40,6 @@ static void on_key(mybot_key_event_t event, void *user_data) {
 int main(void) {
     mybot_key_t key = {0};
     const mybot_key_ops_t fake_ops = {
-        .name = "fake",
         .init = fake_init,
         .destroy = fake_destroy,
     };

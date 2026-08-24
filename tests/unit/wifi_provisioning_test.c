@@ -73,7 +73,6 @@ static void on_event(mybot_wifi_event_t event, void *user_data) {
 int main(void) {
     mybot_wifi_t wifi = {0};
     const mybot_wifi_ops_t fake_ops = {
-        .name = "fake",
         .init = fake_init,
         .destroy = fake_destroy,
     };

@@ -233,7 +233,6 @@ static void alsa_playback_destroy(void *ctx) {
 }
 
 static const mybot_audio_playback_ops_t g_alsa_playback_ops = {
-    .name = "alsa",
     .init = alsa_playback_init,
     .start = alsa_playback_start,
     .write = alsa_playback_write,

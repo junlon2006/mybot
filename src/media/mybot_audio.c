@@ -28,10 +28,6 @@ const mybot_audio_playback_ops_t *mybot_audio_get_playback(const mybot_audio_t *
     return audio ? audio->playback_ops : NULL;
 }
 
-bool mybot_audio_device_volume_is_registered(const mybot_audio_t *audio) {
-    return audio && audio->volume_ops;
-}
-
 bool mybot_audio_device_volume_is_active(const mybot_audio_t *audio) {
     return audio && audio->volume_active;
 }

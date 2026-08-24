@@ -12,7 +12,6 @@
 #include "mybot_app.h"
 #include "mybot_audio_internal.h"
 #include "mybot_device_lifecycle.h"
-#include "mybot_https_internal.h"
 #include "mybot_key_internal.h"
 #include "mybot_kv_store_internal.h"
 #include "mybot_lcd_internal.h"
@@ -82,8 +81,13 @@ static int s_rtc_join_result;
 static mybot_agora_rtc_callbacks_t s_rtc_callbacks;
 static bool s_rtc_initialized;
 static bool s_rtc_joined;
-static uint64_t s_missing_platform_capabilities;
+static bool s_platform_registered;
+static bool s_https_registered;
+static bool s_wake_words_registered;
 static int s_platform_registry_lock_calls;
+
+static const mybot_https_ops_t s_registered_https_ops;
+static const mybot_wake_words_ops_t s_registered_wake_words_ops;
 
 static int s_wifi_init_calls;
 static int s_wifi_deinit_calls;
@@ -289,16 +293,16 @@ static void emit_remote_audio(const int16_t *pcm, size_t len) {
     callback(7, pcm, len, user_data);
 }
 
-bool mybot_https_is_registered(void) {
-    return true;
+bool mybot_platform_registry_is_registered(void) {
+    return s_platform_registered;
 }
 
-int mybot_platform_validate(uint64_t required_capabilities, uint64_t *missing_capabilities) {
-    uint64_t missing = required_capabilities & s_missing_platform_capabilities;
-    if (missing_capabilities) {
-        *missing_capabilities = missing;
-    }
-    return missing == 0 ? 0 : -1;
+const mybot_https_ops_t *mybot_platform_registry_https(void) {
+    return s_https_registered ? &s_registered_https_ops : NULL;
+}
+
+const mybot_wake_words_ops_t *mybot_platform_registry_wake_words(void) {
+    return s_wake_words_registered ? &s_registered_wake_words_ops : NULL;
 }
 
 void mybot_platform_registry_lock(void) {
@@ -511,7 +515,6 @@ static void playback_destroy(void *ctx) {
 }
 
 static const mybot_audio_capture_ops_t s_capture_ops = {
-    .name = "test-capture",
     .init = capture_init,
     .start = capture_start,
     .read = capture_read,
@@ -520,7 +523,6 @@ static const mybot_audio_capture_ops_t s_capture_ops = {
 };
 
 static const mybot_audio_playback_ops_t s_playback_ops = {
-    .name = "test-playback",
     .init = playback_init,
     .start = playback_start,
     .write = playback_write,
@@ -589,10 +591,6 @@ void mybot_audio_apply_media_volume(const mybot_audio_t *audio, int16_t *pcm, in
     assert(audio != NULL);
     (void)pcm;
     (void)samples;
-}
-
-bool mybot_wake_words_is_registered(void) {
-    return true;
 }
 
 int mybot_wake_words_init(mybot_wake_words_t *wake_words, int sample_rate, int channels,
@@ -917,6 +915,8 @@ int main(void) {
     snprintf(config.device_id, sizeof(config.device_id), "%s", "device-1");
     snprintf(config.firmware_ver, sizeof(config.firmware_ver), "%s", "test-fw");
     snprintf(config.hw_model, sizeof(config.hw_model), "%s", "test-hw");
+    s_https_registered = true;
+    s_wake_words_registered = true;
 
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
     assert(mybot_start(NULL) < 0);
@@ -942,14 +942,31 @@ int main(void) {
     snprintf(invalid.server_base, sizeof(invalid.server_base), "%s", "ftp://server");
     assert(mybot_start(&invalid) < 0);
 
-    s_missing_platform_capabilities = MYBOT_PLATFORM_CAP_WIFI;
+    s_platform_registered = false;
     assert(mybot_start(&config) < 0);
     assert(!mybot_is_running());
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
     assert(read_counter(&s_wifi_init_calls) == 0);
     assert(s_platform_registry_lock_calls == 0);
 
-    s_missing_platform_capabilities = 0;
+    s_platform_registered = true;
+#if MYBOT_WAKE_WORDS
+    s_wake_words_registered = false;
+    assert(mybot_start(&config) < 0);
+    assert(!mybot_is_running());
+    assert(read_counter(&s_wifi_init_calls) == 0);
+    assert(s_platform_registry_lock_calls == 0);
+    s_wake_words_registered = true;
+#endif
+#if MYBOT_ENABLE_HTTPS
+    s_https_registered = false;
+    assert(mybot_start(&config) < 0);
+    assert(!mybot_is_running());
+    assert(read_counter(&s_wifi_init_calls) == 0);
+    assert(s_platform_registry_lock_calls == 0);
+    s_https_registered = true;
+#endif
+
     assert(mybot_start(&config) == 0);
     assert(s_platform_registry_lock_calls == 1);
     assert(mybot_is_running());
