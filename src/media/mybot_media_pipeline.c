@@ -322,17 +322,11 @@ fail:
     return -1;
 }
 
-void mybot_media_pipeline_request_stop(mybot_media_pipeline_t *pipeline) {
-    if (pipeline) {
-        aosl_atomic_set(&pipeline->running, false);
-    }
-}
-
 void mybot_media_pipeline_stop(mybot_media_pipeline_t *pipeline) {
     if (!pipeline) {
         return;
     }
-    mybot_media_pipeline_request_stop(pipeline);
+    aosl_atomic_set(&pipeline->running, false);
 
     const mybot_audio_capture_ops_t *cap_ops = pipeline->audio.capture_ops;
     const mybot_audio_playback_ops_t *pb_ops = pipeline->audio.playback_ops;
