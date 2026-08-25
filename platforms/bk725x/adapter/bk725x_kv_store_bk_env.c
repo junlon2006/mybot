@@ -11,7 +11,6 @@
 
 #define TAG "mybot_kv"
 
-static bool s_kv_store_registered;
 static uint8_t s_kv_store_context;
 
 static bool context_is_valid(const void *ctx) {
@@ -68,7 +67,6 @@ static void kv_store_destroy(void *opaque) {
 }
 
 static const mybot_kv_store_ops_t s_kv_store_ops = {
-    .name = "bk725x-env",
     .init = kv_store_init,
     .get = kv_store_get,
     .set = kv_store_set,
@@ -76,16 +74,6 @@ static const mybot_kv_store_ops_t s_kv_store_ops = {
     .destroy = kv_store_destroy,
 };
 
-int bk725x_kv_store_platform_register_bk_env(void) {
-    if (s_kv_store_registered) {
-        return 0;
-    }
-    if (mybot_kv_store_register(&s_kv_store_ops) < 0) {
-        MYBOT_LOGE(TAG, "registration failed");
-        return -1;
-    }
-
-    s_kv_store_registered = true;
-    MYBOT_LOGI(TAG, "backend ready: %s", s_kv_store_ops.name);
-    return 0;
+const mybot_kv_store_ops_t *bk725x_kv_store_platform_ops_bk_env(void) {
+    return &s_kv_store_ops;
 }

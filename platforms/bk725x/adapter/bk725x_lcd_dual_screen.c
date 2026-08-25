@@ -83,18 +83,11 @@ static void lcd_dual_screen_destroy(void *ctx) {
 }
 
 static const mybot_lcd_ops_t s_lcd_ops = {
-    .name = "bk725x-dual-gc9d01",
     .init = lcd_dual_screen_init,
     .render = lcd_dual_screen_render,
     .destroy = lcd_dual_screen_destroy,
 };
 
-int bk725x_lcd_platform_register_dual_screen(void) {
-    int result = mybot_lcd_register(&s_lcd_ops);
-    if (result < 0) {
-        MYBOT_LOGE(TAG, "registration failed");
-    } else {
-        MYBOT_LOGI(TAG, "backend ready: %s", s_lcd_ops.name);
-    }
-    return result;
+const mybot_lcd_ops_t *bk725x_lcd_platform_ops_dual_screen(void) {
+    return &s_lcd_ops;
 }

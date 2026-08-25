@@ -20,6 +20,8 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- Sync the complete BK725x platform adaptation with the BK7258 reference project, including
+  descriptor-based registration and embedded TLS root verification.
 - Restrict the SDK-internal LCD facade to the application control owner and remove its redundant
   render mutex.
 - **Breaking:** remove `mybot_request_exit()`; host applications stop directly after their own exit

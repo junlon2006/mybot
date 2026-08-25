@@ -7,11 +7,7 @@
 
 #include "mybot_platform_log.h"
 
-#include <stdbool.h>
-
 #define TAG "mybot_pb"
-
-static bool s_playback_registered;
 
 /* ---- Wrappers that redirect to the shared playback pipeline when active.
  * When the controller starts the shared pipeline early (for the provisioning
@@ -65,7 +61,6 @@ static void adapter_playback_destroy(void *ctx) {
 }
 
 static const mybot_audio_playback_ops_t s_bk725x_playback_ops = {
-    .name = "bk725x-onboard-speaker",
     .init = adapter_playback_init,
     .start = adapter_playback_start,
     .write = adapter_playback_write,
@@ -73,18 +68,6 @@ static const mybot_audio_playback_ops_t s_bk725x_playback_ops = {
     .destroy = adapter_playback_destroy,
 };
 
-int bk725x_audio_platform_register_playback(void) {
-    if (s_playback_registered) {
-        return 0;
-    }
-
-    int result = mybot_audio_register_playback(&s_bk725x_playback_ops);
-    if (result < 0) {
-        MYBOT_LOGE(TAG, "registration failed");
-        return result;
-    }
-
-    s_playback_registered = true;
-    MYBOT_LOGI(TAG, "registered backend=%s", s_bk725x_playback_ops.name);
-    return 0;
+const mybot_audio_playback_ops_t *bk725x_audio_platform_ops_playback(void) {
+    return &s_bk725x_playback_ops;
 }
