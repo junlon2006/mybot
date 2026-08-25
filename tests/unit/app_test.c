@@ -89,10 +89,10 @@ static bool s_rtc_joined;
 static bool s_platform_registered;
 static bool s_https_registered;
 static bool s_wake_words_registered;
-static int s_platform_registry_lock_calls;
 
 static const mybot_https_ops_t s_registered_https_ops;
 static const mybot_wake_words_ops_t s_registered_wake_words_ops;
+static mybot_platform_descriptor_t s_registry_view;
 
 static int s_wifi_init_calls;
 static int s_wifi_deinit_calls;
@@ -376,16 +376,10 @@ bool mybot_platform_registry_is_registered(void) {
     return s_platform_registered;
 }
 
-const mybot_https_ops_t *mybot_platform_registry_https(void) {
-    return s_https_registered ? &s_registered_https_ops : NULL;
-}
-
-const mybot_wake_words_ops_t *mybot_platform_registry_wake_words(void) {
-    return s_wake_words_registered ? &s_registered_wake_words_ops : NULL;
-}
-
-void mybot_platform_registry_lock(void) {
-    s_platform_registry_lock_calls++;
+const mybot_platform_descriptor_t *mybot_platform_registry_get(void) {
+    s_registry_view.https = s_https_registered ? &s_registered_https_ops : NULL;
+    s_registry_view.wake_words = s_wake_words_registered ? &s_registered_wake_words_ops : NULL;
+    return &s_registry_view;
 }
 
 bool mybot_lcd_is_registered(void) {
@@ -622,16 +616,8 @@ static const mybot_audio_playback_ops_t s_playback_ops = {
 
 void mybot_audio_context_init(mybot_audio_t *audio) {
     memset(audio, 0, sizeof(*audio));
-}
-
-const mybot_audio_capture_ops_t *mybot_audio_get_capture(const mybot_audio_t *audio) {
-    assert(audio != NULL);
-    return &s_capture_ops;
-}
-
-const mybot_audio_playback_ops_t *mybot_audio_get_playback(const mybot_audio_t *audio) {
-    assert(audio != NULL);
-    return &s_playback_ops;
+    audio->capture_ops = &s_capture_ops;
+    audio->playback_ops = &s_playback_ops;
 }
 
 int mybot_audio_device_volume_init(mybot_audio_t *audio) {
@@ -899,14 +885,6 @@ void mybot_device_lifecycle_shutdown(mybot_device_lifecycle_t *lifecycle) {
     }
 }
 
-mybot_device_state_t mybot_device_lifecycle_get_state(const mybot_device_lifecycle_t *lifecycle) {
-    assert(lifecycle == s_device_lifecycle);
-    mock_lock();
-    mybot_device_state_t state = s_device_state;
-    mock_unlock();
-    return state;
-}
-
 void mybot_device_lifecycle_request_pair(mybot_device_lifecycle_t *lifecycle) {
     assert(lifecycle == s_device_lifecycle);
     mock_lock();
@@ -1122,7 +1100,6 @@ int main(void) {
     assert(!mybot_is_running());
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
     assert(read_counter(&s_wifi_init_calls) == 0);
-    assert(s_platform_registry_lock_calls == 0);
 
     s_platform_registered = true;
 #if MYBOT_WAKE_WORDS
@@ -1130,7 +1107,6 @@ int main(void) {
     assert(mybot_start(&config) < 0);
     assert(!mybot_is_running());
     assert(read_counter(&s_wifi_init_calls) == 0);
-    assert(s_platform_registry_lock_calls == 0);
     s_wake_words_registered = true;
 #endif
 #if MYBOT_ENABLE_HTTPS
@@ -1138,13 +1114,11 @@ int main(void) {
     assert(mybot_start(&config) < 0);
     assert(!mybot_is_running());
     assert(read_counter(&s_wifi_init_calls) == 0);
-    assert(s_platform_registry_lock_calls == 0);
     s_https_registered = true;
 #endif
 
     begin_control_thread_tracking();
     assert(mybot_start(&config) == 0);
-    assert(s_platform_registry_lock_calls == 1);
     assert(mybot_is_running());
     assert(mybot_get_state() == MYBOT_STATE_WIFI_PROVISIONING);
     assert(read_counter(&s_wifi_init_calls) == 1);

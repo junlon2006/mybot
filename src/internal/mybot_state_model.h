@@ -34,10 +34,8 @@ bool mybot_state_model_set_device_state(mybot_state_model_t *model,
                                         mybot_device_state_t device_state);
 bool mybot_state_model_fail(mybot_state_model_t *model);
 void mybot_state_model_begin_stop(mybot_state_model_t *model);
-void mybot_state_model_stopped(mybot_state_model_t *model);
 
 mybot_state_view_t mybot_state_model_get_view(const mybot_state_model_t *model);
-mybot_state_t mybot_state_model_get(const mybot_state_model_t *model);
 
 #ifdef __cplusplus
 }

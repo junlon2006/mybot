@@ -291,20 +291,19 @@ int main(void) {
     descriptor = complete_descriptor();
     assert(mybot_platform_register(&descriptor) == 0);
     assert(mybot_platform_registry_is_registered());
-    assert(mybot_platform_registry_wifi() == &s_wifi);
-    assert(mybot_platform_registry_kv_store() == &s_kv);
-    assert(mybot_platform_registry_key() == &s_key);
-    assert(mybot_platform_registry_audio_capture() == &s_capture);
-    assert(mybot_platform_registry_audio_playback() == &s_playback);
-    assert(mybot_platform_registry_audio_volume() == NULL);
-    assert(mybot_platform_registry_https() == NULL);
-    assert(mybot_platform_registry_lcd() == NULL);
-    assert(mybot_platform_registry_announce() == NULL);
-    assert(mybot_platform_registry_wake_words() == NULL);
+    const mybot_platform_descriptor_t *registered = mybot_platform_registry_get();
+    assert(registered->wifi == &s_wifi);
+    assert(registered->kv_store == &s_kv);
+    assert(registered->key == &s_key);
+    assert(registered->audio_capture == &s_capture);
+    assert(registered->audio_playback == &s_playback);
+    assert(registered->audio_volume == NULL);
+    assert(registered->https == NULL);
+    assert(registered->lcd == NULL);
+    assert(registered->announce == NULL);
+    assert(registered->wake_words == NULL);
 
     /* Registration is process-wide and succeeds only once. */
-    assert(mybot_platform_register(&descriptor) < 0);
-    mybot_platform_registry_lock();
     assert(mybot_platform_register(&descriptor) < 0);
     return 0;
 }

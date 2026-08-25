@@ -8,7 +8,7 @@ This project follows Semantic Versioning.
 
 - Expand deterministic unit coverage for JSON allocation failures, HTTP and device-service
   protocol boundaries, device lifecycle recovery, RTC errors, and application cleanup.
-- Add one-shot `mybot_platform_descriptor_t` registration with complete atomic validation and
+- Add one-shot `mybot_platform_descriptor_t` registration with complete validation and
   synchronous startup checks for configuration-required ops.
 - Add the BK725x platform port under `platforms/bk725x` and synchronize the complete BK7258
   reference project under `examples/bk725x`, with the full firmware implementation maintained at
@@ -26,11 +26,18 @@ This project follows Semantic Versioning.
 - **Breaking:** remove legacy per-capability registration; the descriptor's version, capability, and
   name fields; and the name field from every ops table. Platform integrations must submit one complete
   descriptor whose non-NULL ops pointers are the sole declarations of supported platform functions.
+- **Breaking:** narrow the public error-code header to the only SDK-consumed `MYBOT_ERR_NOT_FOUND`
+  result; other APIs continue to use `0` for success and negative values for failure.
 - Remove the internal conversation forwarding layer; application orchestration now calls the
   process-wide Agora RTC module directly without copying RTC credentials into a second context.
 - Consolidate application control into one `control_mpq` owner for state, device lifecycle, RTC
   control, UI and volume actions, and resource startup and shutdown. Control callbacks only publish
   short events or atomic mailboxes, while PCM remains on the direct real-time data path.
+- Remove the unused platform-registry startup lock and the unconsumed `MYBOT_SHOW_TRANSCRIPT`
+  configuration surface.
+- Trim internal dead surface: unused lifecycle/RTC response fields, empty RTC stats callback,
+  duplicate platform/audio/wake-word accessors, redundant state-model CAS retries, and unused HTTP
+  and JSON convenience APIs.
 - Align the English and Chinese README lifecycle and architecture guidance, document the descriptor
   registration contract in the public headers, match local format commands to CI scope, and refresh
   stale BK725x ownership and generator comments.
@@ -58,6 +65,8 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
+- Use a unique temporary directory in the Linux announcement test so stale files or PID reuse do not
+  make repeated CI runs fail during setup.
 - Make the application shutdown test wait for the playback worker to apply a pending announcement
   buffer clear before using a downlink frame to block playback I/O.
 - Install the project `LICENSE` and `THIRD_PARTY_NOTICES.md` with the CMake package alongside the

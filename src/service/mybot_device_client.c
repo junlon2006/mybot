@@ -162,9 +162,6 @@ static char *build_conversation_start_body(void) {
 #endif
         goto done;
     }
-    if (mybot_json_add_bool(features, "show_transcript", MYBOT_SHOW_TRANSCRIPT != 0) < 0) {
-        goto done;
-    }
     add_result = mybot_json_add_item(root, "features", features);
     if (add_result < 0) {
         goto done;
@@ -259,7 +256,7 @@ int mybot_device_client_create_pair_code(const char *base_url, const char *devic
     mybot_http_client_response_t raw;
     memset(&raw, 0, sizeof(raw));
 
-    if (mybot_http_client_post(url, "application/json", body, &raw) < 0) {
+    if (mybot_http_client_post_ex(url, "application/json", body, NULL, &raw) < 0) {
         mybot_json_free_string(body);
         AOSL_LOG_ERR("POST %s failed (http)", url);
         return -1;
@@ -289,7 +286,6 @@ int mybot_device_client_create_pair_code(const char *base_url, const char *devic
         return -1;
     }
 
-    copy_json_string(data, "device_id", resp->device_id, sizeof(resp->device_id));
     int code_result = copy_required_json_string(data, "code", resp->code, sizeof(resp->code));
     int pair_token_result =
         copy_required_json_string(data, "pair_token", resp->pair_token, sizeof(resp->pair_token));
@@ -299,11 +295,9 @@ int mybot_device_client_create_pair_code(const char *base_url, const char *devic
         mybot_http_client_response_free(&raw);
         return -1;
     }
-    copy_json_integer(data, "expires_in_seconds", &resp->expires_in_seconds);
     copy_json_integer(data, "poll_after_seconds", &resp->poll_after_seconds);
 
-    AOSL_LOG_NTC("pair_code: device_id=%s code=%s expires_in=%ds poll=%ds", resp->device_id,
-                 resp->code, resp->expires_in_seconds, resp->poll_after_seconds);
+    AOSL_LOG_NTC("pair_code: code=%s poll=%ds", resp->code, resp->poll_after_seconds);
 
     mybot_json_delete(root);
     mybot_http_client_response_free(&raw);
@@ -527,8 +521,6 @@ int mybot_device_client_renew_rtc_token(const char *base_url, const char *device
         mybot_http_client_response_free(&raw);
         return -1;
     }
-    copy_json_string(rtc, "app_id", resp->rtc_app_id, sizeof(resp->rtc_app_id));
-
     mybot_json_delete(root);
     mybot_http_client_response_free(&raw);
     return 0;

@@ -51,7 +51,7 @@ typedef struct {
 } mybot_platform_descriptor_t;
 
 /**
- * Atomically validate and register one complete platform descriptor.
+ * Validate and register one complete platform descriptor as a single commit.
  *
  * The call either commits the complete descriptor or leaves the registry unchanged.
  * One successful registration is allowed and must happen before mybot_start().
@@ -59,7 +59,7 @@ typedef struct {
  * @param descriptor complete descriptor satisfying mybot_platform_descriptor_t's operations and
  *                   lifetime contract
  * @return 0 on success; -1 if the descriptor is NULL or invalid, any registration
- *         already succeeded, or platform registration has been locked by startup
+ *         already succeeded
  */
 MYBOT_API int mybot_platform_register(const mybot_platform_descriptor_t *descriptor);
 

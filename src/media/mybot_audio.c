@@ -13,19 +13,12 @@ void mybot_audio_context_init(mybot_audio_t *audio) {
         return;
     }
     memset(audio, 0, sizeof(*audio));
-    audio->capture_ops = mybot_platform_registry_audio_capture();
-    audio->playback_ops = mybot_platform_registry_audio_playback();
-    audio->volume_ops = mybot_platform_registry_audio_volume();
+    const mybot_platform_descriptor_t *platform = mybot_platform_registry_get();
+    audio->capture_ops = platform->audio_capture;
+    audio->playback_ops = platform->audio_playback;
+    audio->volume_ops = platform->audio_volume;
+    audio->device_volume = MYBOT_AUDIO_VOLUME_DEFAULT;
     aosl_atomic_set(&audio->media_volume, MYBOT_AUDIO_VOLUME_DEFAULT);
-    aosl_atomic_set(&audio->device_volume, MYBOT_AUDIO_VOLUME_DEFAULT);
-}
-
-const mybot_audio_capture_ops_t *mybot_audio_get_capture(const mybot_audio_t *audio) {
-    return audio ? audio->capture_ops : NULL;
-}
-
-const mybot_audio_playback_ops_t *mybot_audio_get_playback(const mybot_audio_t *audio) {
-    return audio ? audio->playback_ops : NULL;
 }
 
 bool mybot_audio_device_volume_is_active(const mybot_audio_t *audio) {
@@ -45,7 +38,7 @@ int mybot_audio_device_volume_init(mybot_audio_t *audio) {
     if (audio->volume_ops->get_volume) {
         int volume = 0;
         if (audio->volume_ops->get_volume(audio->volume_ctx, &volume) == 0) {
-            aosl_atomic_set(&audio->device_volume, volume);
+            audio->device_volume = volume;
         }
     }
     return 0;
@@ -68,7 +61,7 @@ int mybot_audio_device_set_volume(mybot_audio_t *audio, int volume) {
     if (audio->volume_ops->set_volume(audio->volume_ctx, volume) < 0) {
         return -1;
     }
-    aosl_atomic_set(&audio->device_volume, volume);
+    audio->device_volume = volume;
     return 0;
 }
 
@@ -79,7 +72,7 @@ int mybot_audio_device_get_volume(mybot_audio_t *audio, int *volume) {
     if (audio->volume_ops->get_volume) {
         return audio->volume_ops->get_volume(audio->volume_ctx, volume);
     }
-    *volume = (int)aosl_atomic_read(&audio->device_volume);
+    *volume = audio->device_volume;
     return 0;
 }
 

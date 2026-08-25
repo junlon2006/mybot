@@ -270,6 +270,7 @@ int main(void) {
 
     assert(mybot_agora_rtc_init("app-1", &callbacks) == 0);
     assert(s_init_calls == 1);
+    assert(s_handler.on_rtc_stats == NULL);
     assert(mybot_agora_rtc_init("app-1", NULL) == 0);
     assert(mybot_agora_rtc_init("app-1", &callbacks) == 0);
     assert(s_init_calls == 1);
@@ -322,9 +323,6 @@ int main(void) {
     s_handler.on_user_joined_with_user_account(first_conn, &user, 0);
     s_handler.on_user_offline_with_user_account(first_conn, NULL, 0);
     s_handler.on_user_offline_with_user_account(first_conn, &user, 0);
-    rtc_stats_t stats = {0};
-    s_handler.on_rtc_stats(first_conn, stats);
-
     s_handler.on_error(first_conn, -1, NULL);
     assert(s_last_state == MYBOT_RTC_STATE_ERROR);
     s_handler.on_join_channel_success(first_conn, 42, 0);

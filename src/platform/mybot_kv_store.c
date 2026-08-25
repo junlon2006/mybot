@@ -11,7 +11,7 @@ int mybot_kv_store_init(mybot_kv_store_t *store) {
     if (store->ctx) {
         return 0;
     }
-    store->ops = mybot_platform_registry_kv_store();
+    store->ops = mybot_platform_registry_get()->kv_store;
     if (!store->ops) {
         return -1;
     }

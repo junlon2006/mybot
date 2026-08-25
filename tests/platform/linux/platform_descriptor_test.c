@@ -10,19 +10,20 @@
 int main(void) {
     assert(linux_platform_register() == 0);
     assert(mybot_platform_registry_is_registered());
-    assert(mybot_platform_registry_wifi() == linux_wifi_platform_host_network_ops());
-    assert(mybot_platform_registry_kv_store() == linux_kv_store_platform_file_ops());
-    assert(mybot_platform_registry_key() == linux_key_platform_stdin_ops());
-    assert(mybot_platform_registry_audio_capture() == linux_audio_platform_alsa_capture_ops());
-    assert(mybot_platform_registry_audio_playback() == linux_audio_platform_alsa_playback_ops());
-    assert(mybot_platform_registry_audio_volume() == linux_audio_platform_alsa_volume_ops());
-    assert(mybot_platform_registry_lcd() == linux_lcd_platform_console_ops());
-    assert(mybot_platform_registry_announce() == linux_announce_platform_file_ops());
-    assert(mybot_platform_registry_wake_words() == NULL);
+    const mybot_platform_descriptor_t *platform = mybot_platform_registry_get();
+    assert(platform->wifi == linux_wifi_platform_host_network_ops());
+    assert(platform->kv_store == linux_kv_store_platform_file_ops());
+    assert(platform->key == linux_key_platform_stdin_ops());
+    assert(platform->audio_capture == linux_audio_platform_alsa_capture_ops());
+    assert(platform->audio_playback == linux_audio_platform_alsa_playback_ops());
+    assert(platform->audio_volume == linux_audio_platform_alsa_volume_ops());
+    assert(platform->lcd == linux_lcd_platform_console_ops());
+    assert(platform->announce == linux_announce_platform_file_ops());
+    assert(platform->wake_words == NULL);
 #if MYBOT_LINUX_HTTPS_OPENSSL
-    assert(mybot_platform_registry_https() == linux_https_platform_openssl_ops());
+    assert(platform->https == linux_https_platform_openssl_ops());
 #else
-    assert(mybot_platform_registry_https() == NULL);
+    assert(platform->https == NULL);
 #endif
     assert(linux_platform_register() < 0);
     return 0;

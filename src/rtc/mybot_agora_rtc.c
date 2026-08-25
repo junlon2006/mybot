@@ -198,11 +198,6 @@ static void on_token_will_expire(connection_id_t conn_id, const char *token) {
     rtc_unlock();
 }
 
-static void on_rtc_stats(connection_id_t conn_id, rtc_stats_t stats) {
-    (void)conn_id;
-    (void)stats;
-}
-
 static void clear_runtime_state(void) {
     s_rtc.conn_id = CONNECTION_ID_INVALID;
     memset(&s_rtc.callbacks, 0, sizeof(s_rtc.callbacks));
@@ -261,7 +256,6 @@ int mybot_agora_rtc_init(const char *app_id, const mybot_agora_rtc_callbacks_t *
     handler.on_error = on_error;
     handler.on_license_validation_failure = on_license_failed;
     handler.on_token_privilege_will_expire = on_token_will_expire;
-    handler.on_rtc_stats = on_rtc_stats;
 
     rtc_service_option_t options;
     memset(&options, 0, sizeof(options));

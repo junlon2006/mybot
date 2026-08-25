@@ -87,6 +87,11 @@ int main(void) {
         .get_volume = volume_get,
         .destroy = volume_destroy,
     };
+    const mybot_audio_volume_ops_t volume_without_get = {
+        .init = volume_init,
+        .set_volume = volume_set,
+        .destroy = volume_destroy,
+    };
 
     mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
     descriptor.audio_capture = &capture;
@@ -95,8 +100,8 @@ int main(void) {
     assert(mybot_platform_register(&descriptor) == 0);
 
     mybot_audio_context_init(&audio);
-    assert(mybot_audio_get_capture(&audio) == &capture);
-    assert(mybot_audio_get_playback(&audio) == &playback);
+    assert(audio.capture_ops == &capture);
+    assert(audio.playback_ops == &playback);
 
     /* Device volume implementation registration and lifecycle. */
     assert(!mybot_audio_device_volume_is_active(&audio));
@@ -126,6 +131,14 @@ int main(void) {
     assert(v == 60); /* implementation state survives deinit in this fake implementation */
     mybot_audio_device_volume_deinit(&audio);
     assert(!mybot_audio_device_volume_is_active(&audio));
+
+    /* A platform without get_volume uses the SDK-tracked device value. */
+    audio.volume_ops = &volume_without_get;
+    assert(mybot_audio_device_volume_init(&audio) == 0);
+    assert(mybot_audio_device_set_volume(&audio, 70) == 0);
+    assert(mybot_audio_device_get_volume(&audio, &v) == 0);
+    assert(v == 70);
+    mybot_audio_device_volume_deinit(&audio);
 
     /* Media volume defaults to unity and skips processing. */
     assert(mybot_audio_get_media_volume(&audio) == MYBOT_AUDIO_VOLUME_DEFAULT);

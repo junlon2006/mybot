@@ -40,13 +40,6 @@ typedef enum {
 static const char *s_name[] = {"unprovisioned", "pairing", "awaiting_claim", "runtime",
                                "in_conversation"};
 
-const char *mybot_device_lifecycle_state_name(mybot_device_state_t s) {
-    if ((size_t)s >= sizeof(s_name) / sizeof(s_name[0])) {
-        return "?";
-    }
-    return s_name[s];
-}
-
 static mybot_device_state_t current_state(const mybot_device_lifecycle_t *lifecycle) {
     return (mybot_device_state_t)aosl_atomic_read(&lifecycle->state);
 }
@@ -140,17 +133,6 @@ static void restart_pairing_after_auth_rejection(mybot_device_lifecycle_t *lifec
     clear_device_auth(lifecycle);
     set_state(lifecycle, MYBOT_DEVICE_STATE_UNPROVISIONED);
     lifecycle->pairing_requested = true;
-}
-
-const char *mybot_device_lifecycle_get_token(const mybot_device_lifecycle_t *lifecycle) {
-    return (current_state(lifecycle) == MYBOT_DEVICE_STATE_RUNTIME ||
-            current_state(lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION)
-               ? lifecycle->device_token
-               : NULL;
-}
-
-mybot_device_state_t mybot_device_lifecycle_get_state(const mybot_device_lifecycle_t *lifecycle) {
-    return current_state(lifecycle);
 }
 
 /* ----------------------------------------------------------

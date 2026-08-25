@@ -48,14 +48,6 @@
 #error "MYBOT_FAST_SEND_MULTIPLIER must be from 1 through 5"
 #endif
 
-#ifndef MYBOT_SHOW_TRANSCRIPT
-#define MYBOT_SHOW_TRANSCRIPT 0 /* request real-time transcripts from the service */
-#endif
-
-#if MYBOT_SHOW_TRANSCRIPT != 0 && MYBOT_SHOW_TRANSCRIPT != 1
-#error "MYBOT_SHOW_TRANSCRIPT must be 0 or 1"
-#endif
-
 #ifndef MYBOT_ENABLE_HTTPS
 #define MYBOT_ENABLE_HTTPS 1 /* accept HTTPS using a registered platform TLS transport */
 #endif

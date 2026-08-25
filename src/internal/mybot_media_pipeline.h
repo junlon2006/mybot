@@ -46,7 +46,6 @@ typedef struct {
     mybot_announce_t announce;
 #if MYBOT_WAKE_WORDS
     mybot_wake_words_t wake_words;
-    bool wake_words_active;
     unsigned int wake_words_process_error_count;
 #endif
 

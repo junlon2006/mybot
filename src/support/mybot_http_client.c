@@ -827,15 +827,6 @@ static int http_request(const char *method, const char *url, const char *content
  * Public API
  * ---------------------------------------------------------- */
 
-int mybot_http_client_get(const char *url, mybot_http_client_response_t *resp) {
-    return mybot_http_client_get_ex(url, NULL, resp);
-}
-
-int mybot_http_client_post(const char *url, const char *content_type, const char *body,
-                           mybot_http_client_response_t *resp) {
-    return mybot_http_client_post_ex(url, content_type, body, NULL, resp);
-}
-
 int mybot_http_client_get_ex(const char *url, const char *extra_headers,
                              mybot_http_client_response_t *resp) {
     if (!url || !resp) {

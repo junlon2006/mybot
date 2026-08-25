@@ -16,7 +16,7 @@ int mybot_announce_init(mybot_announce_t *announce) {
     if (announce && announce->active) {
         return 0;
     }
-    announce->ops = mybot_platform_registry_announce();
+    announce->ops = mybot_platform_registry_get()->announce;
     if (!announce->ops) {
         return 0; /* optional feature, not registered */
     }

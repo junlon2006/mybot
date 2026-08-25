@@ -31,7 +31,7 @@ static void capture_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc,
         return;
     }
 
-    const mybot_audio_capture_ops_t *ops = mybot_audio_get_capture(&pipeline->audio);
+    const mybot_audio_capture_ops_t *ops = pipeline->audio.capture_ops;
     int frames = ops->read(pipeline->cap_ctx, pipeline->cap_frame, MYBOT_MEDIA_FRAME_SAMPLES);
     if (frames <= 0) {
         return;
@@ -43,7 +43,7 @@ static void capture_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc,
     }
 
 #if MYBOT_WAKE_WORDS
-    if (pipeline->wake_words_active && aosl_atomic_read(&pipeline->wake_words_enabled)) {
+    if (pipeline->wake_words.active && aosl_atomic_read(&pipeline->wake_words_enabled)) {
         if (mybot_wake_words_process(&pipeline->wake_words, pipeline->cap_frame, frames) < 0) {
             pipeline->wake_words_process_error_count++;
             if (pipeline->wake_words_process_error_count == 1 ||
@@ -103,7 +103,7 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
         pipeline->pb_pending_frames = 0;
     }
 
-    const mybot_audio_playback_ops_t *ops = mybot_audio_get_playback(&pipeline->audio);
+    const mybot_audio_playback_ops_t *ops = pipeline->audio.playback_ops;
     while (mybot_announce_is_active(&pipeline->announce) &&
            mybot_ringbuf_get_data_size(pipeline->pb_ringbuf) < MEDIA_ANNOUNCE_TARGET_BYTES &&
            mybot_ringbuf_get_free_size(pipeline->pb_ringbuf) >= MYBOT_MEDIA_FRAME_BYTES) {
@@ -232,15 +232,6 @@ static void send_worker_fini(void *arg) {
     }
 }
 
-#if MYBOT_WAKE_WORDS
-static void on_wake_word(const char *wake_word, void *user_data) {
-    mybot_media_pipeline_t *pipeline = user_data;
-    if (pipeline->cbs.on_wake_word) {
-        pipeline->cbs.on_wake_word(wake_word, pipeline->cbs.user_data);
-    }
-}
-#endif
-
 static void init_handles(mybot_media_pipeline_t *pipeline) {
     pipeline->cap_mpq = AOSL_MPQ_INVALID;
     pipeline->cap_timer = AOSL_MPQ_TIMER_INVALID;
@@ -262,8 +253,8 @@ int mybot_media_pipeline_start(mybot_media_pipeline_t *pipeline,
     mybot_audio_context_init(&pipeline->audio);
     aosl_atomic_set(&pipeline->running, true);
 
-    const mybot_audio_capture_ops_t *cap_ops = mybot_audio_get_capture(&pipeline->audio);
-    const mybot_audio_playback_ops_t *pb_ops = mybot_audio_get_playback(&pipeline->audio);
+    const mybot_audio_capture_ops_t *cap_ops = pipeline->audio.capture_ops;
+    const mybot_audio_playback_ops_t *pb_ops = pipeline->audio.playback_ops;
     if (!cap_ops || !pb_ops) {
         AOSL_LOG_ERR("no audio platform registered");
         goto fail;
@@ -285,11 +276,11 @@ int mybot_media_pipeline_start(mybot_media_pipeline_t *pipeline,
 
 #if MYBOT_WAKE_WORDS
     if (mybot_wake_words_init(&pipeline->wake_words, MYBOT_MEDIA_SAMPLE_RATE, MYBOT_MEDIA_CHANNELS,
-                              MYBOT_MEDIA_BITS_PER_SAMPLE, on_wake_word, pipeline) < 0) {
+                              MYBOT_MEDIA_BITS_PER_SAMPLE, callbacks->on_wake_word,
+                              callbacks->user_data) < 0) {
         AOSL_LOG_ERR("wake words enabled but implementation initialization failed");
         goto fail;
     }
-    pipeline->wake_words_active = true;
 #endif
 
     pipeline->cap_ringbuf = mybot_ringbuf_create(MEDIA_RINGBUF_SIZE);
@@ -343,8 +334,8 @@ void mybot_media_pipeline_stop(mybot_media_pipeline_t *pipeline) {
     }
     mybot_media_pipeline_request_stop(pipeline);
 
-    const mybot_audio_capture_ops_t *cap_ops = mybot_audio_get_capture(&pipeline->audio);
-    const mybot_audio_playback_ops_t *pb_ops = mybot_audio_get_playback(&pipeline->audio);
+    const mybot_audio_capture_ops_t *cap_ops = pipeline->audio.capture_ops;
+    const mybot_audio_playback_ops_t *pb_ops = pipeline->audio.playback_ops;
 
     /* Interrupt both device directions before waiting for any worker. A platform read/write may
      * be blocked inside its worker and relies on stop() being called from this shutdown thread. */
@@ -372,10 +363,7 @@ void mybot_media_pipeline_stop(mybot_media_pipeline_t *pipeline) {
 
     mybot_announce_deinit(&pipeline->announce);
 #if MYBOT_WAKE_WORDS
-    if (pipeline->wake_words_active) {
-        mybot_wake_words_deinit(&pipeline->wake_words);
-        pipeline->wake_words_active = false;
-    }
+    mybot_wake_words_deinit(&pipeline->wake_words);
 #endif
 
     if (pipeline->cap_ctx && cap_ops) {

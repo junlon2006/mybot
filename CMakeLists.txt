@@ -57,7 +57,6 @@ option(MYBOT_WAKE_WORDS "Enable the platform local-ASR wake-word implementation"
 option(MYBOT_AI_QOS "Enable Agora AI-driven QoS optimization" ON)
 set(MYBOT_FAST_SEND_MULTIPLIER "3" CACHE STRING "Agora fast-send multiplier: 1 through 5")
 set_property(CACHE MYBOT_FAST_SEND_MULTIPLIER PROPERTY STRINGS 1 2 3 4 5)
-option(MYBOT_SHOW_TRANSCRIPT "Request real-time transcripts from the service" OFF)
 option(MYBOT_ENABLE_HTTPS "Enable HTTPS device-service transport" ON)
 option(MYBOT_ALLOW_INSECURE_HTTP "Allow plaintext HTTP for local development" OFF)
 
@@ -182,7 +181,6 @@ target_compile_definitions(mybot_sdk PUBLIC
     MYBOT_WAKE_WORDS=$<BOOL:${MYBOT_WAKE_WORDS}>
     MYBOT_AI_QOS=$<BOOL:${MYBOT_AI_QOS}>
     MYBOT_FAST_SEND_MULTIPLIER=${MYBOT_FAST_SEND_MULTIPLIER}
-    MYBOT_SHOW_TRANSCRIPT=$<BOOL:${MYBOT_SHOW_TRANSCRIPT}>
     MYBOT_ENABLE_HTTPS=$<BOOL:${MYBOT_ENABLE_HTTPS}>
     MYBOT_ALLOW_INSECURE_HTTP=$<BOOL:${MYBOT_ALLOW_INSECURE_HTTP}>
 )

@@ -9,12 +9,12 @@
 
 int mybot_wifi_init(mybot_wifi_t *wifi, const char *device_id, mybot_wifi_event_handler_t handler,
                     void *user_data) {
-    if (!wifi || !device_id || !device_id[0] || !handler || !mybot_platform_registry_wifi() ||
+    if (!wifi || !device_id || !device_id[0] || !handler || !mybot_platform_registry_get()->wifi ||
         wifi->active) {
         return -1;
     }
 
-    wifi->ops = mybot_platform_registry_wifi();
+    wifi->ops = mybot_platform_registry_get()->wifi;
     if (wifi->ops->init(&wifi->ctx, device_id, handler, user_data) < 0) {
         wifi->ctx = NULL;
         return -1;

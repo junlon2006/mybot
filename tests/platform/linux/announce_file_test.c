@@ -12,12 +12,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
 #define PROMPT_FRAMES 200
 #define DIGIT_FRAMES 30
 
-static char s_base_dir[512]; /* /tmp/mybot_announce_file_test_<pid> */
+static char s_base_dir[512];
 static mybot_announce_t s_announce;
 static char s_assets_dir[640];  /* .../assets */
 static char s_locales_dir[768]; /* .../assets/locales */
@@ -46,11 +45,11 @@ static int read_all(int16_t *out, int max_frames) {
 }
 
 int main(void) {
-    snprintf(s_base_dir, sizeof(s_base_dir), "/tmp/mybot_announce_file_test_%d", getpid());
+    snprintf(s_base_dir, sizeof(s_base_dir), "/tmp/mybot_announce_file_test_XXXXXX");
+    assert(mkdtemp(s_base_dir) != NULL);
     snprintf(s_assets_dir, sizeof(s_assets_dir), "%s/assets", s_base_dir);
     snprintf(s_locales_dir, sizeof(s_locales_dir), "%s/locales", s_assets_dir);
     snprintf(s_locale_dir, sizeof(s_locale_dir), "%s/zh-CN", s_locales_dir);
-    assert(mkdir(s_base_dir, 0755) == 0);
     assert(mkdir(s_assets_dir, 0755) == 0);
     assert(mkdir(s_locales_dir, 0755) == 0);
     assert(mkdir(s_locale_dir, 0755) == 0);

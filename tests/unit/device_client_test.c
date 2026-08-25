@@ -90,21 +90,6 @@ static int mock_http_response(mybot_http_client_response_t *resp) {
     return 0;
 }
 
-int mybot_http_client_get(const char *url, mybot_http_client_response_t *resp) {
-    (void)url;
-    (void)resp;
-    return -1;
-}
-
-int mybot_http_client_post(const char *url, const char *content_type, const char *body,
-                           mybot_http_client_response_t *resp) {
-    capture_request(url, content_type, body, NULL);
-    if (s_http_result < 0) {
-        return s_http_result;
-    }
-    return mock_http_response(resp);
-}
-
 int mybot_http_client_get_ex(const char *url, const char *extra_headers,
                              mybot_http_client_response_t *resp) {
     s_get_ex_call_count++;
@@ -206,8 +191,6 @@ static void test_pair_code_failures(void) {
     assert(strcmp(mybot_json_get_string(mybot_json_get_object_item(request, "hardware_model")),
                   "hw-a") == 0);
     mybot_json_delete(request);
-    assert(strcmp(pair.device_id, "device-2") == 0);
-    assert(pair.expires_in_seconds == 30);
     assert(pair.poll_after_seconds == 4);
 
     reset_http_mock(s_valid_pair_response_body);
@@ -400,7 +383,6 @@ static void test_renew_failures(void) {
                     "\"token\":\"renewed\"}}}");
     assert(mybot_device_client_renew_rtc_token("http://server", "device", "token", "channel", "uid",
                                                &token) == 0);
-    assert(token.rtc_app_id[0] == '\0');
     assert(strcmp(token.rtc_token, "renewed") == 0);
 }
 
@@ -502,7 +484,6 @@ int main(void) {
     reset_http_mock(s_valid_renew_response_body);
     assert(mybot_device_client_renew_rtc_token("http://server", "device-1", "token", "channel-1",
                                                "device-uid", &renewed) == 0);
-    assert(strcmp(renewed.rtc_app_id, "app-1") == 0);
     assert(strcmp(renewed.rtc_channel, "channel-1") == 0);
     assert(strcmp(renewed.rtc_uid, "device-uid") == 0);
     assert(strcmp(renewed.rtc_token, "renewed-token") == 0);
