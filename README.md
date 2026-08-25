@@ -264,7 +264,7 @@ flowchart TB
     end
 
     subgraph api["Public API · include/mybot"]
-        api_h["mybot_start / mybot_is_running / mybot_stop<br/>mybot_get_state · mybot_request_exit"]
+        api_h["mybot_start / mybot_is_running / mybot_stop<br/>mybot_get_state"]
     end
 
     subgraph core["SDK core · src/"]
@@ -321,8 +321,8 @@ flowchart TB
 Layer notes:
 
 - **Public API** ([include/mybot/mybot.h](include/mybot/mybot.h)): application lifecycle and
-  state queries (`mybot_start` / `mybot_is_running` / `mybot_get_state` / `mybot_request_exit` /
-  `mybot_stop`); non-blocking startup. Use `mybot_get_state()` for key or UI decisions:
+  state queries (`mybot_start` / `mybot_is_running` / `mybot_get_state` / `mybot_stop`);
+  non-blocking startup. Use `mybot_get_state()` for key or UI decisions:
   `MYBOT_STATE_READY` can start a conversation and `MYBOT_STATE_IN_CONVERSATION` can stop one.
   LCD output is only a rendering result, not a source of lifecycle state. Conversation and pairing
   actions are triggered by platform key / wake-word events and handled inside the SDK core. Wi-Fi

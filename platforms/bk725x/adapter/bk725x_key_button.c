@@ -6,8 +6,6 @@
 
 #include "mybot_platform_log.h"
 
-#include <stdbool.h>
-
 #define TAG "mybot_key"
 
 typedef struct {
@@ -15,7 +13,6 @@ typedef struct {
     void *user_data;
 } key_adapter_binding_t;
 
-static bool s_registered;
 static key_adapter_binding_t s_binding;
 
 static void key_action_bridge(mybot_key_action_t action, void *user_data) {
@@ -68,20 +65,10 @@ static void key_adapter_destroy(void *ctx) {
 }
 
 static const mybot_key_ops_t s_ops = {
-    .name = "bk725x-button",
     .init = key_adapter_init,
     .destroy = key_adapter_destroy,
 };
 
-int bk725x_key_platform_register_button(void) {
-    if (s_registered) {
-        return 0;
-    }
-    if (mybot_key_register(&s_ops) < 0) {
-        MYBOT_LOGE(TAG, "registration failed");
-        return -1;
-    }
-    s_registered = true;
-    MYBOT_LOGI(TAG, "backend ready: %s", s_ops.name);
-    return 0;
+const mybot_key_ops_t *bk725x_key_platform_ops_button(void) {
+    return &s_ops;
 }

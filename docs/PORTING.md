@@ -140,9 +140,9 @@ from the LCD or maintain a second platform-side state; runtime connectivity loss
 
 ### LCD (optional)
 
-Implement `mybot_lcd_ops_t` when a display exists. Render receives semantic content and can be
-called from different SDK threads; the SDK serializes calls. Content is borrowed. Add the operations
-table to the platform descriptor.
+Implement `mybot_lcd_ops_t` when a display exists. Render receives semantic content from the
+application control owner; the SDK does not invoke it concurrently. Content is borrowed. Add the
+operations table to the platform descriptor.
 
 ### Wake words (optional)
 

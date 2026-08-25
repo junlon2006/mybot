@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "mybot_https_bk725x.h"
+#include "mybot_tls_roots.h"
 
 #include <common/bk_err.h>
 #include "mybot_platform_log.h"
@@ -34,6 +35,7 @@ typedef struct {
     mbedtls_ssl_config config;
     mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_entropy_context entropy;
+    mbedtls_x509_crt ca_chain;
 } bk725x_https_connection_t;
 
 typedef struct {
@@ -318,11 +320,6 @@ static int tls_handshake(bk725x_https_connection_t *connection, uint32_t start,
     }
 }
 
-static bool host_is_ip_literal(const char *host) {
-    unsigned char address[16];
-    return mbedtls_x509_crt_parse_cn_inet_pton(host, address) != 0;
-}
-
 void mybot_https_bk725x_close(void *opaque_connection) {
     bk725x_https_connection_t *connection = opaque_connection;
     if (!connection) {
@@ -341,6 +338,7 @@ void mybot_https_bk725x_close(void *opaque_connection) {
     mbedtls_ssl_config_free(&connection->config);
     mbedtls_ctr_drbg_free(&connection->ctr_drbg);
     mbedtls_entropy_free(&connection->entropy);
+    mbedtls_x509_crt_free(&connection->ca_chain);
     psram_free(connection);
 }
 
@@ -365,6 +363,7 @@ int mybot_https_bk725x_connect(void **out_connection, const char *host, uint16_t
     mbedtls_ssl_config_init(&connection->config);
     mbedtls_ctr_drbg_init(&connection->ctr_drbg);
     mbedtls_entropy_init(&connection->entropy);
+    mbedtls_x509_crt_init(&connection->ca_chain);
 
     static const unsigned char personalization[] = "mybot-bk725x-https";
     int ret = mbedtls_ctr_drbg_seed(&connection->ctr_drbg, mbedtls_entropy_func,
@@ -382,8 +381,16 @@ int mybot_https_bk725x_connect(void **out_connection, const char *host, uint16_t
         goto fail;
     }
 
+    ret = mbedtls_x509_crt_parse(&connection->ca_chain, MYBOT_TLS_ROOTS_PEM,
+                                 sizeof(MYBOT_TLS_ROOTS_PEM));
+    if (ret != 0) {
+        log_mbedtls_error("CA certificate parse", ret);
+        goto fail;
+    }
+
     mbedtls_ssl_conf_min_tls_version(&connection->config, MBEDTLS_SSL_VERSION_TLS1_2);
-    mbedtls_ssl_conf_authmode(&connection->config, MBEDTLS_SSL_VERIFY_NONE);
+    mbedtls_ssl_conf_ca_chain(&connection->config, &connection->ca_chain, NULL);
+    mbedtls_ssl_conf_authmode(&connection->config, MBEDTLS_SSL_VERIFY_REQUIRED);
     mbedtls_ssl_conf_rng(&connection->config, mbedtls_ctr_drbg_random,
                          &connection->ctr_drbg);
 
@@ -393,13 +400,10 @@ int mybot_https_bk725x_connect(void **out_connection, const char *host, uint16_t
         goto fail;
     }
 
-    bool ip_literal = host_is_ip_literal(host);
-    if (!ip_literal) {
-        ret = mbedtls_ssl_set_hostname(&connection->ssl, host);
-        if (ret != 0) {
-            log_mbedtls_error("TLS host name", ret);
-            goto fail;
-        }
+    ret = mbedtls_ssl_set_hostname(&connection->ssl, host);
+    if (ret != 0) {
+        log_mbedtls_error("TLS host name", ret);
+        goto fail;
     }
 
     if (deadline_remaining_ms(start, timeout) <= 0) {
@@ -413,6 +417,14 @@ int mybot_https_bk725x_connect(void **out_connection, const char *host, uint16_t
     mbedtls_ssl_set_bio(&connection->ssl, &connection->net, mbedtls_net_send,
                         mbedtls_net_recv, NULL);
     if (tls_handshake(connection, start, timeout) < 0) {
+        goto fail;
+    }
+
+    uint32_t verify_flags = mbedtls_ssl_get_verify_result(&connection->ssl);
+    if (verify_flags != 0) {
+        char verify_info[192];
+        mbedtls_x509_crt_verify_info(verify_info, sizeof(verify_info), "", verify_flags);
+        MYBOT_LOGE(TAG, "TLS peer verification failed: %s", verify_info);
         goto fail;
     }
 

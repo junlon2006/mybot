@@ -61,8 +61,8 @@ typedef struct {
  * layout, fonts, icons, or QR-code presentation. The content pointer is valid
  * only for the duration of the call and must not be retained by the implementation.
  *
- * @note render() may be called from different SDK threads; the SDK serializes
- *       all calls.
+ * @note render() is called by the application control owner. The SDK does not
+ *       invoke render() concurrently.
  */
 typedef struct {
     /**
@@ -86,7 +86,7 @@ typedef struct {
     /**
      * Release the display.
      *
-     * Called only after all render callers have stopped.
+     * Called by the application control owner after all render calls have stopped.
      *
      * @param ctx LCD implementation context from init()
      */

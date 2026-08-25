@@ -123,8 +123,8 @@ MYBOT_API int mybot_start(const mybot_config_t *cfg);
 /**
  * @brief Check whether the application instance is still running.
  *
- * @return true from a successful mybot_start() until mybot_request_exit() or
- *         mybot_stop() clears the running flag; false otherwise (also when
+ * @return true from a successful mybot_start() until the application stops or
+ *         an internal exit event clears the running flag; false otherwise (also when
  *         not started, after a failed start, or after stopping).
  *
  * @note Thread-safe (atomic read). The main loop should poll this and call
@@ -145,23 +145,6 @@ MYBOT_API bool mybot_is_running(void);
  * @see mybot_state_t
  */
 MYBOT_API mybot_state_t mybot_get_state(void);
-
-/**
- * @brief Request a graceful application exit.
- *
- * Non-blocking: publishes an exit request so mybot_is_running() starts returning
- * false; no worker thread or resource is torn down here. The host main loop
- * observes the request and should then call mybot_stop() to release threads and
- * devices.
- *
- * Safe to call from any normal thread or event callback (key EXIT events, UI
- * commands) and idempotent — repeated calls are harmless. A POSIX signal
- * handler should set a sig_atomic_t flag and call this function later from
- * normal execution context.
- *
- * @note This is a request, not teardown: use mybot_stop() for actual cleanup.
- */
-MYBOT_API void mybot_request_exit(void);
 
 /**
  * @brief Stop the application and release all resources.

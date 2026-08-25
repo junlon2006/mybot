@@ -299,7 +299,6 @@ static int build_device_config(mybot_config_t *config) {
 static void stop_mybot(app_runtime_t *runtime) {
     if (runtime->mybot_active) {
         MYBOT_LOGI(TAG, "stopping mybot SDK");
-        mybot_request_exit();
         mybot_stop();
         runtime->mybot_active = false;
     }

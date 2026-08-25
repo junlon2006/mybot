@@ -230,7 +230,7 @@ flowchart TB
     end
 
     subgraph api["公共 API · include/mybot"]
-        api_h["mybot_start / mybot_is_running / mybot_stop<br/>mybot_get_state · mybot_request_exit"]
+        api_h["mybot_start / mybot_is_running / mybot_stop<br/>mybot_get_state"]
     end
 
     subgraph core["SDK 核心 · src/"]
@@ -287,8 +287,8 @@ flowchart TB
 分层说明：
 
 - **公共 API**（[include/mybot/mybot.h](include/mybot/mybot.h)）：应用生命周期与状态
-  查询（`mybot_start` / `mybot_is_running` / `mybot_get_state` / `mybot_request_exit` /
-  `mybot_stop`），非阻塞启动。按键或 UI 应通过 `mybot_get_state()` 判断动作：
+  查询（`mybot_start` / `mybot_is_running` / `mybot_get_state` / `mybot_stop`），非阻塞启动。
+  按键或 UI 应通过 `mybot_get_state()` 判断动作：
   `MYBOT_STATE_READY` 时可开始会话，`MYBOT_STATE_IN_CONVERSATION` 时可停止会话。LCD
   仅用于显示，不是生命周期状态来源。会话与配对动作由平台按键 / 唤醒词事件触发，由 SDK
   核心内部处理。Wi-Fi 与设备生命周期事件共同更新一个原子状态模型快照；

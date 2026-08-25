@@ -72,10 +72,9 @@ static bool runtime_is_running(const mybot_runtime_t *runtime) {
            aosl_atomic_read(&s_exit_generation) == aosl_atomic_read(&s_run_exit_generation);
 }
 
-static void runtime_request_exit(mybot_runtime_t *runtime) {
+static void runtime_publish_exit(mybot_runtime_t *runtime) {
     aosl_atomic_inc(&s_exit_generation);
     aosl_atomic_set(&runtime->running, false);
-    mybot_media_pipeline_request_stop(&runtime->media);
 }
 
 static void control_start_conversation(mybot_runtime_t *runtime) {
@@ -111,7 +110,7 @@ static void handle_start_conversation(const aosl_ts_t *queued_ts, aosl_refobj_t 
 
 static void fail_control_queue(mybot_runtime_t *runtime, const char *event) {
     AOSL_LOG_ERR("failed to queue control event: %s", event);
-    runtime_request_exit(runtime);
+    runtime_publish_exit(runtime);
 }
 
 static void sync_wake_words(mybot_runtime_t *runtime) {
@@ -279,7 +278,7 @@ static void handle_key_event(const aosl_ts_t *queued_ts, aosl_refobj_t robj, uin
 static void on_key_event(mybot_key_event_t event, void *user_data) {
     mybot_runtime_t *runtime = user_data;
     if (event == MYBOT_KEY_EVENT_EXIT) {
-        runtime_request_exit(runtime);
+        runtime_publish_exit(runtime);
         return;
     }
     if (!runtime_is_running(runtime)) {
@@ -407,7 +406,7 @@ static void handle_wifi_event(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
     if (event == MYBOT_WIFI_EVENT_FAILED && state == MYBOT_STATE_WIFI_PROVISIONING) {
         if (mybot_state_model_fail(&runtime->state_model)) {
             mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_FAILED);
-            runtime_request_exit(runtime);
+            runtime_publish_exit(runtime);
         }
         return;
     }
@@ -441,7 +440,7 @@ static void handle_wifi_event(const aosl_ts_t *queued_ts, aosl_refobj_t robj, ui
     if (start_services(runtime) < 0) {
         if (mybot_state_model_fail(&runtime->state_model)) {
             mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_FAILED);
-            runtime_request_exit(runtime);
+            runtime_publish_exit(runtime);
         }
         return;
     }
@@ -535,7 +534,7 @@ static void control_stop_runtime(mybot_runtime_t *runtime) {
     mybot_state_t previous = runtime_get_state(runtime);
     AOSL_LOG_NTC("application control stopping");
     mybot_state_model_begin_stop(&runtime->state_model);
-    runtime_request_exit(runtime);
+    runtime_publish_exit(runtime);
     if (previous != MYBOT_STATE_FAILED) {
         mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_STOPPING);
     }
@@ -586,7 +585,7 @@ static void handle_control_start(const aosl_ts_t *queued_ts, aosl_refobj_t robj,
         goto fail;
     }
     if (aosl_atomic_read(&s_exit_generation) != aosl_atomic_read(&s_run_exit_generation)) {
-        runtime_request_exit(runtime);
+        runtime_publish_exit(runtime);
         return;
     }
 
@@ -597,7 +596,7 @@ static void handle_control_start(const aosl_ts_t *queued_ts, aosl_refobj_t robj,
 fail:
     (void)mybot_state_model_fail(&runtime->state_model);
     mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_FAILED);
-    runtime_request_exit(runtime);
+    runtime_publish_exit(runtime);
 }
 
 static void handle_control_stop(const aosl_ts_t *queued_ts, aosl_refobj_t robj, uintptr_t argc,
@@ -678,7 +677,7 @@ int mybot_start(const mybot_config_t *cfg) {
     return 0;
 
 fail:
-    runtime_request_exit(runtime);
+    runtime_publish_exit(runtime);
     if (!aosl_mpq_invalid(runtime->control_mpq)) {
         if (aosl_mpq_call(runtime->control_mpq, AOSL_REF_INVALID, "handle_control_stop",
                           handle_control_stop, 1, (uintptr_t)runtime) < 0) {
@@ -701,13 +700,6 @@ mybot_state_t mybot_get_state(void) {
     return runtime_get_state(&s_default_runtime);
 }
 
-void mybot_request_exit(void) {
-    aosl_atomic_inc(&s_exit_generation);
-    if (aosl_atomic_read(&s_default_runtime.aosl_ref_held)) {
-        mybot_media_pipeline_request_stop(&s_default_runtime.media);
-    }
-}
-
 void mybot_stop(void) {
     mybot_runtime_t *runtime = &s_default_runtime;
     lifecycle_lock();
@@ -716,7 +708,7 @@ void mybot_stop(void) {
         return;
     }
 
-    runtime_request_exit(runtime);
+    runtime_publish_exit(runtime);
     if (!aosl_mpq_invalid(runtime->control_mpq)) {
         if (aosl_mpq_call(runtime->control_mpq, AOSL_REF_INVALID, "handle_control_stop",
                           handle_control_stop, 1, (uintptr_t)runtime) < 0) {

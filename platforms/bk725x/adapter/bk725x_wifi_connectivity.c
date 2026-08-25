@@ -6,8 +6,6 @@
 
 #include "mybot_platform_log.h"
 
-#include <stdbool.h>
-
 #define TAG "mybot_wifi"
 
 typedef struct {
@@ -15,7 +13,6 @@ typedef struct {
     void *user_data;
 } wifi_adapter_binding_t;
 
-static bool s_registered;
 static wifi_adapter_binding_t s_binding;
 
 static void connectivity_event_bridge(mybot_connectivity_event_t event, void *user_data) {
@@ -66,20 +63,10 @@ static void wifi_adapter_destroy(void *ctx) {
 }
 
 static const mybot_wifi_ops_t s_ops = {
-    .name = "bk725x-connectivity",
     .init = wifi_adapter_init,
     .destroy = wifi_adapter_destroy,
 };
 
-int bk725x_wifi_platform_register_connectivity(void) {
-    if (s_registered) {
-        return 0;
-    }
-    if (mybot_wifi_register(&s_ops) < 0) {
-        MYBOT_LOGE(TAG, "registration failed");
-        return -1;
-    }
-    s_registered = true;
-    MYBOT_LOGI(TAG, "backend ready: %s", s_ops.name);
-    return 0;
+const mybot_wifi_ops_t *bk725x_wifi_platform_ops_connectivity(void) {
+    return &s_ops;
 }
