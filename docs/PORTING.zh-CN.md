@@ -125,8 +125,8 @@ BearSSL 或芯片厂商 TLS socket API；SDK 核心
 
 ### LCD（可选）
 
-存在显示设备时实现 `mybot_lcd_ops_t`。渲染接收语义内容，可能从不同 SDK 线程调用；SDK
-负责串行化调用。内容为借用。将 ops 表加入平台描述符。
+存在显示设备时实现 `mybot_lcd_ops_t`。渲染由应用 control owner 调用，SDK 不会并发调用。
+内容为借用。将 ops 表加入平台描述符。
 
 ### 唤醒词（可选）
 

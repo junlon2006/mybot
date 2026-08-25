@@ -20,6 +20,8 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- Restrict the SDK-internal LCD facade to the application control owner and remove its redundant
+  render mutex.
 - **Breaking:** remove `mybot_request_exit()`; host applications stop directly after their own exit
   signal or condition is observed.
 - Align the Agora RTSA wrapper with the single-instance, one-call-at-a-time product model: initialize
