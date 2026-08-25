@@ -58,6 +58,8 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
+- Make the application shutdown test wait for the playback worker to apply a pending announcement
+  buffer clear before using a downlink frame to block playback I/O.
 - Install the project `LICENSE` and `THIRD_PARTY_NOTICES.md` with the CMake package alongside the
   bundled AOSL license, and verify all three documents in the install-consumer integration test.
 - Call both platform audio `stop` hooks before waiting for media workers, allowing a thread-safe

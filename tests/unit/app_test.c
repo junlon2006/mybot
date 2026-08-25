@@ -109,6 +109,7 @@ static int s_playback_start_calls;
 static int s_playback_stop_calls;
 static int s_playback_destroy_calls;
 static int s_playback_write_calls;
+static int s_announce_active_checks;
 static int s_device_init_calls;
 static int s_device_shutdown_calls;
 static int s_network_down_calls;
@@ -473,6 +474,7 @@ void mybot_announce_stop(mybot_announce_t *announce) {
 bool mybot_announce_is_active(mybot_announce_t *announce) {
     assert(announce != NULL);
     mock_lock();
+    s_announce_active_checks++;
     bool active = s_announce_active;
     mock_unlock();
     return active;
@@ -1251,6 +1253,10 @@ int main(void) {
     assert(wait_for_counter(&s_rtc_send_calls, sends_before_second_call + 1, 3000));
     assert(read_counter(&s_rtc_init_calls) == 2);
     assert(read_counter(&s_rtc_leave_calls) == 1);
+
+    /* Wait until playback applies the pending buffer clear before blocking I/O. */
+    int activity_checks = read_counter(&s_announce_active_checks);
+    assert(wait_for_counter(&s_announce_active_checks, activity_checks + 1, 1000));
 
     int16_t shutdown_frame[TEST_FRAME_SAMPLES];
     memset(shutdown_frame, 0, sizeof(shutdown_frame));
