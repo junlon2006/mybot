@@ -20,15 +20,12 @@ extern "C" {
 
 #define MYBOT_CONVERSATION_STOP_REASON_USER_REQUESTED "user_requested"
 #define MYBOT_CONVERSATION_STOP_REASON_DEVICE_HANGUP "device_hangup"
-#define MYBOT_CONVERSATION_STOP_REASON_TIMEOUT "timeout"
 #define MYBOT_CONVERSATION_STOP_REASON_ERROR "error"
 
 /** Pair-code response. */
 typedef struct {
-    char device_id[MYBOT_DEVICE_CLIENT_MAX_ID];
     char code[16]; /* 6-digit pair code */
     char pair_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
-    int expires_in_seconds; /* pair code TTL */
     int poll_after_seconds; /* recommended poll interval */
 } mybot_device_pair_code_t;
 
@@ -46,14 +43,12 @@ typedef struct {
     char conversation_id[MYBOT_DEVICE_CLIENT_MAX_ID];
     char rtc_app_id[64];
     char rtc_channel[128];
-    char rtc_uid[64];       /* string UID assigned by server */
-    char rtc_agent_uid[64]; /* string UID of the ConvoAI Agent */
+    char rtc_uid[64]; /* string UID assigned by server */
     char rtc_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
 } mybot_device_conversation_t;
 
 /** RTC-token renewal response. */
 typedef struct {
-    char rtc_app_id[64];
     char rtc_channel[128];
     char rtc_uid[64];
     char rtc_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];

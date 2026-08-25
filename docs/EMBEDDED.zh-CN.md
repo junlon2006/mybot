@@ -19,7 +19,7 @@ x86_64 Linux 参考构建（GCC 13，默认优化），**仅供参考**——请
     size <firmware.elf>
     ls -l <build>/libmybot_sdk.a
 
-特性开关直接影响代码体积——`MYBOT_CLOUD_AEC`、`MYBOT_WAKE_WORDS`、`MYBOT_SHOW_TRANSCRIPT`、
+特性开关直接影响代码体积——`MYBOT_CLOUD_AEC`、`MYBOT_WAKE_WORDS`、
 `MYBOT_ENABLE_HTTPS` 是主要项；产品用不到的功能请关闭。在 MCU 上 Agora RTSA 库通常占掉
 大部分 Flash，且必须使用目标架构的包（随附归档仅限 x86_64 Linux）。
 

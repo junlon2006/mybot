@@ -16,8 +16,8 @@ typedef struct {
     const mybot_audio_volume_ops_t *volume_ops;
     void *volume_ctx;
     bool volume_active;
+    int device_volume;
     aosl_atomic_t media_volume;
-    aosl_atomic_t device_volume;
 } mybot_audio_t;
 
 /**
@@ -29,12 +29,6 @@ typedef struct {
 
 /** Snapshot the default registered implementations into a runtime context. */
 void mybot_audio_context_init(mybot_audio_t *audio);
-
-/** Get the registered capture ops, or NULL if none registered. */
-const mybot_audio_capture_ops_t *mybot_audio_get_capture(const mybot_audio_t *audio);
-
-/** Get the registered playback ops, or NULL if none registered. */
-const mybot_audio_playback_ops_t *mybot_audio_get_playback(const mybot_audio_t *audio);
 
 /** Initialize the registered volume implementation. Call from the app startup path. */
 int mybot_audio_device_volume_init(mybot_audio_t *audio);

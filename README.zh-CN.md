@@ -44,8 +44,7 @@
   `MYBOT_STATE_WIFI_DISCONNECTED` 优先。
 - **全双工语音 · 支持打断**：上行与下行同时进行；AI 回复期间用户可随时说话打断，
   麦克风持续上行，云端 Agent 感知新输入并即时响应。
-- **全双工语音交互 · Agora AI 能力**：基于 Agora RTSA，支持云端 AEC、AI QoS 与可选
-  实时转写。
+- **全双工语音交互 · Agora AI 能力**：基于 Agora RTSA，支持云端 AEC 与 AI QoS。
 - **音量控制**：两个相互独立的层次——SDK 管理的媒体音量（对播放 PCM 做数字软件增益，
   所有平台可用）与可选的设备真实音量实现（Codec / 功放 / 混音器），由平台注册。
 - **可选的本地唤醒词**：默认关闭；唤醒行为与物理按键启动会话一致。
@@ -155,7 +154,7 @@ target_link_libraries(device_firmware PRIVATE mybot::sdk)
 
 平台应在 `mybot_start()` 之前注册一个 `mybot_platform_descriptor_t`。非空 ops 指针是平台
 支持对应功能的唯一声明。注册过程会完整校验描述符，包括必需的 Wi-Fi、KV、按键、采集和
-播放回调表，然后原子提交；`mybot_start()` 再按当前构建与运行配置检查所需 ops，并在创建
+播放回调表，然后一次性提交完整描述符；`mybot_start()` 再按当前构建与运行配置检查所需 ops，并在创建
 任何平台资源之前拒绝缺失项。所有平台功能均通过这个描述符一次性注册，不再提供独立的分项
 注册入口。完整实现顺序、最小代码、线程约束和验收清单见
 [docs/PORTING.md](docs/PORTING.md)。
@@ -190,7 +189,6 @@ mybot_stop();
 | `MYBOT_WAKE_WORDS` | `OFF` | 启用本地 ASR 唤醒词平台实现 |
 | `MYBOT_AI_QOS` | `ON` | Agora AI QoS |
 | `MYBOT_FAST_SEND_MULTIPLIER` | `3` | 快发倍数，只接受 1 到 5 |
-| `MYBOT_SHOW_TRANSCRIPT` | `OFF` | 请求实时转写数据流 |
 | `MYBOT_ENABLE_HTTPS` | `ON` | 启用平台 HTTPS 传输，生产构建应保持开启 |
 | `MYBOT_ALLOW_INSECURE_HTTP` | `OFF` | 仅本地开发：显式允许明文 HTTP |
 | `MYBOT_ENABLE_ASAN` | `OFF` | GCC/Clang 地址消毒器，建议在宿主测试中开启 |

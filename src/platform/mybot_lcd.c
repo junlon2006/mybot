@@ -34,15 +34,15 @@ static int render_content(mybot_lcd_t *lcd, const mybot_lcd_content_t *content) 
 }
 
 bool mybot_lcd_is_registered(void) {
-    return mybot_platform_registry_lcd() != NULL;
+    return mybot_platform_registry_get()->lcd != NULL;
 }
 
 int mybot_lcd_init(mybot_lcd_t *lcd) {
-    if (!lcd || lcd->active || !mybot_platform_registry_lcd()) {
+    if (!lcd || lcd->active || !mybot_platform_registry_get()->lcd) {
         return -1;
     }
 
-    lcd->ops = mybot_platform_registry_lcd();
+    lcd->ops = mybot_platform_registry_get()->lcd;
     lcd->render_lock = aosl_hal_mutex_create();
     if (!lcd->render_lock) {
         return -1;

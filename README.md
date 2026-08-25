@@ -52,8 +52,8 @@ RTOS, or a bare-metal MCU.
 - **Full-duplex voice · barge-in**: Uplink and downlink run simultaneously; the user can interrupt
   the AI mid-reply at any time, and the microphone keeps streaming so the cloud agent hears and
   responds to new input.
-- **Full-duplex voice interaction · Agora AI capabilities**: Built on Agora RTSA, with cloud AEC, AI
-  QoS, and optional real-time transcription.
+- **Full-duplex voice interaction · Agora AI capabilities**: Built on Agora RTSA, with cloud AEC and
+  AI QoS.
 - **Volume control**: The SDK owns volume. When the platform registers a real-device volume
   implementation (codec / amplifier / mixer), volume changes drive hardware volume directly; otherwise
   the SDK falls back to a digital software gain applied to playback PCM. There is no
@@ -178,7 +178,8 @@ target_link_libraries(device_firmware PRIVATE mybot::sdk)
 
 Register one `mybot_platform_descriptor_t` before `mybot_start()`. A non-NULL ops pointer is the sole
 declaration that the platform supports that function. Registration validates the complete descriptor,
-including the required Wi-Fi, KV, key, capture, and playback tables, before committing it atomically.
+including the required Wi-Fi, KV, key, capture, and playback tables, before committing the complete
+descriptor.
 `mybot_start()` then checks the ops required by the active build and runtime configuration before
 creating any platform resources. Every platform is submitted through this one descriptor. For the
 full implementation order, minimal code, threading constraints, and acceptance checklist, see
@@ -219,7 +220,6 @@ The following options can be set via the CMake command line or cache variables b
 | `MYBOT_WAKE_WORDS` | `OFF` | Enable the platform local-ASR wake-word implementation |
 | `MYBOT_AI_QOS` | `ON` | Agora AI QoS |
 | `MYBOT_FAST_SEND_MULTIPLIER` | `3` | Fast-send multiplier; accepts only 1–5 |
-| `MYBOT_SHOW_TRANSCRIPT` | `OFF` | Request the real-time transcription data stream |
 | `MYBOT_ENABLE_HTTPS` | `ON` | Enable the platform HTTPS transport; keep ON for production builds |
 | `MYBOT_ALLOW_INSECURE_HTTP` | `OFF` | Local development only: explicitly allow plaintext HTTP |
 | `MYBOT_ENABLE_ASAN` | `OFF` | GCC/Clang AddressSanitizer; recommended for host tests |

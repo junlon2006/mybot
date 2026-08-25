@@ -64,7 +64,7 @@ static void lifecycle_unlock(void) {
 }
 
 static mybot_state_t runtime_get_state(const mybot_runtime_t *runtime) {
-    return mybot_state_model_get(&runtime->state_model);
+    return mybot_state_model_get_view(&runtime->state_model).app_state;
 }
 
 static bool runtime_is_running(const mybot_runtime_t *runtime) {
@@ -497,12 +497,12 @@ static bool platform_requirements_are_met(const mybot_config_t *cfg) {
         return false;
     }
 #if MYBOT_WAKE_WORDS
-    if (!mybot_platform_registry_wake_words()) {
+    if (!mybot_platform_registry_get()->wake_words) {
         AOSL_LOG_ERR("wake-word platform operations are required but unavailable");
         return false;
     }
 #endif
-    if (strncmp(cfg->server_base, "https://", 8) == 0 && !mybot_platform_registry_https()) {
+    if (strncmp(cfg->server_base, "https://", 8) == 0 && !mybot_platform_registry_get()->https) {
         AOSL_LOG_ERR("HTTPS platform operations are required but unavailable");
         return false;
     }
@@ -551,7 +551,7 @@ static void control_stop_runtime(mybot_runtime_t *runtime) {
     mybot_agora_rtc_fini();
     mybot_media_pipeline_destroy(&runtime->media);
 
-    mybot_state_model_stopped(&runtime->state_model);
+    mybot_state_model_reset(&runtime->state_model);
     AOSL_LOG_NTC("application control stopped");
 }
 
@@ -650,17 +650,8 @@ int mybot_start(const mybot_config_t *cfg) {
         lifecycle_unlock();
         return -1;
     }
-    mybot_platform_registry_lock();
-
     aosl_atomic_set(&s_run_exit_generation, aosl_atomic_read(&s_exit_generation));
     aosl_atomic_set(&runtime->running, false);
-    memset(&runtime->config, 0, sizeof(runtime->config));
-    memset(&runtime->key, 0, sizeof(runtime->key));
-    memset(&runtime->kv_store, 0, sizeof(runtime->kv_store));
-    memset(&runtime->wifi, 0, sizeof(runtime->wifi));
-    memset(&runtime->presenter, 0, sizeof(runtime->presenter));
-    memset(&runtime->media, 0, sizeof(runtime->media));
-    memset(&runtime->lifecycle, 0, sizeof(runtime->lifecycle));
     memcpy(&runtime->config, cfg, sizeof(runtime->config));
     runtime->control_mpq = AOSL_MPQ_INVALID;
     runtime->control_timer = AOSL_MPQ_TIMER_INVALID;

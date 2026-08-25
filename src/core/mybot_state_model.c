@@ -43,26 +43,17 @@ static uintptr_t with_device_state(uintptr_t snapshot, mybot_device_state_t stat
     return (snapshot & ~DEVICE_MASK) | ((uintptr_t)state << DEVICE_SHIFT);
 }
 
-static bool compare_exchange(mybot_state_model_t *model, uintptr_t expected, uintptr_t desired) {
-    return (uintptr_t)aosl_atomic_cmpxchg(&model->snapshot, (intptr_t)expected,
-                                          (intptr_t)desired) == expected;
-}
-
 static bool transition_phase(mybot_state_model_t *model, mybot_runtime_phase_t expected,
                              mybot_runtime_phase_t desired, bool online) {
     if (!model) {
         return false;
     }
-    for (;;) {
-        uintptr_t current = (uintptr_t)aosl_atomic_read(&model->snapshot);
-        if (snapshot_phase(current) != (uintptr_t)expected) {
-            return false;
-        }
-        uintptr_t next = with_online(with_phase(current, desired), online);
-        if (compare_exchange(model, current, next)) {
-            return true;
-        }
+    uintptr_t current = (uintptr_t)aosl_atomic_read(&model->snapshot);
+    if (snapshot_phase(current) != (uintptr_t)expected) {
+        return false;
     }
+    aosl_atomic_set(&model->snapshot, (intptr_t)with_online(with_phase(current, desired), online));
+    return true;
 }
 
 void mybot_state_model_reset(mybot_state_model_t *model) {
@@ -88,19 +79,16 @@ static bool set_network(mybot_state_model_t *model, bool online) {
     if (!model) {
         return false;
     }
-    for (;;) {
-        uintptr_t current = (uintptr_t)aosl_atomic_read(&model->snapshot);
-        if (snapshot_phase(current) != MYBOT_PHASE_RUNNING) {
-            return false;
-        }
-        uintptr_t next = with_online(current, online);
-        if (snapshot_device_state(next) == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
-            next = with_device_state(next, MYBOT_DEVICE_STATE_RUNTIME);
-        }
-        if (next == current || compare_exchange(model, current, next)) {
-            return true;
-        }
+    uintptr_t current = (uintptr_t)aosl_atomic_read(&model->snapshot);
+    if (snapshot_phase(current) != MYBOT_PHASE_RUNNING) {
+        return false;
     }
+    uintptr_t next = with_online(current, online);
+    if (snapshot_device_state(next) == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
+        next = with_device_state(next, MYBOT_DEVICE_STATE_RUNTIME);
+    }
+    aosl_atomic_set(&model->snapshot, (intptr_t)next);
+    return true;
 }
 
 bool mybot_state_model_network_lost(mybot_state_model_t *model) {
@@ -117,48 +105,33 @@ bool mybot_state_model_set_device_state(mybot_state_model_t *model,
         device_state > MYBOT_DEVICE_STATE_IN_CONVERSATION) {
         return false;
     }
-    for (;;) {
-        uintptr_t current = (uintptr_t)aosl_atomic_read(&model->snapshot);
-        uintptr_t next = with_device_state(current, device_state);
-        if (next == current || compare_exchange(model, current, next)) {
-            return true;
-        }
-    }
+    uintptr_t current = (uintptr_t)aosl_atomic_read(&model->snapshot);
+    aosl_atomic_set(&model->snapshot, (intptr_t)with_device_state(current, device_state));
+    return true;
 }
 
 bool mybot_state_model_fail(mybot_state_model_t *model) {
     if (!model) {
         return false;
     }
-    for (;;) {
-        uintptr_t current = (uintptr_t)aosl_atomic_read(&model->snapshot);
-        uintptr_t phase = snapshot_phase(current);
-        if (phase == MYBOT_PHASE_STOPPED || phase == MYBOT_PHASE_STOPPING ||
-            phase == MYBOT_PHASE_FAILED) {
-            return false;
-        }
-        uintptr_t next = with_online(with_phase(current, MYBOT_PHASE_FAILED), false);
-        if (compare_exchange(model, current, next)) {
-            return true;
-        }
+    uintptr_t current = (uintptr_t)aosl_atomic_read(&model->snapshot);
+    uintptr_t phase = snapshot_phase(current);
+    if (phase == MYBOT_PHASE_STOPPED || phase == MYBOT_PHASE_STOPPING ||
+        phase == MYBOT_PHASE_FAILED) {
+        return false;
     }
+    aosl_atomic_set(&model->snapshot,
+                    (intptr_t)with_online(with_phase(current, MYBOT_PHASE_FAILED), false));
+    return true;
 }
 
 void mybot_state_model_begin_stop(mybot_state_model_t *model) {
     if (!model) {
         return;
     }
-    for (;;) {
-        uintptr_t current = (uintptr_t)aosl_atomic_read(&model->snapshot);
-        uintptr_t next = with_online(with_phase(current, MYBOT_PHASE_STOPPING), false);
-        if (next == current || compare_exchange(model, current, next)) {
-            return;
-        }
-    }
-}
-
-void mybot_state_model_stopped(mybot_state_model_t *model) {
-    mybot_state_model_reset(model);
+    uintptr_t current = (uintptr_t)aosl_atomic_read(&model->snapshot);
+    aosl_atomic_set(&model->snapshot,
+                    (intptr_t)with_online(with_phase(current, MYBOT_PHASE_STOPPING), false));
 }
 
 static mybot_state_t project_app_state(uintptr_t snapshot) {
@@ -193,8 +166,4 @@ mybot_state_view_t mybot_state_model_get_view(const mybot_state_model_t *model) 
     view.app_state = project_app_state(snapshot);
     view.device_state = snapshot_device_state(snapshot);
     return view;
-}
-
-mybot_state_t mybot_state_model_get(const mybot_state_model_t *model) {
-    return mybot_state_model_get_view(model).app_state;
 }

@@ -7,11 +7,11 @@
 #include <stddef.h>
 
 int mybot_key_init(mybot_key_t *key, mybot_key_event_handler_t handler, void *user_data) {
-    if (!key || key->active || !mybot_platform_registry_key() || !handler) {
+    if (!key || key->active || !mybot_platform_registry_get()->key || !handler) {
         return -1;
     }
 
-    key->ops = mybot_platform_registry_key();
+    key->ops = mybot_platform_registry_get()->key;
     if (key->ops->init(&key->ctx, handler, user_data) < 0) {
         key->ctx = NULL;
         return -1;

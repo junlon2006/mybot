@@ -9,12 +9,12 @@
 int mybot_wake_words_init(mybot_wake_words_t *wake_words, int sample_rate, int channels,
                           int bits_per_sample, mybot_wake_words_handler_t handler,
                           void *user_data) {
-    if (!wake_words || wake_words->active || !mybot_platform_registry_wake_words() ||
+    if (!wake_words || wake_words->active || !mybot_platform_registry_get()->wake_words ||
         sample_rate <= 0 || channels <= 0 || bits_per_sample <= 0 || !handler) {
         return -1;
     }
 
-    wake_words->ops = mybot_platform_registry_wake_words();
+    wake_words->ops = mybot_platform_registry_get()->wake_words;
     if (wake_words->ops->init(&wake_words->ctx, sample_rate, channels, bits_per_sample, handler,
                               user_data) < 0) {
         wake_words->ctx = NULL;

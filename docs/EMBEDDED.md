@@ -20,9 +20,9 @@ How to measure on your target:
     size <firmware.elf>
     ls -l <build>/libmybot_sdk.a
 
-Feature flags directly change the code footprint — `MYBOT_CLOUD_AEC`, `MYBOT_WAKE_WORDS`,
-`MYBOT_SHOW_TRANSCRIPT`, and `MYBOT_ENABLE_HTTPS` are the main ones; disable what the product does
-not need. On MCU targets the Agora RTSA library dominates the flash budget, and it must be the
+Feature flags directly change the code footprint — `MYBOT_CLOUD_AEC`, `MYBOT_WAKE_WORDS`, and
+`MYBOT_ENABLE_HTTPS` are the main ones; disable what the product does not need. On MCU targets the
+Agora RTSA library dominates the flash budget, and it must be the
 target-architecture package (the bundled archive is x86_64 Linux only).
 
 ## Memory model

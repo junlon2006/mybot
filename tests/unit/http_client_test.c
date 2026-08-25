@@ -301,7 +301,7 @@ static void test_oom_injection(void) {
 
         mybot_http_client_response_t resp;
         memset(&resp, 0, sizeof(resp));
-        int rc = mybot_http_client_get("https://api.example.test:8443/status", &resp);
+        int rc = mybot_http_client_get_ex("https://api.example.test:8443/status", NULL, &resp);
 
         if (s_alloc_failures == 1) {
             assert(rc == -1);
@@ -320,10 +320,11 @@ static void test_tls_transport_and_requests(void) {
     char large_response[6200];
 
     memset(&resp, 0, sizeof(resp));
-    assert(mybot_http_client_get(NULL, &resp) < 0);
-    assert(mybot_http_client_get("https://api.example.test", NULL) < 0);
-    assert(mybot_http_client_post(NULL, "application/json", "{}", &resp) < 0);
-    assert(mybot_http_client_post("https://api.example.test", "application/json", "{}", NULL) < 0);
+    assert(mybot_http_client_get_ex(NULL, NULL, &resp) < 0);
+    assert(mybot_http_client_get_ex("https://api.example.test", NULL, NULL) < 0);
+    assert(mybot_http_client_post_ex(NULL, "application/json", "{}", NULL, &resp) < 0);
+    assert(mybot_http_client_post_ex("https://api.example.test", "application/json", "{}", NULL,
+                                     NULL) < 0);
 
     reset_tls_script(NULL);
     assert(mybot_http_client_post_ex("https://api.example.test:9443/v1/items", NULL, "payload",
@@ -339,8 +340,8 @@ static void test_tls_transport_and_requests(void) {
     reset_tls_script(NULL);
     s_tls_send_limit = 7;
     s_tls_recv_limit = 3;
-    assert(mybot_http_client_post("https://api.example.test/data", "application/json", "{}",
-                                  &resp) == 0);
+    assert(mybot_http_client_post_ex("https://api.example.test/data", "application/json", "{}",
+                                     NULL, &resp) == 0);
     assert(s_tls_send_count > 1);
     assert(s_tls_recv_count > 1);
     assert(strstr(s_tls_request, "POST /data HTTP/1.1\r\n") == s_tls_request);
@@ -350,15 +351,15 @@ static void test_tls_transport_and_requests(void) {
 
     reset_tls_script(NULL);
     s_tls_connect_result = -1;
-    assert(mybot_http_client_get("https://api.example.test/fail", &resp) < 0);
+    assert(mybot_http_client_get_ex("https://api.example.test/fail", NULL, &resp) < 0);
 
     reset_tls_script(NULL);
     s_tls_send_fail_at = 1;
-    assert(mybot_http_client_get("https://api.example.test/fail", &resp) < 0);
+    assert(mybot_http_client_get_ex("https://api.example.test/fail", NULL, &resp) < 0);
 
     reset_tls_script(NULL);
     s_tls_recv_fail_at = 1;
-    assert(mybot_http_client_get("https://api.example.test/fail", &resp) < 0);
+    assert(mybot_http_client_get_ex("https://api.example.test/fail", NULL, &resp) < 0);
 
     long_headers[0] = 'X';
     long_headers[1] = ':';
@@ -376,7 +377,7 @@ static void test_tls_transport_and_requests(void) {
     large_response[header_len + 5000] = '\0';
 
     reset_tls_script(large_response);
-    assert(mybot_http_client_get("https://api.example.test/large", &resp) == 0);
+    assert(mybot_http_client_get_ex("https://api.example.test/large", NULL, &resp) == 0);
     assert(resp.body_len == 5000);
     assert(resp.body[0] == 'z');
     assert(resp.body[4999] == 'z');
@@ -386,7 +387,7 @@ static void test_tls_transport_and_requests(void) {
     s_alloc_count = 0;
     s_alloc_failures = 0;
     s_fail_on_alloc = 2;
-    assert(mybot_http_client_get("https://api.example.test/realloc-fail", &resp) < 0);
+    assert(mybot_http_client_get_ex("https://api.example.test/realloc-fail", NULL, &resp) < 0);
     assert(s_alloc_failures == 1);
     s_fail_on_alloc = 0;
     reset_tls_script(NULL);
@@ -401,7 +402,7 @@ int main(void) {
     mybot_http_client_response_t response;
     memset(&response, 0, sizeof(response));
 
-    assert(mybot_http_client_get("https://api.example.test/status", &response) < 0);
+    assert(mybot_http_client_get_ex("https://api.example.test/status", NULL, &response) < 0);
     assert(response.body == NULL);
 
     url_parts_t parts;
@@ -469,9 +470,10 @@ int main(void) {
     assert(mybot_platform_register(&descriptor) == 0);
 
     int connect_count = s_tls_connect_count;
-    assert(mybot_http_client_get("https://good.example/path\r\nX-Injected: yes", &response) < 0);
-    assert(mybot_http_client_get("https://good.example@evil.example/path", &response) < 0);
-    assert(mybot_http_client_get("https://good.example/path#fragment", &response) < 0);
+    assert(mybot_http_client_get_ex("https://good.example/path\r\nX-Injected: yes", NULL,
+                                    &response) < 0);
+    assert(mybot_http_client_get_ex("https://good.example@evil.example/path", NULL, &response) < 0);
+    assert(mybot_http_client_get_ex("https://good.example/path#fragment", NULL, &response) < 0);
     assert(mybot_http_client_get_ex("https://good.example/path",
                                     "Authorization: ok\nX-Injected: yes\r\n", &response) < 0);
     assert(mybot_http_client_get_ex("https://good.example/path", "Authorization: ok\r\nmalformed",
@@ -482,7 +484,7 @@ int main(void) {
     assert(s_tls_connect_count == connect_count);
 
     memset(&response, 0, sizeof(response));
-    assert(mybot_http_client_get("https://api.example.test:8443/status", &response) == 0);
+    assert(mybot_http_client_get_ex("https://api.example.test:8443/status", NULL, &response) == 0);
     assert(strcmp(s_tls_host, "api.example.test") == 0);
     assert(s_tls_port == 8443);
     assert(strncmp(s_tls_request, "GET /status HTTP/1.1\r\n", 22) == 0);

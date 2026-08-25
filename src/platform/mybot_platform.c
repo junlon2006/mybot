@@ -3,7 +3,6 @@
 
 static mybot_platform_descriptor_t s_registry;
 static bool s_registered;
-static bool s_locked;
 
 static bool wifi_is_valid(const mybot_wifi_ops_t *ops) {
     return ops && ops->init && ops->destroy;
@@ -58,7 +57,7 @@ static bool descriptor_is_valid(const mybot_platform_descriptor_t *descriptor) {
 }
 
 int mybot_platform_register(const mybot_platform_descriptor_t *descriptor) {
-    if (s_locked || s_registered || !descriptor_is_valid(descriptor)) {
+    if (s_registered || !descriptor_is_valid(descriptor)) {
         return -1;
     }
     s_registry = *descriptor;
@@ -70,22 +69,6 @@ bool mybot_platform_registry_is_registered(void) {
     return s_registered;
 }
 
-#define DEFINE_GETTER(function_name, type, field)                                                  \
-    const type *function_name(void) {                                                              \
-        return s_registry.field;                                                                   \
-    }
-
-DEFINE_GETTER(mybot_platform_registry_wifi, mybot_wifi_ops_t, wifi)
-DEFINE_GETTER(mybot_platform_registry_kv_store, mybot_kv_store_ops_t, kv_store)
-DEFINE_GETTER(mybot_platform_registry_key, mybot_key_ops_t, key)
-DEFINE_GETTER(mybot_platform_registry_audio_capture, mybot_audio_capture_ops_t, audio_capture)
-DEFINE_GETTER(mybot_platform_registry_audio_playback, mybot_audio_playback_ops_t, audio_playback)
-DEFINE_GETTER(mybot_platform_registry_audio_volume, mybot_audio_volume_ops_t, audio_volume)
-DEFINE_GETTER(mybot_platform_registry_https, mybot_https_ops_t, https)
-DEFINE_GETTER(mybot_platform_registry_lcd, mybot_lcd_ops_t, lcd)
-DEFINE_GETTER(mybot_platform_registry_announce, mybot_announce_ops_t, announce)
-DEFINE_GETTER(mybot_platform_registry_wake_words, mybot_wake_words_ops_t, wake_words)
-
-void mybot_platform_registry_lock(void) {
-    s_locked = true;
+const mybot_platform_descriptor_t *mybot_platform_registry_get(void) {
+    return &s_registry;
 }

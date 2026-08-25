@@ -118,15 +118,6 @@ void mybot_device_lifecycle_set_network_available(mybot_device_lifecycle_t *life
  *  Must be called by the application control owner. */
 void mybot_device_lifecycle_shutdown(mybot_device_lifecycle_t *lifecycle);
 
-/** Get current state. */
-mybot_device_state_t mybot_device_lifecycle_get_state(const mybot_device_lifecycle_t *lifecycle);
-
-/** Return human-readable state name. */
-const char *mybot_device_lifecycle_state_name(mybot_device_state_t s);
-
-/** Return the current device_token (NULL unless runtime or in a conversation). */
-const char *mybot_device_lifecycle_get_token(const mybot_device_lifecycle_t *lifecycle);
-
 /** Request a fresh pairing flow from the application control owner. */
 void mybot_device_lifecycle_request_pair(mybot_device_lifecycle_t *lifecycle);
 
