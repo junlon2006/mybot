@@ -14,7 +14,7 @@
 static volatile sig_atomic_t s_exit_requested;
 
 /* ----------------------------------------------------------
- * Signal handling — POSIX. Request a graceful app exit.
+ * Signal handling — POSIX. Record an exit request for the main loop.
  * ---------------------------------------------------------- */
 static void signal_handler(int sig) {
     (void)sig;
@@ -106,7 +106,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    /* ---- Main loop: wait for a key event or process signal to request exit. ---- */
+    /* ---- Main loop: wait for a key event or process signal to stop. ---- */
     bool interactive_help_printed = false;
     while (mybot_is_running()) {
         if (!interactive_help_printed && mybot_get_state() == MYBOT_STATE_READY) {
@@ -122,8 +122,7 @@ int main(int argc, char **argv) {
         }
 
         if (s_exit_requested) {
-            mybot_request_exit();
-            continue;
+            break;
         }
 
         aosl_hal_msleep(100);

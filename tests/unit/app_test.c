@@ -1244,7 +1244,6 @@ int main(void) {
 
     emit_key_event(MYBOT_KEY_EVENT_EXIT);
     assert(!mybot_is_running());
-    mybot_request_exit();
     int renewals_before_stop = read_counter(&s_token_renewal_requests);
     token_will_expire(rtc_user_data);
     assert(read_counter(&s_token_renewal_requests) == renewals_before_stop);
@@ -1294,31 +1293,6 @@ int main(void) {
     s_kv_init_fails = false;
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
 
-    /* An exit request racing with control startup must not be overwritten by
-     * the owner's later publication of the running state. */
-    mock_lock();
-    s_block_wifi_init = true;
-    s_wifi_init_entered = false;
-    s_start_thread_returned = false;
-    s_start_thread_result = 0;
-    int wifi_deinit_before_exit_race = s_wifi_deinit_calls;
-    mock_unlock();
-
-    pthread_t exit_race_start_tid;
-    int thread_result = pthread_create(&exit_race_start_tid, NULL, start_thread, &config);
-    assert(thread_result == 0);
-    assert(wait_for_flag_value(&s_wifi_init_entered, true, 1000));
-    mybot_request_exit();
-    assert(!mybot_is_running());
-    mock_lock();
-    s_block_wifi_init = false;
-    mock_unlock();
-    assert(pthread_join(exit_race_start_tid, NULL) == 0);
-    assert(read_bool(&s_start_thread_returned));
-    assert(read_counter(&s_start_thread_result) < 0);
-    assert(read_counter(&s_wifi_deinit_calls) == wifi_deinit_before_exit_race + 1);
-    assert(mybot_get_state() == MYBOT_STATE_STOPPED);
-
     /* Concurrent stop must wait for a start that is still constructing the
      * runtime instead of tearing down partially initialized resources. */
     mock_lock();
@@ -1333,7 +1307,7 @@ int main(void) {
 
     pthread_t start_tid;
     pthread_t stop_tid;
-    thread_result = pthread_create(&start_tid, NULL, start_thread, &config);
+    int thread_result = pthread_create(&start_tid, NULL, start_thread, &config);
     assert(thread_result == 0);
     assert(wait_for_flag_value(&s_wifi_init_entered, true, 1000));
     thread_result = pthread_create(&stop_tid, NULL, stop_thread, NULL);

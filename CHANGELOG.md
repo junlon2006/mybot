@@ -20,6 +20,8 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- **Breaking:** remove `mybot_request_exit()`; host applications stop directly after their own exit
+  signal or condition is observed.
 - Align the Agora RTSA wrapper with the single-instance, one-call-at-a-time product model: initialize
   RTSA once per mybot run, use one AOSL CAS lifecycle gate for callback, audio-send, and teardown
   ordering, and create one connection per conversation, with explicit lifecycle and error logging.
@@ -65,6 +67,8 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
+- Keep asynchronous exit notifications side-effect free while the control owner destroys the media
+  pipeline.
 - Use a unique temporary directory in the Linux announcement test so stale files or PID reuse do not
   make repeated CI runs fail during setup.
 - Make the application shutdown test wait for the playback worker to apply a pending announcement
@@ -184,7 +188,7 @@ This project follows Semantic Versioning.
   wake-word callbacks now submit short commands directly to the application control owner.
 - Rename the public application entry points from the `mybot_app_*` prefix to the root
   `mybot_*` namespace (`mybot_start()`, `mybot_stop()`, `mybot_is_running()`,
-  `mybot_get_state()`, `mybot_request_exit()`; types `mybot_config_t` / `mybot_state_t`; state
+  `mybot_get_state()`; types `mybot_config_t` / `mybot_state_t`; state
   enumerators `MYBOT_STATE_*`).
 - Unify public API naming around `mybot_<module>_register / init / deinit`: drop redundant middle
   words (`mybot_audio_register_capture()`, `mybot_audio_register_playback()`, `mybot_key_register()`,
