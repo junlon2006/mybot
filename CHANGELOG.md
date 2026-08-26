@@ -20,6 +20,8 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- Document the [mybot-esp32](https://github.com/junlon2006/mybot-esp32) cross-platform reference
+  project in the porting guide and repository documentation.
 - Sync the complete BK725x platform adaptation with the BK7258 reference project, including
   descriptor-based registration and embedded TLS root verification.
 - Restrict the SDK-internal LCD facade to the application control owner and remove its redundant
