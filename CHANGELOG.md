@@ -20,6 +20,8 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- Replace the bundled x86_64 Linux Agora RTSA Lite static package with shared-library build
+  `1267429` (`v1.10.1`) and accept either shared or static target libraries in CMake integrations.
 - Document the [mybot-esp32](https://github.com/junlon2006/mybot-esp32) cross-platform reference
   project in the porting guide and repository documentation.
 - Sync the complete BK725x platform adaptation with the BK7258 reference project, including
@@ -60,9 +62,8 @@ This project follows Semantic Versioning.
 - Limit host clang-format and clang-tidy checks to the SDK core, Linux platform, Linux example, and
   tests; BK725x Armino sources are validated by the BK firmware build environment instead.
 - Update the pinned AOSL submodule to upstream commit `84e0860`, which adds reference-counted
-  `aosl_ctor()` / `aosl_dtor()` lifecycle management. mybot and Agora RTC now hold independent
-  runtime references, and mybot releases its application reference only after RTC callbacks,
-  workers and buffers have been torn down.
+  `aosl_ctor()` / `aosl_dtor()` lifecycle management. mybot holds an application runtime reference
+  and releases it only after RTC callbacks, workers and buffers have been torn down.
 - Promote application informational logs to the AOSL NOTICE level, set the Linux example's
   runtime log threshold accordingly, and initialize the Agora RTSA SDK at its default NOTICE
   threshold, keeping application lifecycle messages visible while suppressing lower-priority

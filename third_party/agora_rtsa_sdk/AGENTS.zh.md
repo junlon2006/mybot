@@ -110,10 +110,6 @@ agora_rtc_init()                       初始化 SDK（每个进程仅一次）
   └─► agora_rtc_fini()                释放所有 SDK 资源
 ```
 
-`agora_rtc_init()` 与 `agora_rtc_fini()` 还会获取并释放 Agora SDK 自己持有的进程级 AOSL
-引用。直接使用 AOSL，或将本 SDK 与其他 AOSL 用户一起集成时，必须自行保持
-`aosl_ctor()` / `aosl_dtor()` 配对；SDK 的 `agora_rtc_fini()` 不会代替其他所有者释放引用。
-
 ### 初始化
 
 ```c

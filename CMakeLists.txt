@@ -76,7 +76,7 @@ set(AOSL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/aosl" CACHE PATH
     "Path to the AOSL source tree")
 set(AGORA_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/agora_rtsa_sdk/agora_sdk" CACHE PATH
     "Path to the Agora RTSA SDK package")
-set(AGORA_RTC_LIBRARY "${AGORA_SDK_DIR}/lib/x86_64/libagora-rtc-sdk.a" CACHE FILEPATH
+set(AGORA_RTC_LIBRARY "${AGORA_SDK_DIR}/lib/x86_64/libagora-rtc-sdk.so" CACHE FILEPATH
     "Path to the Agora RTSA library for the target architecture")
 
 if(NOT TARGET aosl)
@@ -111,11 +111,17 @@ if(NOT TARGET agora-rtc-sdk)
         message(FATAL_ERROR "Agora RTSA library was not found: ${AGORA_RTC_LIBRARY}")
     endif()
 
-    add_library(agora-rtc-sdk STATIC IMPORTED GLOBAL)
+    set(_agora_rtc_library_type STATIC)
+    if(AGORA_RTC_LIBRARY MATCHES "\\.so(\\.[0-9]+)*$" OR
+       AGORA_RTC_LIBRARY MATCHES "\\.dylib$")
+        set(_agora_rtc_library_type SHARED)
+    endif()
+    add_library(agora-rtc-sdk ${_agora_rtc_library_type} IMPORTED GLOBAL)
     set_target_properties(agora-rtc-sdk PROPERTIES
         IMPORTED_LOCATION "${AGORA_RTC_LIBRARY}"
         INTERFACE_INCLUDE_DIRECTORIES "${AGORA_SDK_DIR}/include"
     )
+    unset(_agora_rtc_library_type)
 endif()
 
 function(mybot_enable_sanitizers target)

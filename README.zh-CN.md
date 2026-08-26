@@ -92,7 +92,7 @@ flowchart LR
 ## 快速开始
 
 Linux 参考平台用于在开发机上快速跑通完整工作流。环境要求：Linux x86_64、CMake 3.16+、
-C99 编译器、ALSA 与 OpenSSL 开发包。仓库附带的 Agora RTSA 静态库为 x86_64 Linux 版本。
+C99 编译器、ALSA 与 OpenSSL 开发包。仓库附带的 Agora RTSA 共享库为 x86_64 Linux 版本。
 AOSL 以固定 commit 的 git submodule 引入：首次构建前需初始化（或克隆时加
 `--recurse-submodules`）。
 
@@ -130,7 +130,7 @@ APSTA 配网；音频使用 ALSA `default` 设备；KV 数据默认写入当前�
 
 推荐将仓库作为源码子模块引入。mybot 自身通过嵌套 submodule 依赖 AOSL，引入后先执行
 `git submodule update --init --recursive` 初始化。宿主需要为目标架构准备匹配的 Agora RTSA
-头文件/静态库，并确保 AOSL 已支持目标平台。
+头文件及共享库或静态库，并确保 AOSL 已支持目标平台。
 
 也支持已安装包：`cmake --install` 会导出 `mybot::sdk`（及随附的 `mybot::aosl`），消费工程将
 `MYBOT_AGORA_SDK_DIR` / `MYBOT_AGORA_RTC_LIBRARY` 指向目标架构的 Agora RTSA 包后，即可用
@@ -139,7 +139,7 @@ APSTA 配网；音频使用 ALSA `default` 设备；KV 数据默认写入当前�
 ```cmake
 set(CONFIG_PLATFORM my_mcu CACHE STRING "" FORCE)
 set(AGORA_SDK_DIR /opt/agora-rtsa CACHE PATH "" FORCE)
-set(AGORA_RTC_LIBRARY /opt/agora-rtsa/lib/libagora-rtc-sdk.a CACHE FILEPATH "" FORCE)
+set(AGORA_RTC_LIBRARY /opt/agora-rtsa/lib/libagora-rtc-sdk.so CACHE FILEPATH "" FORCE)
 
 set(MYBOT_BUILD_LINUX_PLATFORM OFF CACHE BOOL "" FORCE)
 set(MYBOT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -174,9 +174,13 @@ mybot_stop();
 按键、音频和设备服务；RTC 仅在会话开始时按需初始化。`mybot_start()` 与 `mybot_stop()`
 是线程安全的，并通过应用生命周期 gate 与控制 owner 串行执行。`mybot_stop()` 会等待全部
 工作线程退出，因此不应从平台或 SDK 回调内部调用。应用在 `mybot_start()` 内获取一份 AOSL
-引用，并在 `mybot_stop()` 末尾释放；Agora RTC 在 `agora_rtc_init()` /
-`agora_rtc_fini()` 中管理自己独立的一份 AOSL 引用。宿主若直接使用 AOSL，必须自行配对 `aosl_ctor()` /
-`aosl_dtor()`，只有所有消费者都释放引用后运行时才会最终释放。
+引用，并在 `mybot_stop()` 末尾释放。RTSA 生命周期通过 `agora_rtc_init()` /
+`agora_rtc_fini()` 初始化和结束；宿主若直接使用 AOSL，必须自行配对 `aosl_ctor()` /
+`aosl_dtor()`。
+
+仓库附带的 Linux RTSA 包是共享库。CMake 会为参考程序和测试设置构建目录运行路径；通过
+安装包集成的消费者必须自行部署 `libagora-rtc-sdk.so`，并通过安装 RPATH 或运行时加载器配置
+确保系统能够找到它。mybot 的 CMake 安装目标不会安装或再分发该依赖。
 
 ## 构建配置
 
