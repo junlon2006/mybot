@@ -23,7 +23,7 @@ How to measure on your target:
 Feature flags directly change the code footprint — `MYBOT_CLOUD_AEC`, `MYBOT_WAKE_WORDS`, and
 `MYBOT_ENABLE_HTTPS` are the main ones; disable what the product does not need. On MCU targets the
 Agora RTSA library dominates the flash budget, and it must be the
-target-architecture package (the bundled archive is x86_64 Linux only).
+target-architecture package (the bundled shared library is x86_64 Linux only).
 
 ## Memory model
 
@@ -90,7 +90,7 @@ true, worker threads and timers keep running. The power levers belong to the int
 
 - **Sleep**: call `mybot_stop()` before entering low power and `mybot_start()` on wake;
   this releases workers, audio devices, TLS, RTC resources, and mybot's AOSL runtime reference.
-  The Agora SDK reference is released by `agora_rtc_fini()` before the application reference.
+  RTSA finalization completes before mybot releases its application reference.
 - **Radio**: the Wi-Fi provisioning implementation owns the radio; implement the platform's low-power
   policy there.
 - **Audio path**: gate the codec/amplifier in the audio implementations; the SDK owns volume control — a

@@ -51,9 +51,6 @@ The most common structures to fill first are:
 ## Integration Notes
 
 - Initialize the SDK once per process unless the user has a very specific multi-process design.
-- `agora_rtc_init()` / `agora_rtc_fini()` own one independent reference to the process-wide AOSL
-  runtime. Any host code that uses AOSL directly must keep its own balanced `aosl_ctor()` /
-  `aosl_dtor()` pair.
 - Keep connection IDs in app state. They are the handle for nearly all follow-up API calls.
 - Use callback-driven state transitions instead of assuming `join_channel` means media can be sent
   immediately.

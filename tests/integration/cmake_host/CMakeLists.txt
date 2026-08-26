@@ -13,9 +13,9 @@ set(MYBOT_ENABLE_ASAN OFF CACHE BOOL "" FORCE)
 # A real host integration supplies the target-architecture Agora package.
 # Predeclare the target to verify that mybot does not require its bundled
 # x86_64 paths when the host already owns this dependency.
-add_library(agora-rtc-sdk STATIC IMPORTED GLOBAL)
+add_library(agora-rtc-sdk SHARED IMPORTED GLOBAL)
 set_target_properties(agora-rtc-sdk PROPERTIES
-    IMPORTED_LOCATION "${MYBOT_SOURCE_DIR}/third_party/agora_rtsa_sdk/agora_sdk/lib/x86_64/libagora-rtc-sdk.a"
+    IMPORTED_LOCATION "${MYBOT_SOURCE_DIR}/third_party/agora_rtsa_sdk/agora_sdk/lib/x86_64/libagora-rtc-sdk.so"
     INTERFACE_INCLUDE_DIRECTORIES "${MYBOT_SOURCE_DIR}/third_party/agora_rtsa_sdk/agora_sdk/include"
 )
 

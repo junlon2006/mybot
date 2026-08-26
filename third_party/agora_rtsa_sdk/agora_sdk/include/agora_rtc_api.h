@@ -17,6 +17,7 @@
 extern "C" {
 #endif
 
+#define BUILD_TARGET_SHARED
 
 #if defined (_MSC_VER) && defined(BUILD_TARGET_SHARED) && defined(AGORA_BUILDING_API)
 #define __agora_api__ __declspec(dllexport)

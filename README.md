@@ -114,7 +114,7 @@ For the device-side audio pipeline and state machine, see [Architecture](#archit
 
 The Linux reference platform lets you run the full workflow on a development machine. Requirements:
 Linux x86_64, CMake 3.16+, a C99 compiler, and ALSA and OpenSSL development packages. The bundled
-Agora RTSA static library is also the x86_64 Linux build. AOSL is pulled in as a pinned git
+Agora RTSA shared library is also the x86_64 Linux build. AOSL is pulled in as a pinned git
 submodule: initialize it before the first build (or clone with `--recurse-submodules`).
 
 ```bash
@@ -153,8 +153,8 @@ override the location with the `MYBOT_KV_STORE_DIR` environment variable.
 We recommend vendoring the repository as a source submodule, and mybot itself depends on AOSL
 through a nested submodule — initialize submodules after adding it with
 `git submodule update --init --recursive`.
-The host must provide an Agora RTSA header and static library matching the target architecture and
-ensure AOSL supports the target platform.
+The host must provide an Agora RTSA header and shared or static library matching the target
+architecture and ensure AOSL supports the target platform.
 
 An installed package is also supported: `cmake --install` exports `mybot::sdk` (and the bundled
 `mybot::aosl`), and a consumer project can use `find_package(mybot CONFIG REQUIRED)` after pointing
@@ -163,7 +163,7 @@ An installed package is also supported: `cmake --install` exports `mybot::sdk` (
 ```cmake
 set(CONFIG_PLATFORM my_mcu CACHE STRING "" FORCE)
 set(AGORA_SDK_DIR /opt/agora-rtsa CACHE PATH "" FORCE)
-set(AGORA_RTC_LIBRARY /opt/agora-rtsa/lib/libagora-rtc-sdk.a CACHE FILEPATH "" FORCE)
+set(AGORA_RTC_LIBRARY /opt/agora-rtsa/lib/libagora-rtc-sdk.so CACHE FILEPATH "" FORCE)
 
 set(MYBOT_BUILD_LINUX_PLATFORM OFF CACHE BOOL "" FORCE)
 set(MYBOT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -203,10 +203,13 @@ reported. RTC is initialized on demand when a conversation starts.
 lifecycle gate and control owner. `mybot_stop()` waits for all worker threads to exit and must not be
 called from inside a platform or SDK callback. The application acquires one reference to the
 process-wide AOSL runtime inside `mybot_start()` and releases it at the end of `mybot_stop()`.
-Agora RTC acquires and releases its own independent AOSL reference in `agora_rtc_init()` /
-`agora_rtc_fini()`. A host that uses AOSL
-directly must keep its own `aosl_ctor()` / `aosl_dtor()` pair balanced; the runtime is finalized only
-after every consumer has released its reference.
+The RTSA lifecycle is initialized and finalized through `agora_rtc_init()` / `agora_rtc_fini()`.
+A host that uses AOSL directly must keep its own `aosl_ctor()` / `aosl_dtor()` pair balanced.
+
+The bundled Linux RTSA package is a shared library. CMake supplies a build-tree runtime path for the
+reference executable and tests. Installed-package consumers must deploy `libagora-rtc-sdk.so` and
+make it discoverable through their install RPATH or runtime loader configuration; the mybot CMake
+install target does not install or redistribute that dependency.
 
 ## Build configuration
 

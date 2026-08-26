@@ -212,7 +212,7 @@ such as HTTPS for an HTTPS server URL and wake words when enabled.
 ```cmake
 set(CONFIG_PLATFORM my_mcu CACHE STRING "" FORCE)
 set(AGORA_SDK_DIR /opt/agora-rtsa-target CACHE PATH "" FORCE)
-set(AGORA_RTC_LIBRARY /opt/agora-rtsa-target/lib/libagora-rtc-sdk.a CACHE FILEPATH "" FORCE)
+set(AGORA_RTC_LIBRARY /opt/agora-rtsa-target/lib/libagora-rtc-sdk.so CACHE FILEPATH "" FORCE)
 set(MYBOT_BUILD_LINUX_PLATFORM OFF CACHE BOOL "" FORCE)
 set(MYBOT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(MYBOT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -252,9 +252,9 @@ initialization when a required ops table, such as the TLS transport, is absent. 
 services continue after Wi-Fi reports usable network connectivity. Do not call stop from a platform callback because
 it waits for workers and callbacks. `mybot_start()` acquires one application reference to the
 process-wide AOSL runtime and `mybot_stop()` releases that reference last, after workers, buffers
-and the RTC callback queue have been torn down. `agora_rtc_init()` / `agora_rtc_fini()` own a
-separate SDK reference. A host that uses AOSL directly must pair its own `aosl_ctor()` and
-`aosl_dtor()` calls and keep that reference until all of its AOSL users have stopped.
+and the RTC callback queue have been torn down. The RTSA lifecycle is managed through
+`agora_rtc_init()` / `agora_rtc_fini()`. A host that uses AOSL directly must pair its own
+`aosl_ctor()` and `aosl_dtor()` calls and keep that reference until all of its AOSL users have stopped.
 
 `mybot_get_state()` is the thread-safe application-level state query. It reports
 `MYBOT_STATE_IN_CONVERSATION` after the device service accepts a conversation and returns to
@@ -270,11 +270,13 @@ cmake -S firmware -B build-target \
   -DCMAKE_TOOLCHAIN_FILE=/path/to/toolchain.cmake \
   -DCONFIG_PLATFORM=my_mcu \
   -DAGORA_SDK_DIR=/opt/agora-rtsa-target \
-  -DAGORA_RTC_LIBRARY=/opt/agora-rtsa-target/lib/libagora-rtc-sdk.a
+  -DAGORA_RTC_LIBRARY=/opt/agora-rtsa-target/lib/libagora-rtc-sdk.so
 cmake --build build-target -j
 ```
 
-Verify endianness, pointer width, libc, compiler and floating-point ABI against the Agora library.
+`AGORA_RTC_LIBRARY` accepts a shared or static library. Verify endianness, pointer width, libc,
+compiler and floating-point ABI against the selected Agora library. For a shared target package,
+also deploy the library and configure the firmware or OS runtime loader to find it.
 
 ## Step 8: Acceptance checklist
 

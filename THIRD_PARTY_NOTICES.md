@@ -17,9 +17,16 @@ automatically; initialize submodules after cloning with `git submodule update --
 
 ## Agora RTSA SDK
 
-Location: `third_party/agora_rtsa_sdk`. The bundled package identifies itself as Agora RTSA Lite
-v1.10.1 for x86_64 Linux. It is provided for Linux **development and demo** use only and is
-intentionally retained in this repository for the Linux reference demo (it is not removed).
+Location: `third_party/agora_rtsa_sdk`. The bundled shared-library package identifies itself as
+`Agora-RTSALite-RmRcAcAj-x86_64-linux-gnu-v1.10.1-20260826_140406-1267429`. It is provided for
+Linux **development and demo** use only and is intentionally retained in this repository for the
+Linux reference demo (it is not removed).
+
+Package provenance recorded for this update:
+
+- Source archive: `Agora-RTSALite-RmRcAcAj-x86_64-linux-gnu-v1.10.1-20260826_140406-1267429.tgz`
+- Archive SHA-256: `16ec47dcf43bcbd3362ee11dff2255ba5a8bca9097f27efd356449490b981edf`
+- `libagora-rtc-sdk.so` SHA-256: `cf246fcc74ca8b6147e71f223e18d4631174904e31a76b72b641ee666b837701`
 
 No standalone license or NOTICE for the bundled RTSA binary was found in the package during the
 1.0.0 audit. Possession of the files is not evidence of redistribution rights. Commercial or

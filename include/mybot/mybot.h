@@ -156,9 +156,8 @@ MYBOT_API mybot_state_t mybot_get_state(void);
  * failed mybot_start(), or repeatedly. After it returns, the application
  * returns to MYBOT_STATE_STOPPED and may be started again.
  *
- * RTC shutdown releases the Agora SDK's independent AOSL reference first;
- * mybot releases its application reference last, after all application-owned
- * workers and buffers have been destroyed.
+ * RTC shutdown completes before mybot releases its application AOSL reference,
+ * after all application-owned workers and buffers have been destroyed.
  *
  * @warning Blocks until shutdown completes, so it must be called from the
  *          main application thread — never from inside a platform event

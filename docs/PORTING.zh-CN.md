@@ -189,7 +189,7 @@ int my_mcu_platform_register(void) {
 ```cmake
 set(CONFIG_PLATFORM my_mcu CACHE STRING "" FORCE)
 set(AGORA_SDK_DIR /opt/agora-rtsa-target CACHE PATH "" FORCE)
-set(AGORA_RTC_LIBRARY /opt/agora-rtsa-target/lib/libagora-rtc-sdk.a CACHE FILEPATH "" FORCE)
+set(AGORA_RTC_LIBRARY /opt/agora-rtsa-target/lib/libagora-rtc-sdk.so CACHE FILEPATH "" FORCE)
 set(MYBOT_BUILD_LINUX_PLATFORM OFF CACHE BOOL "" FORCE)
 set(MYBOT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(MYBOT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -228,8 +228,8 @@ mybot_stop();
 非阻塞的；Wi-Fi 上报网络可用后服务继续运行。不要
 从平台回调中调用 stop，因为它会等待工作线程与回调。`mybot_start()` 获取一份应用持有的
  AOSL 引用，`mybot_stop()` 在工作线程、缓冲区和 RTC 回调队列全部销毁后最后释放该
-引用。`agora_rtc_init()` / `agora_rtc_fini()` 管理 SDK 独立的一份引用。宿主若直接使用
-AOSL，必须自行配对 `aosl_ctor()` 与 `aosl_dtor()`，并在所有 AOSL 用户停止前保持该引用。
+引用。RTSA 生命周期通过 `agora_rtc_init()` / `agora_rtc_fini()` 管理。宿主若直接使用 AOSL，
+必须自行配对 `aosl_ctor()` 与 `aosl_dtor()`，并在所有 AOSL 用户停止前保持该引用。
 
 `mybot_get_state()` 是线程安全的应用层状态查询接口。设备服务接受会话后返回
 `MYBOT_STATE_IN_CONVERSATION`，正常拆除后回到 `MYBOT_STATE_READY`。运行期网络丢失时，
@@ -244,11 +244,12 @@ cmake -S firmware -B build-target \
   -DCMAKE_TOOLCHAIN_FILE=/path/to/toolchain.cmake \
   -DCONFIG_PLATFORM=my_mcu \
   -DAGORA_SDK_DIR=/opt/agora-rtsa-target \
-  -DAGORA_RTC_LIBRARY=/opt/agora-rtsa-target/lib/libagora-rtc-sdk.a
+  -DAGORA_RTC_LIBRARY=/opt/agora-rtsa-target/lib/libagora-rtc-sdk.so
 cmake --build build-target -j
 ```
 
-对照 Agora 库核实字节序、指针宽度、libc、编译器与浮点 ABI。
+`AGORA_RTC_LIBRARY` 可指向共享库或静态库。需对照所选 Agora 库核实字节序、指针宽度、
+libc、编译器与浮点 ABI；若使用共享目标包，还需部署该库并配置固件或操作系统的运行时加载器。
 
 ## 第 8 步：验收清单
 

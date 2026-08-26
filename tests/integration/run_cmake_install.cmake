@@ -51,7 +51,7 @@ execute_process(
             -B "${consumer_dir}"
             -DCMAKE_PREFIX_PATH=${install_prefix}
             -DMYBOT_AGORA_SDK_DIR=${MYBOT_SOURCE_DIR}/third_party/agora_rtsa_sdk/agora_sdk
-            -DMYBOT_AGORA_RTC_LIBRARY=${MYBOT_SOURCE_DIR}/third_party/agora_rtsa_sdk/agora_sdk/lib/x86_64/libagora-rtc-sdk.a
+            -DMYBOT_AGORA_RTC_LIBRARY=${MYBOT_SOURCE_DIR}/third_party/agora_rtsa_sdk/agora_sdk/lib/x86_64/libagora-rtc-sdk.so
     RESULT_VARIABLE configure_result
 )
 if(NOT configure_result EQUAL 0)

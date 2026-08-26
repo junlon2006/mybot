@@ -9,9 +9,9 @@
  * be built as a shared library (Linux/macOS visibility) or a DLL (Windows)
  * and consumed from both static and shared builds. The library build defines
  * MYBOT_BUILDING_LIBRARY (set by CMake on the mybot_sdk target); consumers
- * never define it. Building a shared library also requires a position-
- * independent Agora RTSA archive; the bundled x86_64 static library does not
- * qualify, so the current release remains static-only.
+ * never define it. The current CMake target remains a static SDK library, but
+ * the public declarations retain the visibility contract for future shared
+ * builds.
  */
 
 #if defined(_WIN32) || defined(__CYGWIN__)
