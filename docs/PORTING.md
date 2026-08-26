@@ -41,6 +41,12 @@ platforms/my_mcu/
 
 An out-of-tree firmware project may use the same layout without changing this repository.
 
+## Reference port projects
+
+The [mybot-esp32](https://github.com/junlon2006/mybot-esp32) repository provides an ESP32
+cross-platform firmware reference. Use it to study AOSL platform integration, descriptor wiring,
+and firmware lifecycle while keeping the SDK public contract and ownership boundaries defined here.
+
 ## Step 3: Implement the required platform operations
 
 Implement the operations tables below and expose them through the platform descriptor in Step 4.
