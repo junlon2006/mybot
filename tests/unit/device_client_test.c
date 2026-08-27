@@ -32,7 +32,7 @@ static const char s_missing_pair_code_response_body[] =
 static const char s_missing_pair_token_response_body[] = "{\"data\":{\"code\":\"123456\"}}";
 
 static const char s_valid_response_body[] =
-    "{\"data\":{\"conversation_id\":\"conversation-1\",\"rtc\":{"
+    "{\"data\":{\"conversation_id\":\"conversation-1\",\"agent_uid\":\"agent-uid\",\"rtc\":{"
     "\"app_id\":\"app-1\",\"channel\":\"channel-1\",\"token\":\"token-1\","
     "\"uid\":\"device-uid\"}}}";
 
@@ -273,11 +273,13 @@ static void test_binding_failures(void) {
 static void test_conversation_failures(void) {
     mybot_device_conversation_t conversation;
     char long_base[700];
+    char oversized_agent_response[512];
     int calls;
 
     reset_http_mock(s_valid_response_body);
     assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   "{\"custom\":true}", &conversation) == 0);
+    assert(strcmp(conversation.rtc_agent_uid, "agent-uid") == 0);
     assert(strcmp(s_request_body, "{\"custom\":true}") == 0);
     assert(strcmp(s_request_content_type, "application/json") == 0);
 
@@ -331,6 +333,36 @@ static void test_conversation_failures(void) {
     assert(strcmp(conversation.rtc_channel, "channel") == 0);
     assert(strcmp(conversation.rtc_uid, "uid") == 0);
     assert(conversation.rtc_token[0] == '\0');
+
+    reset_http_mock(s_valid_response_body);
+    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+                                                  &conversation) == 0);
+    assert(strcmp(conversation.rtc_agent_uid, "agent-uid") == 0);
+
+    /* RTM peer accounts must not be silently truncated at the 64-byte limit. */
+    assert(snprintf(oversized_agent_response, sizeof(oversized_agent_response),
+                    "{\"data\":{\"conversation_id\":\"c-1\",\"agent_uid\":\"%064d\","
+                    "\"rtc\":{\"channel\":\"channel\",\"uid\":\"uid\"}}}",
+                    0) > 0);
+    reset_http_mock(oversized_agent_response);
+    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+                                                  &conversation) < 0);
+
+    char oversized_local_response[512];
+    assert(snprintf(oversized_local_response, sizeof(oversized_local_response),
+                    "{\"data\":{\"conversation_id\":\"c-1\","
+                    "\"rtc\":{\"channel\":\"channel\",\"uid\":\"%064d\"}}}",
+                    0) > 0);
+    reset_http_mock(oversized_local_response);
+    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+                                                  &conversation) < 0);
+
+    reset_http_mock("{\"data\":{\"conversation_id\":\"c-1\",\"agent_uid\":12345,"
+                    "\"rtc\":{\"channel\":\"channel\",\"uid\":67890}}}");
+    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+                                                  &conversation) == 0);
+    assert(strcmp(conversation.rtc_uid, "67890") == 0);
+    assert(strcmp(conversation.rtc_agent_uid, "12345") == 0);
 }
 
 static void test_renew_failures(void) {

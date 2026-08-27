@@ -328,6 +328,7 @@ static void clear_rtc_token_renewal(mybot_device_lifecycle_t *lifecycle) {
     lifecycle->rtc_token_retry_ticks_remaining = 0;
     lifecycle->rtc_channel[0] = '\0';
     lifecycle->rtc_uid[0] = '\0';
+    lifecycle->rtc_agent_uid[0] = '\0';
 }
 
 static void schedule_rtc_token_retry(mybot_device_lifecycle_t *lifecycle) {
@@ -382,6 +383,7 @@ static void action_start_conversation(mybot_device_lifecycle_t *lifecycle) {
     clear_rtc_token_renewal(lifecycle);
     snprintf(lifecycle->rtc_channel, sizeof(lifecycle->rtc_channel), "%s", resp.rtc_channel);
     snprintf(lifecycle->rtc_uid, sizeof(lifecycle->rtc_uid), "%s", resp.rtc_uid);
+    snprintf(lifecycle->rtc_agent_uid, sizeof(lifecycle->rtc_agent_uid), "%s", resp.rtc_agent_uid);
 
     AOSL_LOG_NTC("conversation started: %s, channel=%s, uid=%s", lifecycle->conversation_id,
                  resp.rtc_channel, resp.rtc_uid);
@@ -396,6 +398,7 @@ static void action_start_conversation(mybot_device_lifecycle_t *lifecycle) {
         strncpy(params.rtc_app_id, resp.rtc_app_id, sizeof(params.rtc_app_id) - 1);
         strncpy(params.rtc_channel, resp.rtc_channel, sizeof(params.rtc_channel) - 1);
         strncpy(params.rtc_uid, resp.rtc_uid, sizeof(params.rtc_uid) - 1);
+        strncpy(params.rtc_agent_uid, resp.rtc_agent_uid, sizeof(params.rtc_agent_uid) - 1);
         strncpy(params.rtc_token, resp.rtc_token, sizeof(params.rtc_token) - 1);
         lifecycle->cbs.on_conversation_start(&params, lifecycle->cbs.user_data);
     }

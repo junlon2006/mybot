@@ -237,6 +237,19 @@ mybot_stop();
 （`unprovisioned`、`pairing`、`awaiting_claim`、`runtime`、`in_conversation`）属于 SDK
 内部状态机，平台不应自行重建。
 
+### RTM 账号映射
+
+Agora RTM 集成遵循 xiaozhi 参考流程。设备服务的启动会话响应提供服务端生成的
+`rtc.uid`（也称 `local_uid`），并在顶层提供点对点消息使用的 `agent_uid`。SDK 原样使用
+`rtc.uid` 作为 RTC user account 和本地 RTM UID，并使用服务端下发的同一个 RTC token 请求
+RTM 登录。`agent_uid` 是传给 `mybot_agora_rtc_send_rtm_data()` 的对端 UID；`AG-*` 设备 ID
+仅用于设备服务身份，不能替代这两个账号。
+
+RTM UID 必须非空、长度小于 64 字节，并且只能包含 Agora 接受的 ASCII 字母、数字、空格和
+标点字符。`mybot_agora_rtc_rtm_uid_is_valid()` 暴露了登录前使用的同一校验规则。RTM 登录是
+异步的：只有 `MYBOT_RTM_EVENT_LOGIN` 回调的错误码为 0 后才允许发送消息。RTM 负载上限为
+31 KiB，custom type 上限为 32 字节。
+
 ## 第 7 步：交叉编译
 
 ```bash

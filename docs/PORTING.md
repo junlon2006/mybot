@@ -263,6 +263,21 @@ and the RTC callback queue have been torn down. The RTSA lifecycle is managed th
 states (`unprovisioned`, `pairing`, `awaiting_claim`, `runtime`, and `in_conversation`) are an
 internal state machine and must not be reconstructed by the platform.
 
+### RTM account mapping
+
+The Agora RTM integration follows the xiaozhi reference flow. The device-service conversation
+response supplies a server-generated `rtc.uid` (also called `local_uid`) and, for point-to-point
+messages, a top-level `agent_uid`. The SDK uses `rtc.uid` unchanged as both the RTC user account
+and the local RTM UID, and uses the same server-issued RTC token for the RTM login request. The
+`agent_uid` value is the peer passed to `mybot_agora_rtc_send_rtm_data()`; the `AG-*` device ID is
+only the device-service identity and must not be substituted for either account.
+
+An RTM UID must be non-empty, shorter than 64 bytes, and contain only ASCII letters, digits, space,
+or the punctuation characters accepted by Agora. `mybot_agora_rtc_rtm_uid_is_valid()` exposes the
+same validation used before login. RTM login is asynchronous: a send is allowed only after the
+`MYBOT_RTM_EVENT_LOGIN` callback reports error code 0. RTM payloads are limited to 31 KiB and
+custom types to 32 bytes.
+
 ## Step 7: Cross-compile
 
 ```bash

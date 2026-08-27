@@ -4,6 +4,12 @@ This project follows Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Enable Agora RTM login and point-to-point messaging in the internal RTC wrapper. RTM uses the
+  server-issued `rtc.uid` as the local account, validates Agora's 64-byte ASCII account contract,
+  and exposes the server-provided `agent_uid` for peer messaging.
+
 ## [1.0.0] - 2026-08-26
 
 ### Added
