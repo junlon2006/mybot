@@ -16,6 +16,10 @@
 #define MYBOT_RTM_LOGIN_TIMEOUT_MS 5000U
 #endif
 
+#ifndef MYBOT_RTM_SUBSCRIBE_TIMEOUT_MS
+#define MYBOT_RTM_SUBSCRIBE_TIMEOUT_MS 5000U
+#endif
+
 #define MYBOT_RTM_LOGIN_POLL_MS 10U
 
 typedef struct {
@@ -24,14 +28,21 @@ typedef struct {
     mybot_agora_rtc_callbacks_t callbacks;
     char app_id[64];
     char rtm_uid[MYBOT_RTM_UID_MAX_LEN];
+    char rtm_channel[AGORA_RTC_CHANNEL_NAME_MAX_LEN + 1];
     bool rtm_login_requested;
     bool rtm_login_completed;
     bool rtm_logged_in;
+    bool rtm_subscribe_requested;
+    bool rtm_subscribe_completed;
+    bool rtm_subscribed;
     bool fini_failed;
 } mybot_agora_rtc_t;
 
 static mybot_agora_rtc_t s_rtc = {.conn_id = CONNECTION_ID_INVALID};
 static aosl_atomic_t s_rtc_lifecycle_gate;
+
+static void clear_rtm_subscription_locked(void);
+static void clear_rtm_login_locked(void);
 
 static void rtc_lock(void) {
     while (aosl_atomic_cmpxchg(&s_rtc_lifecycle_gate, 0, 1) != 0) {
@@ -167,6 +178,17 @@ static const char *rtm_event_name(rtm_event_type_e event_type) {
     }
 }
 
+static const char *rtm_message_type_name(rtm_message_type_e message_type) {
+    switch (message_type) {
+    case RTM_MESSAGE_TYPE_BINARY:
+        return "BINARY";
+    case RTM_MESSAGE_TYPE_STRING:
+        return "STRING";
+    default:
+        return "UNKNOWN";
+    }
+}
+
 static void on_rtm_event(const char *rtm_uid, rtm_event_type_e event_type,
                          rtm_err_code_e error_code) {
     mybot_rtm_event_type_t mapped_event;
@@ -201,17 +223,16 @@ static void on_rtm_event(const char *rtm_uid, rtm_event_type_e event_type,
         if (s_rtc.rtm_logged_in) {
             AOSL_LOG_NTC("[RTM] login succeeded (uid=%s)", rtm_uid);
         } else {
+            clear_rtm_login_locked();
             AOSL_LOG_WRN("[RTM] login failed (uid=%s, error=%d)", rtm_uid, (int)error_code);
         }
         break;
     case RTM_EVENT_TYPE_KICKOFF:
-        s_rtc.rtm_login_completed = true;
-        s_rtc.rtm_logged_in = false;
+        clear_rtm_login_locked();
         AOSL_LOG_WRN("[RTM] account kicked off (uid=%s, error=%d)", rtm_uid, (int)error_code);
         break;
     case RTM_EVENT_TYPE_EXIT:
-        s_rtc.rtm_login_completed = true;
-        s_rtc.rtm_logged_in = false;
+        clear_rtm_login_locked();
         AOSL_LOG_NTC("[RTM] account exited (uid=%s, error=%d)", rtm_uid, (int)error_code);
         break;
     default:
@@ -234,24 +255,29 @@ static void on_rtm_event(const char *rtm_uid, rtm_event_type_e event_type,
 }
 
 static void on_rtm_data(const char *rtm_uid, const void *data, size_t len,
-                        const char *custom_type) {
+                        rtm_message_type_e message_type, const char *custom_type) {
     size_t preview_len = len > 512U ? 512U : len;
 
     rtc_lock();
     if (!s_rtc.rtm_login_requested) {
-        AOSL_LOG_NTC("[RTM] data ignored: login was not requested (from=%s, type=%s, len=%zu)",
-                     rtm_uid ? rtm_uid : "(null)", custom_type ? custom_type : "(null)", len);
+        AOSL_LOG_NTC(
+            "[RTM] data ignored: login was not requested (from=%s, message_type=%s, type=%s, "
+            "len=%zu)",
+            rtm_uid ? rtm_uid : "(null)", rtm_message_type_name(message_type),
+            custom_type ? custom_type : "(null)", len);
         rtc_unlock();
         return;
     }
 
     if (data && preview_len > 0) {
-        AOSL_LOG_NTC("[RTM] data received: from=%s type=%s len=%zu msg=%.*s",
-                     rtm_uid ? rtm_uid : "(null)", custom_type ? custom_type : "(null)", len,
-                     (int)preview_len, (const char *)data);
+        AOSL_LOG_NTC("[RTM] data received: from=%s message_type=%s type=%s len=%zu msg=%.*s",
+                     rtm_uid ? rtm_uid : "(null)", rtm_message_type_name(message_type),
+                     custom_type ? custom_type : "(null)", len, (int)preview_len,
+                     (const char *)data);
     } else {
-        AOSL_LOG_NTC("[RTM] data received: from=%s type=%s len=%zu msg=(empty)",
-                     rtm_uid ? rtm_uid : "(null)", custom_type ? custom_type : "(null)", len);
+        AOSL_LOG_NTC("[RTM] data received: from=%s message_type=%s type=%s len=%zu msg=(empty)",
+                     rtm_uid ? rtm_uid : "(null)", rtm_message_type_name(message_type),
+                     custom_type ? custom_type : "(null)", len);
     }
 
     if (s_rtc.callbacks.on_rtm_data) {
@@ -261,6 +287,88 @@ static void on_rtm_data(const char *rtm_uid, const void *data, size_t len,
     } else {
         AOSL_LOG_NTC("[RTM] data not forwarded: no application callback (from=%s, len=%zu)",
                      rtm_uid ? rtm_uid : "(null)", len);
+    }
+    rtc_unlock();
+}
+
+static void on_rtm_subscribe_result(const char *channel, rtm_err_code_e error_code) {
+    rtc_lock();
+    if (!s_rtc.rtm_subscribe_requested) {
+        AOSL_LOG_NTC("[RTM] subscribe result ignored: no subscription requested (channel=%s, "
+                     "error=%d)",
+                     channel ? channel : "(null)", (int)error_code);
+        rtc_unlock();
+        return;
+    }
+    if (!channel || strcmp(channel, s_rtc.rtm_channel) != 0) {
+        AOSL_LOG_WRN("[RTM] subscribe result ignored: channel mismatch (expected=%s, received=%s)",
+                     s_rtc.rtm_channel, channel ? channel : "(null)");
+        rtc_unlock();
+        return;
+    }
+
+    s_rtc.rtm_subscribe_completed = true;
+    s_rtc.rtm_subscribed = error_code == ERR_RTM_OK;
+    if (s_rtc.rtm_subscribed) {
+        AOSL_LOG_NTC("[RTM] channel subscription succeeded (channel=%s)", channel);
+    } else {
+        AOSL_LOG_WRN("[RTM] channel subscription failed (channel=%s, error=%d)", channel,
+                     (int)error_code);
+    }
+
+    if (s_rtc.callbacks.on_rtm_subscribe_result) {
+        AOSL_LOG_NTC("[RTM] forwarding subscribe result to application (channel=%s)", channel);
+        s_rtc.callbacks.on_rtm_subscribe_result(channel, (int)error_code,
+                                                s_rtc.callbacks.user_data);
+    } else {
+        AOSL_LOG_NTC("[RTM] subscribe result not forwarded: no application callback (channel=%s)",
+                     channel);
+    }
+    rtc_unlock();
+}
+
+static void on_rtm_subscribe_data(const char *channel, const char *rtm_uid, const void *data,
+                                  size_t len, rtm_message_type_e message_type,
+                                  const char *custom_type) {
+    size_t preview_len = len > 512U ? 512U : len;
+
+    rtc_lock();
+    if (!s_rtc.rtm_subscribed) {
+        AOSL_LOG_NTC("[RTM] channel data ignored: no active subscription (channel=%s, from=%s, "
+                     "len=%zu)",
+                     channel ? channel : "(null)", rtm_uid ? rtm_uid : "(null)", len);
+        rtc_unlock();
+        return;
+    }
+    if (!channel || strcmp(channel, s_rtc.rtm_channel) != 0) {
+        AOSL_LOG_WRN("[RTM] channel data ignored: channel mismatch (expected=%s, received=%s)",
+                     s_rtc.rtm_channel, channel ? channel : "(null)");
+        rtc_unlock();
+        return;
+    }
+
+    if (data && preview_len > 0) {
+        AOSL_LOG_NTC("[RTM] channel data received: channel=%s from=%s message_type=%s type=%s "
+                     "len=%zu msg=%.*s",
+                     channel, rtm_uid ? rtm_uid : "(null)", rtm_message_type_name(message_type),
+                     custom_type ? custom_type : "(null)", len, (int)preview_len,
+                     (const char *)data);
+    } else {
+        AOSL_LOG_NTC("[RTM] channel data received: channel=%s from=%s message_type=%s type=%s "
+                     "len=%zu msg=(empty)",
+                     channel, rtm_uid ? rtm_uid : "(null)", rtm_message_type_name(message_type),
+                     custom_type ? custom_type : "(null)", len);
+    }
+
+    if (s_rtc.callbacks.on_rtm_subscribe_data) {
+        AOSL_LOG_NTC("[RTM] forwarding channel data to application (channel=%s, from=%s, len=%zu)",
+                     channel, rtm_uid ? rtm_uid : "(null)", len);
+        s_rtc.callbacks.on_rtm_subscribe_data(channel, rtm_uid, data, len, custom_type,
+                                              s_rtc.callbacks.user_data);
+    } else {
+        AOSL_LOG_NTC("[RTM] channel data not forwarded: no application callback (channel=%s, "
+                     "from=%s, len=%zu)",
+                     channel, rtm_uid ? rtm_uid : "(null)", len);
     }
     rtc_unlock();
 }
@@ -293,18 +401,17 @@ static int login_rtm_locked(const char *rtm_uid, const char *rtm_token) {
     handler.on_rtm_event = on_rtm_event;
     handler.on_rtm_data = on_rtm_data;
     handler.on_rtm_send_data_result = on_rtm_send_data_result;
+    handler.on_rtm_subscribe_result = on_rtm_subscribe_result;
+    handler.on_rtm_subscribe_data = on_rtm_subscribe_data;
 
     memcpy(s_rtc.rtm_uid, rtm_uid, strlen(rtm_uid) + 1);
     s_rtc.rtm_login_requested = true;
     s_rtc.rtm_login_completed = false;
     s_rtc.rtm_logged_in = false;
-    int ret = agora_rtc_login_rtm(rtm_uid, rtm_token && rtm_token[0] ? rtm_token : NULL, &handler);
+    int ret = agora_rtm_login(rtm_uid, rtm_token && rtm_token[0] ? rtm_token : NULL, &handler);
     if (ret < 0) {
         AOSL_LOG_ERR("[RTM] login failed: %s", agora_rtc_err_2_str(ret));
-        s_rtc.rtm_uid[0] = '\0';
-        s_rtc.rtm_login_requested = false;
-        s_rtc.rtm_login_completed = false;
-        s_rtc.rtm_logged_in = false;
+        clear_rtm_login_locked();
         return -1;
     }
     AOSL_LOG_NTC("[RTM] login requested (uid=%s)", rtm_uid);
@@ -338,6 +445,107 @@ static int wait_for_rtm_login(const char *rtm_uid) {
         if (aosl_tick_ms() - started_at >= MYBOT_RTM_LOGIN_TIMEOUT_MS) {
             AOSL_LOG_ERR("[RTM] login timed out after %u ms (uid=%s)",
                          (unsigned int)MYBOT_RTM_LOGIN_TIMEOUT_MS, rtm_uid);
+            return -1;
+        }
+        aosl_msleep(MYBOT_RTM_LOGIN_POLL_MS);
+    }
+}
+
+static void clear_rtm_subscription_locked(void) {
+    s_rtc.rtm_channel[0] = '\0';
+    s_rtc.rtm_subscribe_requested = false;
+    s_rtc.rtm_subscribe_completed = false;
+    s_rtc.rtm_subscribed = false;
+}
+
+static void clear_rtm_login_locked(void) {
+    clear_rtm_subscription_locked();
+    s_rtc.rtm_uid[0] = '\0';
+    s_rtc.rtm_login_requested = false;
+    s_rtc.rtm_login_completed = false;
+    s_rtc.rtm_logged_in = false;
+}
+
+static int unsubscribe_rtm_locked(void) {
+    if (!s_rtc.rtm_subscribe_requested) {
+        clear_rtm_subscription_locked();
+        return 0;
+    }
+
+    int ret = 0;
+    if (!s_rtc.rtm_subscribe_completed || s_rtc.rtm_subscribed) {
+        ret = agora_rtm_unsubscribe(s_rtc.rtm_channel);
+        if (ret < 0) {
+            AOSL_LOG_ERR("[RTM] unsubscribe failed (channel=%s): %s", s_rtc.rtm_channel,
+                         agora_rtc_err_2_str(ret));
+            return ret;
+        } else {
+            AOSL_LOG_NTC("[RTM] unsubscribed from channel=%s", s_rtc.rtm_channel);
+        }
+    }
+    clear_rtm_subscription_locked();
+    return ret;
+}
+
+static int subscribe_rtm_locked(const char *channel) {
+    if (!channel || !channel[0] || strlen(channel) >= AGORA_RTC_CHANNEL_NAME_MAX_LEN) {
+        AOSL_LOG_ERR("[RTM] subscribe rejected: invalid channel");
+        return -1;
+    }
+    if (!s_rtc.rtm_logged_in) {
+        AOSL_LOG_ERR("[RTM] subscribe rejected: login has not completed");
+        return -1;
+    }
+    if (s_rtc.rtm_subscribe_requested) {
+        return strcmp(s_rtc.rtm_channel, channel) == 0 ? 0 : -1;
+    }
+
+    memcpy(s_rtc.rtm_channel, channel, strlen(channel) + 1U);
+    s_rtc.rtm_subscribe_requested = true;
+    s_rtc.rtm_subscribe_completed = false;
+    s_rtc.rtm_subscribed = false;
+    int ret = agora_rtm_subscribe(channel);
+    if (ret < 0) {
+        AOSL_LOG_ERR("[RTM] subscribe failed: %s", agora_rtc_err_2_str(ret));
+        clear_rtm_subscription_locked();
+        return -1;
+    }
+    AOSL_LOG_NTC("[RTM] channel subscription requested (channel=%s)", channel);
+    return 0;
+}
+
+static int wait_for_rtm_subscription(const char *channel) {
+    aosl_ts_t started_at = aosl_tick_ms();
+    AOSL_LOG_NTC("[RTM] waiting for channel subscription before RTC join (channel=%s, timeout=%u "
+                 "ms)",
+                 channel, (unsigned int)MYBOT_RTM_SUBSCRIBE_TIMEOUT_MS);
+
+    for (;;) {
+        rtc_lock();
+        bool request_matches =
+            s_rtc.rtm_subscribe_requested && strcmp(s_rtc.rtm_channel, channel) == 0;
+        bool completed = s_rtc.rtm_subscribe_completed;
+        bool subscribed = s_rtc.rtm_subscribed;
+        rtc_unlock();
+
+        if (!request_matches) {
+            AOSL_LOG_ERR("[RTM] subscription wait aborted: request is no longer active "
+                         "(channel=%s)",
+                         channel);
+            return -1;
+        }
+        if (completed) {
+            if (!subscribed) {
+                AOSL_LOG_ERR("[RTM] channel subscription did not succeed (channel=%s)", channel);
+                return -1;
+            }
+            AOSL_LOG_NTC("[RTM] channel subscription confirmed before RTC join (channel=%s)",
+                         channel);
+            return 0;
+        }
+        if (aosl_tick_ms() - started_at >= MYBOT_RTM_SUBSCRIBE_TIMEOUT_MS) {
+            AOSL_LOG_ERR("[RTM] channel subscription timed out after %u ms (channel=%s)",
+                         (unsigned int)MYBOT_RTM_SUBSCRIBE_TIMEOUT_MS, channel);
             return -1;
         }
         aosl_msleep(MYBOT_RTM_LOGIN_POLL_MS);
@@ -475,10 +683,7 @@ static void clear_runtime_state(void) {
     s_rtc.conn_id = CONNECTION_ID_INVALID;
     memset(&s_rtc.callbacks, 0, sizeof(s_rtc.callbacks));
     s_rtc.app_id[0] = '\0';
-    s_rtc.rtm_uid[0] = '\0';
-    s_rtc.rtm_login_requested = false;
-    s_rtc.rtm_login_completed = false;
-    s_rtc.rtm_logged_in = false;
+    clear_rtm_login_locked();
     s_rtc.fini_failed = false;
 }
 
@@ -565,23 +770,22 @@ int mybot_agora_rtc_login_rtm(const char *rtm_uid, const char *rtm_token) {
 int mybot_agora_rtc_logout_rtm(void) {
     rtc_lock();
     if (!s_rtc.rtm_login_requested) {
+        clear_rtm_subscription_locked();
         rtc_unlock();
         return 0;
     }
 
-    int ret = agora_rtc_logout_rtm();
+    int unsubscribe_ret = unsubscribe_rtm_locked();
+    int ret = agora_rtm_logout();
     if (ret < 0) {
         AOSL_LOG_ERR("[RTM] logout failed: %s", agora_rtc_err_2_str(ret));
         rtc_unlock();
         return -1;
     }
     AOSL_LOG_NTC("[RTM] logged out (uid=%s)", s_rtc.rtm_uid);
-    s_rtc.rtm_uid[0] = '\0';
-    s_rtc.rtm_login_requested = false;
-    s_rtc.rtm_login_completed = false;
-    s_rtc.rtm_logged_in = false;
+    clear_rtm_login_locked();
     rtc_unlock();
-    return 0;
+    return unsubscribe_ret < 0 ? -1 : 0;
 }
 
 bool mybot_agora_rtc_is_rtm_logged_in(void) {
@@ -605,7 +809,8 @@ int mybot_agora_rtc_send_rtm_data(const char *peer_rtm_uid, const void *data, si
         rtc_unlock();
         return -1;
     }
-    int ret = agora_rtc_send_rtm_data(peer_rtm_uid, data, len, msg_id, custom_type);
+    int ret =
+        agora_rtm_send_data(peer_rtm_uid, data, len, msg_id, RTM_MESSAGE_TYPE_BINARY, custom_type);
     if (ret < 0) {
         AOSL_LOG_ERR("[RTM] send failed: %s", agora_rtc_err_2_str(ret));
     }
@@ -614,7 +819,8 @@ int mybot_agora_rtc_send_rtm_data(const char *peer_rtm_uid, const void *data, si
 }
 
 int mybot_agora_rtc_join(const char *channel, const char *token, const char *user_account) {
-    if (!channel || !channel[0] || !user_account || !user_account[0]) {
+    if (!channel || !channel[0] || strlen(channel) >= AGORA_RTC_CHANNEL_NAME_MAX_LEN ||
+        !user_account || !user_account[0]) {
         AOSL_LOG_ERR("[RTC] join rejected: invalid channel or user account");
         return -1;
     }
@@ -642,12 +848,34 @@ int mybot_agora_rtc_join(const char *channel, const char *token, const char *use
         return -1;
     }
 
+    bool rtm_subscription_started_for_join = false;
     rtc_lock();
     int ret = -1;
     if (s_rtc.state != MYBOT_RTC_STATE_INITIALIZED || s_rtc.conn_id != CONNECTION_ID_INVALID ||
         !s_rtc.rtm_logged_in || strcmp(s_rtc.rtm_uid, user_account) != 0) {
         AOSL_LOG_ERR("[RTC] join rejected after RTM wait (state=%s, conn_id=%u, rtm_logged_in=%d)",
                      state_name(s_rtc.state), s_rtc.conn_id, s_rtc.rtm_logged_in ? 1 : 0);
+        goto out;
+    }
+    rtm_subscription_started_for_join = !s_rtc.rtm_subscribe_requested;
+    if (subscribe_rtm_locked(channel) < 0) {
+        goto out;
+    }
+    rtc_unlock();
+
+    if (wait_for_rtm_subscription(channel) < 0) {
+        (void)mybot_agora_rtc_logout_rtm();
+        return -1;
+    }
+
+    rtc_lock();
+    if (s_rtc.state != MYBOT_RTC_STATE_INITIALIZED || s_rtc.conn_id != CONNECTION_ID_INVALID ||
+        !s_rtc.rtm_logged_in || !s_rtc.rtm_subscribed || strcmp(s_rtc.rtm_uid, user_account) != 0 ||
+        strcmp(s_rtc.rtm_channel, channel) != 0) {
+        AOSL_LOG_ERR("[RTC] join rejected after RTM subscription (state=%s, conn_id=%u, "
+                     "rtm_logged_in=%d, rtm_subscribed=%d)",
+                     state_name(s_rtc.state), s_rtc.conn_id, s_rtc.rtm_logged_in ? 1 : 0,
+                     s_rtc.rtm_subscribed ? 1 : 0);
         goto out;
     }
 
@@ -663,7 +891,6 @@ int mybot_agora_rtc_join(const char *channel, const char *token, const char *use
     memset(&channel_options, 0, sizeof(channel_options));
     channel_options.auto_subscribe_audio = true;
     channel_options.enable_audio_jitter_buffer = true;
-    channel_options.audio_jitter_frame_duration = MYBOT_AUDIO_PTIME_MS;
     channel_options.enable_audio_decode = true;
 #if MYBOT_CLOUD_AEC
     channel_options.enable_audio_downlink_aec = true;
@@ -703,7 +930,7 @@ int mybot_agora_rtc_join(const char *channel, const char *token, const char *use
 
 out:
     rtc_unlock();
-    if (ret < 0 && rtm_started_for_join) {
+    if (ret < 0 && (rtm_started_for_join || rtm_subscription_started_for_join)) {
         (void)mybot_agora_rtc_logout_rtm();
     }
     return ret;

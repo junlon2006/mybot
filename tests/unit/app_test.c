@@ -396,6 +396,17 @@ static void emit_rtm_data(const char *rtm_uid, const void *data, size_t len) {
     callback(rtm_uid, data, len, "json", user_data);
 }
 
+static void emit_rtm_subscribe_data(const char *channel, const char *rtm_uid, const void *data,
+                                    size_t len) {
+    mock_lock();
+    void (*callback)(const char *, const char *, const void *, size_t, const char *, void *) =
+        s_rtc_callbacks.on_rtm_subscribe_data;
+    void *user_data = s_rtc_callbacks.user_data;
+    mock_unlock();
+    assert(callback != NULL);
+    callback(channel, rtm_uid, data, len, "json", user_data);
+}
+
 bool mybot_platform_registry_is_registered(void) {
     return s_platform_registered;
 }
@@ -1203,11 +1214,15 @@ int main(void) {
     assert(strcmp(s_join_channel, "rtc-channel") == 0);
     assert(strcmp(s_join_user, "device-uid") == 0);
     mock_unlock();
+    assert(s_rtc_callbacks.on_rtm_event != NULL);
     assert(s_rtc_callbacks.on_rtm_data != NULL);
+    assert(s_rtc_callbacks.on_rtm_subscribe_result != NULL);
+    assert(s_rtc_callbacks.on_rtm_subscribe_data != NULL);
 
     const char malformed_vp_message[] =
         "{\"object\":\"message.sal_status\",\"status\":\"VP_REGISTER_FAILED\"}";
-    emit_rtm_data("agent-uid", malformed_vp_message, sizeof(malformed_vp_message) - 1U);
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", malformed_vp_message,
+                            sizeof(malformed_vp_message) - 1U);
     aosl_hal_msleep(20);
     mock_lock();
     assert((s_last_lcd_content.indicators & MYBOT_LCD_INDICATOR_VP_REGISTERED) == 0);
@@ -1217,7 +1232,7 @@ int main(void) {
         "{\"object\":\"message.sal_status\",\"status\":\"VP_REGISTER_SUCCESS\","
         "\"timestamp\":1710000000000,\"data_type\":\"message\","
         "\"message_id\":\"abcd1234\",\"send_ts\":1710000000100}";
-    emit_rtm_data("other-agent", vp_message, sizeof(vp_message) - 1U);
+    emit_rtm_subscribe_data("rtc-channel", "other-agent", vp_message, sizeof(vp_message) - 1U);
     aosl_hal_msleep(20);
     mock_lock();
     assert((s_last_lcd_content.indicators & MYBOT_LCD_INDICATOR_VP_REGISTERED) == 0);
@@ -1225,13 +1240,26 @@ int main(void) {
 
     const char uppercase_key_message[] =
         "{\"Object\":\"message.sal_status\",\"status\":\"VP_REGISTER_SUCCESS\"}";
-    emit_rtm_data("agent-uid", uppercase_key_message, sizeof(uppercase_key_message) - 1U);
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", uppercase_key_message,
+                            sizeof(uppercase_key_message) - 1U);
     aosl_hal_msleep(20);
     mock_lock();
     assert((s_last_lcd_content.indicators & MYBOT_LCD_INDICATOR_VP_REGISTERED) == 0);
     mock_unlock();
 
     emit_rtm_data("agent-uid", vp_message, sizeof(vp_message) - 1U);
+    aosl_hal_msleep(20);
+    mock_lock();
+    assert((s_last_lcd_content.indicators & MYBOT_LCD_INDICATOR_VP_REGISTERED) == 0);
+    mock_unlock();
+
+    emit_rtm_subscribe_data("wrong-channel", "agent-uid", vp_message, sizeof(vp_message) - 1U);
+    aosl_hal_msleep(20);
+    mock_lock();
+    assert((s_last_lcd_content.indicators & MYBOT_LCD_INDICATOR_VP_REGISTERED) == 0);
+    mock_unlock();
+
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", vp_message, sizeof(vp_message) - 1U);
     assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_VP_REGISTERED, 1000));
     emit_key_event(MYBOT_KEY_EVENT_PAIR);
     assert(wait_for_counter(&s_pair_requests, 2, 1000));

@@ -256,8 +256,10 @@ RTM UID 必须非空、长度小于 64 字节，并且只能包含 Agora 接受�
 31 KiB，custom type 上限为 32 字节。
 
 会话启动时 SDK 会先请求 RTM 登录，并最多等待 5 秒直到收到成功的
-`MYBOT_RTM_EVENT_LOGIN` 回调。RTM 登录成功前不会创建或加入 RTC connection，因此平台必须
-保证 control owner 等待期间 RTM 回调线程仍可运行。
+`MYBOT_RTM_EVENT_LOGIN` 回调；随后订阅与 RTC channel 同名的 RTM channel，并最多等待 5 秒
+直到订阅成功。两步均成功前不会创建或加入 RTC connection，因此平台必须保证 control owner
+等待期间 RTM 回调线程仍可运行。声纹状态消息通过 RTM channel 回调接收，P2P RTM 回调继续
+保留用于点对点消息。
 
 ## 第 7 步：交叉编译
 

@@ -51,6 +51,9 @@ typedef struct {
                          void *user_data);
     void (*on_rtm_data)(const char *rtm_uid, const void *data, size_t len, const char *custom_type,
                         void *user_data);
+    void (*on_rtm_subscribe_result)(const char *channel, int error_code, void *user_data);
+    void (*on_rtm_subscribe_data)(const char *channel, const char *rtm_uid, const void *data,
+                                  size_t len, const char *custom_type, void *user_data);
     void (*on_rtm_send_data_result)(const char *rtm_uid, uint32_t msg_id,
                                     mybot_rtm_message_state_t state, void *user_data);
     void *user_data;
@@ -67,7 +70,7 @@ int mybot_agora_rtc_init(const char *app_id, const mybot_agora_rtc_callbacks_t *
  *
  * The account must be non-empty, shorter than MYBOT_RTM_UID_MAX_LEN bytes, and
  * contain only ASCII letters, digits, space, or the punctuation characters
- * accepted by agora_rtc_login_rtm(). The account is normally the server-issued
+ * accepted by agora_rtm_login(). The account is normally the server-issued
  * rtc.uid/local_uid from the conversation response; do not derive it from the
  * device id unless the service explicitly assigns that value.
  */
@@ -88,8 +91,8 @@ bool mybot_agora_rtc_is_rtm_logged_in(void);
 
 /** Create a connection and start joining one 1-to-1 channel. RTM login is
  * requested first using user_account as the local RTM UID and token as the RTM
- * token. RTC join starts only after RTM login succeeds, with a five-second RTM
- * login timeout. */
+ * token. After RTM login succeeds, this subscribes to the RTM channel with the
+ * same name and waits for subscription success before starting RTC join. */
 int mybot_agora_rtc_join(const char *channel, const char *token, const char *user_account);
 
 /** Leave and destroy the active connection while keeping RTSA initialized. */

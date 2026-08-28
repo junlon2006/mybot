@@ -10,3 +10,8 @@ target_link_libraries(hello_rtm agora-rtc-sdk ${LIBS})
 
 add_executable(hello_rtm_file hello_rtm_file.c ${COMMON_FILES})
 target_link_libraries(hello_rtm_file agora-rtc-sdk ${LIBS})
+
+if("${CONFIG_RTM_CHANNEL}" STREQUAL "y")
+  add_executable(hello_rtm_channel hello_rtm_channel.c ${COMMON_FILES})
+  target_link_libraries(hello_rtm_channel agora-rtc-sdk ${LIBS})
+endif()

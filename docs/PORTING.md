@@ -284,8 +284,11 @@ same validation used before login. RTM login is asynchronous: a send is allowed 
 custom types to 32 bytes.
 
 Conversation startup requests RTM login first and waits up to five seconds for a successful
-`MYBOT_RTM_EVENT_LOGIN` callback. The SDK does not create or join the RTC connection until RTM login
-has succeeded, so platforms must allow the RTM callback to run while the control owner is waiting.
+`MYBOT_RTM_EVENT_LOGIN` callback. It then subscribes to the RTM channel whose name matches the RTC
+channel and waits up to five seconds for subscription success. The SDK does not create or join the
+RTC connection until both operations succeed, so platforms must allow RTM callbacks to run while
+the control owner is waiting. Voiceprint status messages arrive through the RTM channel callback;
+the P2P RTM callback remains available for direct messages.
 
 ## Step 7: Cross-compile
 

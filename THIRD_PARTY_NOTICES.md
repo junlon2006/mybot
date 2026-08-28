@@ -18,15 +18,15 @@ automatically; initialize submodules after cloning with `git submodule update --
 ## Agora RTSA SDK
 
 Location: `third_party/agora_rtsa_sdk`. The bundled shared-library package identifies itself as
-`Agora-RTSALite-RmRcAcAj-x86_64-linux-gnu-v1.10.1-20260826_140406-1267429`. It is provided for
+`Agora-RTSALite-RmRcAcAj-x86_64-linux-gnu-v1.10.1-20260828_180234-1270765`. It is provided for
 Linux **development and demo** use only and is intentionally retained in this repository for the
 Linux reference demo (it is not removed).
 
 Package provenance recorded for this update:
 
-- Source archive: `Agora-RTSALite-RmRcAcAj-x86_64-linux-gnu-v1.10.1-20260826_140406-1267429.tgz`
-- Archive SHA-256: `16ec47dcf43bcbd3362ee11dff2255ba5a8bca9097f27efd356449490b981edf`
-- `libagora-rtc-sdk.so` SHA-256: `cf246fcc74ca8b6147e71f223e18d4631174904e31a76b72b641ee666b837701`
+- Source archive: `Agora-RTSALite-RmRcAcAj-x86_64-linux-gnu-v1.10.1-20260828_180234-1270765.tgz`
+- Archive SHA-256: `739901d09a4161a33f36e06281fe30dc11629f1f3271e55a5662501593985fbf`
+- `libagora-rtc-sdk.so` SHA-256: `269d985f2fcb86ce259591853e59bc5a5d86f5f8fa82a1408bc7ac3795c3f999`
 
 No standalone license or NOTICE for the bundled RTSA binary was found in the package during the
 1.0.0 audit. Possession of the files is not evidence of redistribution rights. Commercial or
