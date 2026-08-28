@@ -35,6 +35,8 @@ static int s_bwe_result;
 static int s_rtm_login_result;
 static int s_rtm_logout_result;
 static int s_rtm_send_result;
+static bool s_auto_rtm_login_event;
+static rtm_err_code_e s_auto_rtm_login_error;
 static int s_init_calls;
 static int s_fini_calls;
 static int s_create_calls;
@@ -211,6 +213,13 @@ int agora_rtc_renew_token(connection_id_t conn_id, const char *token) {
     return s_renew_result;
 }
 
+static void *rtm_login_event_thread(void *arg) {
+    (void)arg;
+    aosl_hal_msleep(1);
+    s_rtm_handler.on_rtm_event(s_rtm_uid, RTM_EVENT_TYPE_LOGIN, s_auto_rtm_login_error);
+    return NULL;
+}
+
 int agora_rtc_login_rtm(const char *rtm_uid, const char *rtm_token,
                         const agora_rtm_handler_t *handler) {
     assert(rtm_uid != NULL);
@@ -222,6 +231,11 @@ int agora_rtc_login_rtm(const char *rtm_uid, const char *rtm_token,
         s_rtm_handler = *handler;
     } else {
         memset(&s_rtm_handler, 0, sizeof(s_rtm_handler));
+    }
+    if (s_rtm_login_result >= 0 && s_auto_rtm_login_event) {
+        pthread_t callback_thread;
+        assert(pthread_create(&callback_thread, NULL, rtm_login_event_thread, NULL) == 0);
+        assert(pthread_detach(callback_thread) == 0);
     }
     return s_rtm_login_result;
 }
@@ -492,6 +506,28 @@ int main(void) {
     assert(mybot_agora_rtc_join(NULL, "token", "user") < 0);
     assert(mybot_agora_rtc_join("", "token", "user") < 0);
     assert(mybot_agora_rtc_join("room", "token", NULL) < 0);
+
+    s_auto_rtm_login_event = true;
+    s_auto_rtm_login_error = ERR_RTM_LOGIN_REJECTED;
+    int creates_before_rtm_failure = s_create_calls;
+    int joins_before_rtm_failure = s_join_calls;
+    int logouts_before_rtm_failure = s_rtm_logout_calls;
+    assert(mybot_agora_rtc_join("room", "token", "user") < 0);
+    assert(s_create_calls == creates_before_rtm_failure);
+    assert(s_join_calls == joins_before_rtm_failure);
+    assert(s_rtm_logout_calls == logouts_before_rtm_failure + 1);
+
+    s_auto_rtm_login_event = false;
+    int creates_before_rtm_timeout = s_create_calls;
+    int joins_before_rtm_timeout = s_join_calls;
+    int logouts_before_rtm_timeout = s_rtm_logout_calls;
+    assert(mybot_agora_rtc_join("room", "token", "user") < 0);
+    assert(s_create_calls == creates_before_rtm_timeout);
+    assert(s_join_calls == joins_before_rtm_timeout);
+    assert(s_rtm_logout_calls == logouts_before_rtm_timeout + 1);
+
+    s_auto_rtm_login_event = true;
+    s_auto_rtm_login_error = ERR_RTM_OK;
 
     int rtm_logins_before_create_failure = s_rtm_login_calls;
     int rtm_logouts_before_create_failure = s_rtm_logout_calls;

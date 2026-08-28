@@ -134,6 +134,7 @@ static size_t s_sent_lengths[TEST_MAX_SENT_FRAMES];
 static int16_t s_sent_frames[TEST_MAX_SENT_FRAMES][TEST_SEND_FRAME_BYTES / sizeof(int16_t)];
 static char s_join_channel[128];
 static char s_join_user[64];
+static mybot_lcd_content_t s_last_lcd_content;
 
 enum {
     CONTROL_OBS_KV_INIT = 1u << 0,
@@ -292,6 +293,19 @@ static bool wait_for_flag_value(const bool *flag, bool expected, int timeout_ms)
     return false;
 }
 
+static bool wait_for_lcd_indicator(uint32_t indicator, int timeout_ms) {
+    for (int elapsed = 0; elapsed < timeout_ms; elapsed++) {
+        mock_lock();
+        bool matched = (s_last_lcd_content.indicators & indicator) != 0;
+        mock_unlock();
+        if (matched) {
+            return true;
+        }
+        aosl_hal_msleep(1);
+    }
+    return false;
+}
+
 static int16_t expected_mic_sample(int index) {
     return (int16_t)(TEST_MIC_BASE + index % 200);
 }
@@ -372,6 +386,16 @@ static void emit_remote_audio(const int16_t *pcm, size_t len) {
     callback(7, pcm, len, user_data);
 }
 
+static void emit_rtm_data(const char *rtm_uid, const void *data, size_t len) {
+    mock_lock();
+    void (*callback)(const char *, const void *, size_t, const char *, void *) =
+        s_rtc_callbacks.on_rtm_data;
+    void *user_data = s_rtc_callbacks.user_data;
+    mock_unlock();
+    assert(callback != NULL);
+    callback(rtm_uid, data, len, "json", user_data);
+}
+
 bool mybot_platform_registry_is_registered(void) {
     return s_platform_registered;
 }
@@ -383,7 +407,7 @@ const mybot_platform_descriptor_t *mybot_platform_registry_get(void) {
 }
 
 bool mybot_lcd_is_registered(void) {
-    return false;
+    return true;
 }
 
 int mybot_lcd_init(mybot_lcd_t *lcd) {
@@ -394,6 +418,15 @@ int mybot_lcd_init(mybot_lcd_t *lcd) {
 int mybot_lcd_show_screen(mybot_lcd_t *lcd, mybot_lcd_screen_t screen) {
     assert(lcd != NULL);
     (void)screen;
+    return 0;
+}
+
+int mybot_lcd_show_content(mybot_lcd_t *lcd, const mybot_lcd_content_t *content) {
+    assert(lcd != NULL);
+    assert(content != NULL);
+    mock_lock();
+    s_last_lcd_content = *content;
+    mock_unlock();
     return 0;
 }
 
@@ -848,6 +881,7 @@ void mybot_device_lifecycle_tick(mybot_device_lifecycle_t *lifecycle) {
     snprintf(params.rtc_app_id, sizeof(params.rtc_app_id), "%s", "rtc-app");
     snprintf(params.rtc_channel, sizeof(params.rtc_channel), "%s", "rtc-channel");
     snprintf(params.rtc_uid, sizeof(params.rtc_uid), "%s", "device-uid");
+    snprintf(params.rtc_agent_uid, sizeof(params.rtc_agent_uid), "%s", "agent-uid");
     snprintf(params.rtc_token, sizeof(params.rtc_token), "%s", "rtc-token");
     callbacks.on_conversation_start(&params, callbacks.user_data);
 }
@@ -1169,6 +1203,36 @@ int main(void) {
     assert(strcmp(s_join_channel, "rtc-channel") == 0);
     assert(strcmp(s_join_user, "device-uid") == 0);
     mock_unlock();
+    assert(s_rtc_callbacks.on_rtm_data != NULL);
+
+    const char malformed_vp_message[] =
+        "{\"object\":\"message.sal_status\",\"status\":\"VP_REGISTER_FAILED\"}";
+    emit_rtm_data("agent-uid", malformed_vp_message, sizeof(malformed_vp_message) - 1U);
+    aosl_hal_msleep(20);
+    mock_lock();
+    assert((s_last_lcd_content.indicators & MYBOT_LCD_INDICATOR_VP_REGISTERED) == 0);
+    mock_unlock();
+
+    const char vp_message[] =
+        "{\"object\":\"message.sal_status\",\"status\":\"VP_REGISTER_SUCCESS\","
+        "\"timestamp\":1710000000000,\"data_type\":\"message\","
+        "\"message_id\":\"abcd1234\",\"send_ts\":1710000000100}";
+    emit_rtm_data("other-agent", vp_message, sizeof(vp_message) - 1U);
+    aosl_hal_msleep(20);
+    mock_lock();
+    assert((s_last_lcd_content.indicators & MYBOT_LCD_INDICATOR_VP_REGISTERED) == 0);
+    mock_unlock();
+
+    const char uppercase_key_message[] =
+        "{\"Object\":\"message.sal_status\",\"status\":\"VP_REGISTER_SUCCESS\"}";
+    emit_rtm_data("agent-uid", uppercase_key_message, sizeof(uppercase_key_message) - 1U);
+    aosl_hal_msleep(20);
+    mock_lock();
+    assert((s_last_lcd_content.indicators & MYBOT_LCD_INDICATOR_VP_REGISTERED) == 0);
+    mock_unlock();
+
+    emit_rtm_data("agent-uid", vp_message, sizeof(vp_message) - 1U);
+    assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_VP_REGISTERED, 1000));
     emit_key_event(MYBOT_KEY_EVENT_PAIR);
     assert(wait_for_counter(&s_pair_requests, 2, 1000));
 
@@ -1217,6 +1281,9 @@ int main(void) {
     assert(wait_for_counter(&s_stop_requests, 1, 1000));
     assert(wait_for_counter(&s_rtc_leave_calls, 1, 1000));
     assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
+    mock_lock();
+    assert((s_last_lcd_content.indicators & MYBOT_LCD_INDICATOR_VP_REGISTERED) == 0);
+    mock_unlock();
     int sends_before_second_call = read_counter(&s_rtc_send_calls);
 #if MYBOT_WAKE_WORDS
     emit_wake_word();

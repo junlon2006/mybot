@@ -69,6 +69,17 @@ int main(void) {
     assert(mybot_state_model_set_device_state(&state_model, MYBOT_DEVICE_STATE_IN_CONVERSATION));
     mybot_presenter_render_state(&presenter, &state_model);
     assert(s_last_content.screen == MYBOT_LCD_SCREEN_IN_CONVERSATION);
+    assert(s_last_content.indicators == MYBOT_LCD_INDICATOR_NONE);
+
+    mybot_presenter_set_vp_registered(&presenter, true);
+    mybot_presenter_show_screen(&presenter, MYBOT_LCD_SCREEN_IN_CONVERSATION);
+    assert(s_last_content.screen == MYBOT_LCD_SCREEN_IN_CONVERSATION);
+    assert(s_last_content.indicators == MYBOT_LCD_INDICATOR_VP_REGISTERED);
+
+    assert(mybot_state_model_set_device_state(&state_model, MYBOT_DEVICE_STATE_RUNTIME));
+    mybot_presenter_render_state(&presenter, &state_model);
+    assert(s_last_content.screen == MYBOT_LCD_SCREEN_READY);
+    assert(s_last_content.indicators == MYBOT_LCD_INDICATOR_NONE);
 
     mybot_presenter_deinit(&presenter);
     mybot_presenter_deinit(&presenter);

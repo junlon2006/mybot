@@ -83,12 +83,16 @@ static int lcd_console_render(void *opaque, const mybot_lcd_content_t *content) 
     linux_lcd_console_ctx_t *ctx = opaque;
     const char *color = ctx->color_enabled ? ANSI_BRIGHT_RED : "";
     const char *reset = ctx->color_enabled ? ANSI_RESET : "";
+    const char *vp_indicator = (content->screen == MYBOT_LCD_SCREEN_IN_CONVERSATION &&
+                                (content->indicators & MYBOT_LCD_INDICATOR_VP_REGISTERED))
+                                   ? " [VP REGISTERED]"
+                                   : "";
 
     if (content->screen == MYBOT_LCD_SCREEN_PAIR_CODE) {
         AOSL_LOG_NTC("[LCD] %s%s: %s%s", color, screen_label(content->screen), content->pair_code,
                      reset);
     } else {
-        AOSL_LOG_NTC("[LCD] %s%s%s", color, screen_label(content->screen), reset);
+        AOSL_LOG_NTC("[LCD] %s%s%s%s", color, screen_label(content->screen), vp_indicator, reset);
     }
     return 0;
 }

@@ -105,7 +105,8 @@ target_sources(mybot_announce_test PRIVATE ../src/platform/mybot_platform.c)
 mybot_add_test(mybot_agora_rtc_test unit/agora_rtc_test.c ../src/rtc/mybot_agora_rtc.c)
 target_include_directories(mybot_agora_rtc_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/agora_rtsa_sdk/agora_sdk/include)
-target_compile_definitions(mybot_agora_rtc_test PRIVATE ${MYBOT_TEST_FEATURE_DEFINITIONS})
+target_compile_definitions(mybot_agora_rtc_test PRIVATE ${MYBOT_TEST_FEATURE_DEFINITIONS}
+    MYBOT_RTM_LOGIN_TIMEOUT_MS=50)
 target_link_libraries(mybot_agora_rtc_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
 mybot_add_test(mybot_app_test
@@ -114,6 +115,7 @@ mybot_add_test(mybot_app_test
     ../src/core/mybot_state_model.c
     ../src/core/mybot_presenter.c
     ../src/media/mybot_media_pipeline.c
+    ../src/support/mybot_json.c
     ../src/support/mybot_ringbuf.c
 )
 target_compile_definitions(mybot_app_test PRIVATE ${MYBOT_TEST_FEATURE_DEFINITIONS})

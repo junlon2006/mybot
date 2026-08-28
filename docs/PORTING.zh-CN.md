@@ -134,6 +134,11 @@ BearSSL 或芯片厂商 TLS socket API；SDK 核心
 存在显示设备时实现 `mybot_lcd_ops_t`。渲染由应用 control owner 调用，SDK 不会并发调用。
 内容为借用。将 ops 表加入平台描述符。
 
+`mybot_lcd_content_t.indicators` 是用于非互斥叠加提示的位图。在
+`MYBOT_LCD_SCREEN_IN_CONVERSATION` 中，`MYBOT_LCD_INDICATOR_VP_REGISTERED` 表示当前会话的声纹
+已由服务器注册成功，平台应将其渲染为会话界面的附加指示器。平台应忽略无法识别的位，不能
+根据该指示器自行推断生命周期状态。
+
 ### 唤醒词（可选）
 
 仅在 `MYBOT_WAKE_WORDS=ON` 时必需。`process()` 回调接收借用的 PCM。异步实现必须复制需要保留的
@@ -249,6 +254,10 @@ RTM UID 必须非空、长度小于 64 字节，并且只能包含 Agora 接受�
 标点字符。`mybot_agora_rtc_rtm_uid_is_valid()` 暴露了登录前使用的同一校验规则。RTM 登录是
 异步的：只有 `MYBOT_RTM_EVENT_LOGIN` 回调的错误码为 0 后才允许发送消息。RTM 负载上限为
 31 KiB，custom type 上限为 32 字节。
+
+会话启动时 SDK 会先请求 RTM 登录，并最多等待 5 秒直到收到成功的
+`MYBOT_RTM_EVENT_LOGIN` 回调。RTM 登录成功前不会创建或加入 RTC connection，因此平台必须
+保证 control owner 等待期间 RTM 回调线程仍可运行。
 
 ## 第 7 步：交叉编译
 

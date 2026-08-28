@@ -88,7 +88,8 @@ bool mybot_agora_rtc_is_rtm_logged_in(void);
 
 /** Create a connection and start joining one 1-to-1 channel. RTM login is
  * requested first using user_account as the local RTM UID and token as the RTM
- * token, matching the xiaozhi integration flow. */
+ * token. RTC join starts only after RTM login succeeds, with a five-second RTM
+ * login timeout. */
 int mybot_agora_rtc_join(const char *channel, const char *token, const char *user_account);
 
 /** Leave and destroy the active connection while keeping RTSA initialized. */

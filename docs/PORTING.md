@@ -150,6 +150,11 @@ Implement `mybot_lcd_ops_t` when a display exists. Render receives semantic cont
 application control owner; the SDK does not invoke it concurrently. Content is borrowed. Add the
 operations table to the platform descriptor.
 
+`mybot_lcd_content_t.indicators` is a bitmask for non-exclusive overlays. During
+`MYBOT_LCD_SCREEN_IN_CONVERSATION`, `MYBOT_LCD_INDICATOR_VP_REGISTERED` means the server completed
+voice-print registration for the active conversation. Render this as an in-conversation indicator;
+ignore bits the platform does not recognize and do not derive lifecycle state from the indicator.
+
 ### Wake words (optional)
 
 Required only with `MYBOT_WAKE_WORDS=ON`. Process receives borrowed PCM. An asynchronous implementation
@@ -277,6 +282,10 @@ or the punctuation characters accepted by Agora. `mybot_agora_rtc_rtm_uid_is_val
 same validation used before login. RTM login is asynchronous: a send is allowed only after the
 `MYBOT_RTM_EVENT_LOGIN` callback reports error code 0. RTM payloads are limited to 31 KiB and
 custom types to 32 bytes.
+
+Conversation startup requests RTM login first and waits up to five seconds for a successful
+`MYBOT_RTM_EVENT_LOGIN` callback. The SDK does not create or join the RTC connection until RTM login
+has succeeded, so platforms must allow the RTM callback to run while the control owner is waiting.
 
 ## Step 7: Cross-compile
 

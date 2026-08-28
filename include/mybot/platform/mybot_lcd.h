@@ -3,12 +3,27 @@
 #define MYBOT_LCD_H_
 
 #include <stdbool.h>
+#include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /** Maximum length of the pairing code buffer, including the NUL terminator. */
 #define MYBOT_LCD_PAIR_CODE_CAPACITY 16
+
+/**
+ * Non-exclusive indicators that may be overlaid on a workflow screen.
+ *
+ * Indicators are represented as a bitmask in mybot_lcd_content_t. Platforms
+ * should ignore bits they do not recognize and must not change the base screen
+ * layout when no supported indicator is set.
+ */
+typedef enum {
+    /** No additional indicator. */
+    MYBOT_LCD_INDICATOR_NONE = 0u,
+    /** Voice-print registration completed for the active conversation. */
+    MYBOT_LCD_INDICATOR_VP_REGISTERED = 1u << 0,
+} mybot_lcd_indicator_t;
 
 /**
  * Workflow screens rendered by the SDK.
@@ -52,6 +67,12 @@ typedef struct {
      * screen == MYBOT_LCD_SCREEN_PAIR_CODE.
      */
     char pair_code[MYBOT_LCD_PAIR_CODE_CAPACITY];
+    /**
+     * Optional non-exclusive screen indicators. This field is currently
+     * meaningful on MYBOT_LCD_SCREEN_IN_CONVERSATION; other screens should
+     * normally be rendered with MYBOT_LCD_INDICATOR_NONE.
+     */
+    uint32_t indicators;
 } mybot_lcd_content_t;
 
 /**

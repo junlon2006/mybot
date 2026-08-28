@@ -10,6 +10,7 @@
 #include "mybot_media_pipeline.h"
 #include "mybot_presenter.h"
 #include "mybot_platform_registry.h"
+#include "mybot_json.h"
 #include "mybot_state_model.h"
 #include "mybot_wifi_internal.h"
 
@@ -20,11 +21,16 @@
 #include <api/aosl_mpq_timer.h>
 #include <api/aosl_time.h>
 
+#include <stdio.h>
 #include <string.h>
 
 #define STATE_TICK_MS 100
 #define CONTROL_MPQ_STACK_SIZE 16384
 #define VOLUME_KEY_STEP 10
+#define RTM_MESSAGE_MAX_BYTES 1024U
+
+static const char k_rtm_vp_status_object[] = "message.sal_status";
+static const char k_rtm_vp_status_success[] = "VP_REGISTER_SUCCESS";
 
 typedef struct {
     aosl_atomic_t running;
@@ -38,6 +44,8 @@ typedef struct {
     mybot_presenter_t presenter;
     mybot_media_pipeline_t media;
     mybot_device_lifecycle_t lifecycle;
+    /* Snapshot of the RTM peer for the active conversation. */
+    char rtc_agent_uid[MYBOT_RTM_UID_MAX_LEN];
 
     /* Sole owner of application state transitions and control resources. */
     aosl_mpq_t control_mpq;
@@ -94,6 +102,75 @@ static void control_pair(mybot_runtime_t *runtime) {
     if (state == MYBOT_STATE_READY || state == MYBOT_STATE_IN_CONVERSATION) {
         mybot_device_lifecycle_request_pair(&runtime->lifecycle);
     }
+}
+
+static const mybot_json_t *json_get_exact_object_item(const mybot_json_t *object,
+                                                      const char *name) {
+    if (!object || object->type != MYBOT_JSON_OBJECT || !name) {
+        return NULL;
+    }
+
+    for (const mybot_json_t *item = object->child; item; item = item->next) {
+        if (item->string && strcmp(item->string, name) == 0) {
+            return item;
+        }
+    }
+    return NULL;
+}
+
+static uint32_t rtm_uid_fingerprint(const char *rtm_uid, size_t len) {
+    uint32_t fingerprint = 2166136261U;
+    for (size_t i = 0; i < len; ++i) {
+        fingerprint ^= (uint8_t)rtm_uid[i];
+        fingerprint *= 16777619U;
+    }
+    return fingerprint;
+}
+
+static bool rtm_data_is_vp_register_success(const void *data, size_t len) {
+    if (!data || len == 0 || len > RTM_MESSAGE_MAX_BYTES || memchr(data, '\0', len) != NULL) {
+        return false;
+    }
+
+    char message[RTM_MESSAGE_MAX_BYTES + 1U];
+    memcpy(message, data, len);
+    message[len] = '\0';
+
+    mybot_json_t *root = mybot_json_parse(message);
+    if (!root || root->type != MYBOT_JSON_OBJECT) {
+        mybot_json_delete(root);
+        return false;
+    }
+
+    const char *object = mybot_json_get_string(json_get_exact_object_item(root, "object"));
+    const char *status = mybot_json_get_string(json_get_exact_object_item(root, "status"));
+    bool matched = object && status && strcmp(object, k_rtm_vp_status_object) == 0 &&
+                   strcmp(status, k_rtm_vp_status_success) == 0;
+    mybot_json_delete(root);
+    return matched;
+}
+
+static void handle_vp_register_success(const aosl_ts_t *queued_ts, aosl_refobj_t robj,
+                                       uintptr_t argc, uintptr_t argv[]) {
+    (void)queued_ts;
+    (void)robj;
+    if (argc != 3) {
+        return;
+    }
+
+    mybot_runtime_t *runtime = (mybot_runtime_t *)argv[0];
+    size_t rtm_uid_len = (size_t)argv[1];
+    uint32_t rtm_uid_hash = (uint32_t)argv[2];
+    if (!runtime || !runtime_is_running(runtime) ||
+        runtime_get_state(runtime) != MYBOT_STATE_IN_CONVERSATION ||
+        strlen(runtime->rtc_agent_uid) != rtm_uid_len ||
+        rtm_uid_fingerprint(runtime->rtc_agent_uid, rtm_uid_len) != rtm_uid_hash) {
+        return;
+    }
+
+    AOSL_LOG_NTC("[RTM] voiceprint registration succeeded");
+    mybot_presenter_set_vp_registered(&runtime->presenter, true);
+    mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_IN_CONVERSATION);
 }
 
 static void handle_start_conversation(const aosl_ts_t *queued_ts, aosl_refobj_t robj,
@@ -159,6 +236,46 @@ static void rtc_on_state_changed(mybot_rtc_state_t state, void *user_data) {
     }
 }
 
+static void queue_vp_register_success(mybot_runtime_t *runtime, const char *rtm_uid,
+                                      const char *custom_type, size_t len) {
+    size_t rtm_uid_len = strlen(rtm_uid);
+    uint32_t rtm_uid_hash = rtm_uid_fingerprint(rtm_uid, rtm_uid_len);
+
+    AOSL_LOG_NTC("[RTM] matched VP_REGISTER_SUCCESS (type=%s, len=%zu)",
+                 custom_type ? custom_type : "(null)", len);
+    if (aosl_mpq_queue(runtime->control_mpq, AOSL_MPQ_INVALID, AOSL_REF_INVALID,
+                       "handle_vp_register_success", handle_vp_register_success, 3,
+                       (uintptr_t)runtime, (uintptr_t)rtm_uid_len, (uintptr_t)rtm_uid_hash) < 0) {
+        /* This is a best-effort UI notification; a full control queue must not tear down RTC. */
+        AOSL_LOG_WRN("failed to queue VP_REGISTER_SUCCESS LCD event");
+    }
+}
+
+static void rtc_on_rtm_data(const char *rtm_uid, const void *data, size_t len,
+                            const char *custom_type, void *user_data) {
+    mybot_runtime_t *runtime = user_data;
+    if (!runtime_is_running(runtime)) {
+        AOSL_LOG_NTC("[RTM] application data ignored: runtime is not running");
+        return;
+    }
+    if (!rtm_uid) {
+        AOSL_LOG_WRN("[RTM] application data ignored: missing sender UID (len=%zu)", len);
+        return;
+    }
+    if (strnlen(rtm_uid, MYBOT_RTM_UID_MAX_LEN) >= MYBOT_RTM_UID_MAX_LEN) {
+        AOSL_LOG_WRN("[RTM] application data ignored: invalid sender UID length (len=%zu)", len);
+        return;
+    }
+    if (rtm_data_is_vp_register_success(data, len)) {
+        queue_vp_register_success(runtime, rtm_uid, custom_type, len);
+        return;
+    }
+
+    AOSL_LOG_NTC("[RTM] application data not handled: no matching message type (from=%s, type=%s, "
+                 "len=%zu)",
+                 rtm_uid, custom_type ? custom_type : "(null)", len);
+}
+
 static void rtc_on_token_will_expire(void *user_data) {
     mybot_runtime_t *runtime = user_data;
     if (runtime_is_running(runtime)) {
@@ -199,9 +316,17 @@ static void dev_on_conversation_start(const mybot_conversation_params_t *params,
 
     mybot_agora_rtc_callbacks_t callbacks;
     memset(&callbacks, 0, sizeof(callbacks));
+    if (!params || params->rtc_agent_uid[0] == '\0') {
+        AOSL_LOG_ERR("conversation response missing RTM agent UID");
+        mybot_device_lifecycle_notify_conversation_ended(&runtime->lifecycle);
+        return;
+    }
+    snprintf(runtime->rtc_agent_uid, sizeof(runtime->rtc_agent_uid), "%s", params->rtc_agent_uid);
+    mybot_presenter_set_vp_registered(&runtime->presenter, false);
     callbacks.on_remote_audio = rtc_on_remote_audio;
     callbacks.on_state_changed = rtc_on_state_changed;
     callbacks.on_token_will_expire = rtc_on_token_will_expire;
+    callbacks.on_rtm_data = rtc_on_rtm_data;
     callbacks.user_data = runtime;
 
     if (mybot_agora_rtc_init(params->rtc_app_id, &callbacks) < 0) {
@@ -221,6 +346,8 @@ static void dev_on_conversation_start(const mybot_conversation_params_t *params,
 
 static void dev_on_conversation_stop(void *user_data) {
     mybot_runtime_t *runtime = user_data;
+    runtime->rtc_agent_uid[0] = '\0';
+    mybot_presenter_set_vp_registered(&runtime->presenter, false);
     mybot_media_pipeline_set_rtc_connected(&runtime->media, false);
     if (mybot_agora_rtc_leave() < 0) {
         AOSL_LOG_ERR("failed to leave RTC conversation");
