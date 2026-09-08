@@ -849,8 +849,9 @@ int mybot_start(const mybot_config_t *cfg) {
     aosl_ctor();
     aosl_atomic_set(&runtime->aosl_ref_held, true);
 
-    runtime->control_mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, CONTROL_MPQ_STACK_SIZE, 1000,
-                                           "control_mpq", NULL, control_worker_fini, runtime);
+    runtime->control_mpq = aosl_mpq_create_flags(AOSL_MPQ_FLAG_SIGP_EVENT, AOSL_THRD_PRI_NORMAL,
+                                                 CONTROL_MPQ_STACK_SIZE, 1000, "control_mpq", NULL,
+                                                 control_worker_fini, runtime);
     if (aosl_mpq_invalid(runtime->control_mpq)) {
         AOSL_LOG_ERR("failed to create application control queue");
         goto fail;

@@ -17,6 +17,10 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- Use `AOSL_MPQ_FLAG_SIGP_EVENT` for the control and media worker queues so AOSL does not create
+  the default pipe/socket wakeup pair for queues that only use timers and messages. The Linux
+  stdin queue intentionally keeps the default MPQ mode because it owns an `aosl_mpq_add_fd()`
+  registration, which is incompatible with `SIGP_EVENT`.
 - Update the bundled x86_64 Linux Agora RTSA Lite v1.10.1 package to build `1270765`, compiled
   with G.722, RTM channel support, string UIDs, audio jitter buffering, and a fixed 60 ms minimal
   timer interval. Adapt the wrapper to the new RTM message-type callback and canonical
