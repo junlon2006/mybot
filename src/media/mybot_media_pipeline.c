@@ -304,12 +304,15 @@ int mybot_media_pipeline_start(mybot_media_pipeline_t *pipeline,
     }
     pipeline->pb_started = true;
 
-    pipeline->cap_mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MEDIA_MPQ_STACK_SIZE, 1000, "cap_mpq",
-                                        capture_worker_init, capture_worker_fini, pipeline);
-    pipeline->pb_mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MEDIA_MPQ_STACK_SIZE, 1000, "pb_mpq",
-                                       playback_worker_init, playback_worker_fini, pipeline);
-    pipeline->send_mpq = aosl_mpq_create(AOSL_THRD_PRI_NORMAL, MEDIA_MPQ_STACK_SIZE, 1000,
-                                         "mybot_mpq", send_worker_init, send_worker_fini, pipeline);
+    pipeline->cap_mpq =
+        aosl_mpq_create_flags(AOSL_MPQ_FLAG_SIGP_EVENT, AOSL_THRD_PRI_NORMAL, MEDIA_MPQ_STACK_SIZE,
+                              1000, "cap_mpq", capture_worker_init, capture_worker_fini, pipeline);
+    pipeline->pb_mpq =
+        aosl_mpq_create_flags(AOSL_MPQ_FLAG_SIGP_EVENT, AOSL_THRD_PRI_NORMAL, MEDIA_MPQ_STACK_SIZE,
+                              1000, "pb_mpq", playback_worker_init, playback_worker_fini, pipeline);
+    pipeline->send_mpq =
+        aosl_mpq_create_flags(AOSL_MPQ_FLAG_SIGP_EVENT, AOSL_THRD_PRI_NORMAL, MEDIA_MPQ_STACK_SIZE,
+                              1000, "mybot_mpq", send_worker_init, send_worker_fini, pipeline);
     if (aosl_mpq_invalid(pipeline->cap_mpq) || aosl_mpq_invalid(pipeline->pb_mpq) ||
         aosl_mpq_invalid(pipeline->send_mpq)) {
         goto fail;

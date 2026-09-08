@@ -325,8 +325,12 @@ static void __on_rtm_data(const char *user_id, const void *data, size_t data_len
 
   // recv text message
   if (!p_app->config.recv_test_flag) {
-    ((char*)data)[data_len-1] = '\0';
-    LOGD("[peer-%s] received msg_len=%u, msg=%s", user_id, (uint32_t)data_len, (char*)data);
+    LOGS("RECV peer=%s length=%zu custom_type=%s", user_id, data_len,
+         custom_type == NULL ? "" : custom_type);
+    printf("RECV_DATA ");
+    fwrite(data, 1, data_len, stdout);
+    printf("\n");
+    fflush(stdout);
     return;
   }
 

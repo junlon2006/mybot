@@ -51,6 +51,59 @@ $ ./hello_rtm --appId YOUR_APPID --rtmUid user2 --peerUid user1
 - 如果在创建项目时，鉴权机制未设置为 App ID，而是设置为 Token，运行时将出现 `event code[110].` 错误提示，请重新创建项目选择 App ID 鉴权，或者参考官网文档生成临时 Token 并使用 `-t YOUR_TOKEN`设置 Token 参数，再次尝试运行。
 - 再次强调，RTM的token与传输音视频流所用的token不同，如何生成toke请可参考官网链接[生成 RTM Token](https://docs.agora.io/cn/Real-time-Messaging/token_server_rtm)
 
+### 4. 验证 Channel Message
+
+启用 `CONFIG_RTM_CHANNEL` 后会同时生成 `hello_rtm_channel`。该程序不读取交互输入，登录、订阅、发布和退出均由命令行参数控制，适合脚本化验证。
+
+```bash
+# 仅订阅并接收 20 秒
+./out/x86_64/hello_rtm_channel -i YOUR_APPID -u rtsa_rx -c test_channel -w 20
+
+# 订阅后发布一条 binary channel message，并继续接收 10 秒
+./out/x86_64/hello_rtm_channel -i YOUR_APPID -u rtsa_tx -c test_channel \
+  -m hello-from-rtsa -T test -w 10
+
+# 不订阅直接发布，用于验证 publish 与 subscribe 相互独立
+./out/x86_64/hello_rtm_channel -i YOUR_APPID -u rtsa_tx -c test_channel \
+  -m publish-without-subscribe -N -w 5
+```
+
+与 RTM 1.x Linux Server Demo 互通时，在另一个终端运行：
+
+```bash
+./rtmServerDemo YOUR_APPID rtm1_user channel test_channel hello-from-rtm1 20 -
+```
+
+两端应分别看到 `JOIN`/`SUBSCRIBE_RESULT`、`SEND`/`PUBLISH_RESULT` 和 `RECV` 日志。若项目启用了 Token 鉴权，请分别在最后一个参数和 `-t` 参数中传入有效 RTM Token。
+
+可以运行自动化用例集验证完整流程。脚本会打印每条命令，并使用 `RTSA-RX`、`RTSA-TX`、`RTM1-RX` 和 `RTM1-TX` 前缀实时展示两端日志：
+
+```bash
+cd example
+./hello_rtm/run_rtm_channel_tests.sh YOUR_APPID
+```
+
+默认从 `out/x86_64/hello_rtm_channel` 和 `out/x86_64/hello_rtm` 运行 RTSA Demo。可以通过 `RTSA_BIN`、`HELLO_RTM_BIN` 和 `RTM1_BIN` 环境变量指定其他构建产物。用例覆盖：
+
+| Case | 验证内容 |
+|------|----------|
+| C01 | 登录、订阅结果、退订和退出 |
+| C02 | RTSA 间 binary channel 消息、custom type 和发布结果 |
+| C03 | 未订阅发布及 RTM 1.x 接收 |
+| C04 | 连续发布、消息 ID、结果回调和接收数量 |
+| C05 | RTM 1.x raw channel 消息由 RTSA 接收 |
+| C06 | 非法频道名校验 |
+| C07 | 超过 31 KiB 的 payload 校验 |
+| C08 | 32 字节 custom type 校验 |
+| C09 | 每秒 60 条消息的 QPS 限制 |
+| C10 | RTSA 向 RTM 1.x 发送 P2P binary 消息 |
+| C11 | RTM 1.x 向 RTSA 发送 P2P binary 消息 |
+| C12 | 多个用户向同一频道订阅者发送消息 |
+| C13 | 两个用户同时在多个频道上双向收发消息 |
+| C14 | 50 QPS 持续发布、结果回调、接收数量及退出后最终内存节点核对 |
+
+脚本在结束时输出 `PASS/FAIL` 汇总，并保留完整日志目录。只要存在失败 case，进程就返回非零状态，便于接入 CI。
+
 # 移植
 
 为了能让示例项目（hello_rtm）运行在嵌入式设备端（通常是ARM Linux系统），请参考 [移植指南](./docs/PORTING.md)，hello_rtm 和 hello_rtsa 移植过程相同。
@@ -63,4 +116,3 @@ $ ./hello_rtm --appId YOUR_APPID --rtmUid user2 --peerUid user1
 # 联系我们
 
 - 如果发现了示例代码的 bug，欢迎[提交工单](https://agora-ticket.agora.io/)
-

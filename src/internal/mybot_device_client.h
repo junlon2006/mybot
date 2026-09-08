@@ -43,7 +43,8 @@ typedef struct {
     char conversation_id[MYBOT_DEVICE_CLIENT_MAX_ID];
     char rtc_app_id[64];
     char rtc_channel[128];
-    char rtc_uid[64]; /* string UID assigned by server */
+    char rtc_uid[64];       /* string UID assigned by server */
+    char rtc_agent_uid[64]; /* string RTM peer UID assigned by server */
     char rtc_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
 } mybot_device_conversation_t;
 

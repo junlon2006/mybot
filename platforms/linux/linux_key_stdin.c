@@ -124,6 +124,7 @@ static int key_stdin_init(void **out_ctx, mybot_key_event_handler_t emit, void *
 
     ctx->emit = emit;
     ctx->user_data = user_data;
+    /* This queue owns stdin through aosl_mpq_add_fd(); SIGP_EVENT queues reject IOFDs. */
     ctx->mpq =
         aosl_mpq_create(AOSL_THRD_PRI_NORMAL, KEY_STDIN_MPQ_STACK_SIZE, KEY_STDIN_MPQ_MAX_EVENTS,
                         "key_stdin_mpq", key_stdin_mpq_init, key_stdin_mpq_fini, ctx);

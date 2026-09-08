@@ -4,6 +4,28 @@ This project follows Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Enable Agora RTM login and point-to-point messaging in the internal RTC wrapper. RTM uses the
+  server-issued `rtc.uid` as the local account, validates Agora's 64-byte ASCII account contract,
+  exposes the server-provided `agent_uid` for peer messaging, and requires RTM login to complete
+  successfully within five seconds before starting the RTC channel join.
+- Handle the RTM `message.sal_status` / `VP_REGISTER_SUCCESS` event during an active conversation
+  and expose it to LCD platforms as the `MYBOT_LCD_INDICATOR_VP_REGISTERED` overlay indicator. The
+  device subscribes to the RTM channel matching the RTC channel before RTC join, and consumes the
+  voiceprint status from the channel subscription callback while retaining P2P RTM callbacks.
+
+### Changed
+
+- Use `AOSL_MPQ_FLAG_SIGP_EVENT` for the control and media worker queues so AOSL does not create
+  the default pipe/socket wakeup pair for queues that only use timers and messages. The Linux
+  stdin queue intentionally keeps the default MPQ mode because it owns an `aosl_mpq_add_fd()`
+  registration, which is incompatible with `SIGP_EVENT`.
+- Update the bundled x86_64 Linux Agora RTSA Lite v1.10.1 package to build `1270765`, compiled
+  with G.722, RTM channel support, string UIDs, audio jitter buffering, and a fixed 60 ms minimal
+  timer interval. Adapt the wrapper to the new RTM message-type callback and canonical
+  `agora_rtm_*` P2P APIs; jitter-buffer output duration is now determined by the library build.
+
 ## [1.0.0] - 2026-08-26
 
 ### Added

@@ -15,6 +15,11 @@ static int render_content(mybot_lcd_t *lcd, const mybot_lcd_content_t *content) 
     if (!lcd || !content || !screen_is_valid(content->screen)) {
         return -1;
     }
+    if (content->screen == MYBOT_LCD_SCREEN_PAIR_CODE &&
+        (content->pair_code[0] == '\0' ||
+         memchr(content->pair_code, '\0', sizeof(content->pair_code)) == NULL)) {
+        return -1;
+    }
 
     int ret = -1;
     if (lcd->active) {
@@ -50,7 +55,14 @@ int mybot_lcd_show_screen(mybot_lcd_t *lcd, mybot_lcd_screen_t screen) {
     mybot_lcd_content_t content;
     memset(&content, 0, sizeof(content));
     content.screen = screen;
-    return render_content(lcd, &content);
+    return mybot_lcd_show_content(lcd, &content);
+}
+
+int mybot_lcd_show_content(mybot_lcd_t *lcd, const mybot_lcd_content_t *content) {
+    if (!content) {
+        return -1;
+    }
+    return render_content(lcd, content);
 }
 
 int mybot_lcd_show_pair_code(mybot_lcd_t *lcd, const char *pair_code) {
@@ -67,7 +79,7 @@ int mybot_lcd_show_pair_code(mybot_lcd_t *lcd, const char *pair_code) {
     memset(&content, 0, sizeof(content));
     content.screen = MYBOT_LCD_SCREEN_PAIR_CODE;
     memcpy(content.pair_code, pair_code, len + 1);
-    return render_content(lcd, &content);
+    return mybot_lcd_show_content(lcd, &content);
 }
 
 void mybot_lcd_deinit(mybot_lcd_t *lcd) {

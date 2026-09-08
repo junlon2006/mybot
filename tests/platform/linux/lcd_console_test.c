@@ -29,6 +29,11 @@ int main(void) {
     }
     assert(mybot_lcd_show_pair_code(&lcd, "123456") == 0);
 
+    mybot_lcd_content_t content = {0};
+    content.screen = MYBOT_LCD_SCREEN_IN_CONVERSATION;
+    content.indicators = MYBOT_LCD_INDICATOR_VP_REGISTERED;
+    assert(mybot_lcd_show_content(&lcd, &content) == 0);
+
     mybot_lcd_deinit(&lcd);
     aosl_dtor();
     return 0;

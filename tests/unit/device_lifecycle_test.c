@@ -55,6 +55,7 @@ static bool s_disconnect_during_stop;
 static char s_last_stop_reason[32];
 static int s_conversation_start_count;
 static int s_conversation_stop_count;
+static char s_last_conversation_agent_uid[64];
 static int s_pair_code_callback_count;
 static int s_state_change_count;
 static mybot_device_state_t s_last_state;
@@ -195,6 +196,7 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
     }
     strcpy(resp->rtc_channel, "rtc-channel");
     strcpy(resp->rtc_uid, "rtc-uid");
+    strcpy(resp->rtc_agent_uid, "agent-uid");
     strcpy(resp->rtc_token, "rtc-token");
     return 0;
 }
@@ -261,6 +263,9 @@ static void on_state_changed(mybot_device_state_t state, void *user_data) {
 static void on_conversation_start(const mybot_conversation_params_t *params, void *user_data) {
     assert(user_data == &s_lifecycle);
     assert(strcmp(params->conversation_id, "conversation-1") == 0);
+    assert(strcmp(params->rtc_agent_uid, "agent-uid") == 0);
+    snprintf(s_last_conversation_agent_uid, sizeof(s_last_conversation_agent_uid), "%s",
+             params->rtc_agent_uid);
     s_conversation_start_count++;
 }
 
@@ -499,6 +504,7 @@ int main(void) {
     mybot_device_lifecycle_tick(&s_lifecycle);
     assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION);
     assert(s_conversation_start_count == 1);
+    assert(strcmp(s_last_conversation_agent_uid, "agent-uid") == 0);
     assert(s_start_call_count == 2);
 
     s_renew_result = -1;
