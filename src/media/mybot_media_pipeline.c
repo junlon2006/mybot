@@ -98,9 +98,25 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
     }
 
     if (aosl_atomic_cmpxchg(&pipeline->announce_clear_pb, true, false)) {
-        mybot_ringbuf_clear(pipeline->pb_ringbuf);
+        /* Drain as the SPSC consumer instead of resetting head/tail while the
+         * RTC callback may still be publishing audio. */
+        while (mybot_ringbuf_get_data_size(pipeline->pb_ringbuf) >= MYBOT_MEDIA_FRAME_BYTES) {
+            if (mybot_ringbuf_read((char *)pipeline->pb_pending, MYBOT_MEDIA_FRAME_BYTES,
+                                   pipeline->pb_ringbuf) != MYBOT_MEDIA_FRAME_BYTES) {
+                break;
+            }
+        }
         pipeline->pb_pending_offset = 0;
         pipeline->pb_pending_frames = 0;
+        pipeline->pb_pending_is_announce = false;
+    }
+
+    /* A new announcement always wins over any already-buffered RTC audio. */
+    if (mybot_announce_is_active(&pipeline->announce) && pipeline->pb_pending_frames > 0 &&
+        !pipeline->pb_pending_is_announce) {
+        pipeline->pb_pending_offset = 0;
+        pipeline->pb_pending_frames = 0;
+        pipeline->pb_pending_is_announce = false;
     }
 
     const mybot_audio_playback_ops_t *ops = pipeline->audio.playback_ops;
@@ -129,6 +145,7 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
         }
         pipeline->pb_pending_offset = 0;
         pipeline->pb_pending_frames = MYBOT_MEDIA_FRAME_SAMPLES;
+        pipeline->pb_pending_is_announce = mybot_announce_is_active(&pipeline->announce);
 
         if (!mybot_audio_device_volume_is_active(&pipeline->audio)) {
             mybot_audio_apply_media_volume(&pipeline->audio, pipeline->pb_pending,
@@ -136,7 +153,7 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
         }
 
 #if MYBOT_CLOUD_AEC
-        if (aosl_atomic_read(&pipeline->rtc_connected)) {
+        if (aosl_atomic_read(&pipeline->rtc_connected) && !pipeline->pb_pending_is_announce) {
             mybot_ringbuf_write(pipeline->ref_ringbuf, (const char *)pipeline->pb_pending,
                                 MYBOT_MEDIA_FRAME_BYTES);
         }
@@ -153,6 +170,7 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
                      pipeline->pb_pending_frames);
         pipeline->pb_pending_offset = 0;
         pipeline->pb_pending_frames = 0;
+        pipeline->pb_pending_is_announce = false;
         return;
     }
     if (written == 0) {
@@ -163,6 +181,7 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
     pipeline->pb_pending_frames -= written;
     if (pipeline->pb_pending_frames == 0) {
         pipeline->pb_pending_offset = 0;
+        pipeline->pb_pending_is_announce = false;
     }
 }
 
@@ -419,13 +438,22 @@ void mybot_media_pipeline_push_remote_audio(mybot_media_pipeline_t *pipeline, co
     }
 }
 
-void mybot_media_pipeline_play_pair_code(mybot_media_pipeline_t *pipeline, const char *code) {
-    if (pipeline) {
-        (void)mybot_announce_play_pair_code(&pipeline->announce, code);
+int mybot_media_pipeline_play_prompt(mybot_media_pipeline_t *pipeline, mybot_prompt_type_t type,
+                                     const void *args) {
+    if (!pipeline || !args) {
+        return -1;
     }
+
+    switch (type) {
+    case MYBOT_PROMPT_PAIR_CODE:
+        /* Make the new prompt replace buffered RTC audio and any old prompt. */
+        aosl_atomic_set(&pipeline->announce_clear_pb, true);
+        return mybot_announce_play_pair_code(&pipeline->announce, (const char *)args);
+    }
+    return -1;
 }
 
-void mybot_media_pipeline_stop_announcement(mybot_media_pipeline_t *pipeline) {
+void mybot_media_pipeline_stop_prompt(mybot_media_pipeline_t *pipeline) {
     if (!pipeline) {
         return;
     }

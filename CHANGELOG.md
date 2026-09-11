@@ -17,6 +17,10 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- Unify mybot-owned prompt playback behind the media pipeline, allowing a new prompt to replace
+  the current one, dropping buffered RTC downlink audio during prompt playback, and excluding
+  prompt PCM from the cloud AEC reference. Prompt-buffer draining preserves the lock-free SPSC
+  ring-buffer contract.
 - Use `AOSL_MPQ_FLAG_SIGP_EVENT` for the control and media worker queues so AOSL does not create
   the default pipe/socket wakeup pair for queues that only use timers and messages. The Linux
   stdin queue intentionally keeps the default MPQ mode because it owns an `aosl_mpq_add_fd()`

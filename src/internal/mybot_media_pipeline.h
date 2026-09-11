@@ -34,6 +34,10 @@ typedef struct {
     void *user_data;
 } mybot_media_pipeline_callbacks_t;
 
+typedef enum {
+    MYBOT_PROMPT_PAIR_CODE = 0,
+} mybot_prompt_type_t;
+
 typedef struct {
     aosl_atomic_t running;
     aosl_atomic_t rtc_connected;
@@ -66,6 +70,7 @@ typedef struct {
     int16_t pb_pending[MYBOT_MEDIA_FRAME_SAMPLES * MYBOT_MEDIA_CHANNELS];
     int pb_pending_offset;
     int pb_pending_frames;
+    bool pb_pending_is_announce;
     int16_t announce_frame[MYBOT_MEDIA_FRAME_SAMPLES];
 
 #if MYBOT_CLOUD_AEC
@@ -90,8 +95,9 @@ void mybot_media_pipeline_set_wake_words_enabled(mybot_media_pipeline_t *pipelin
 #endif
 void mybot_media_pipeline_push_remote_audio(mybot_media_pipeline_t *pipeline, const void *data,
                                             size_t len);
-void mybot_media_pipeline_play_pair_code(mybot_media_pipeline_t *pipeline, const char *code);
-void mybot_media_pipeline_stop_announcement(mybot_media_pipeline_t *pipeline);
+int mybot_media_pipeline_play_prompt(mybot_media_pipeline_t *pipeline, mybot_prompt_type_t type,
+                                     const void *args);
+void mybot_media_pipeline_stop_prompt(mybot_media_pipeline_t *pipeline);
 void mybot_media_pipeline_adjust_volume(mybot_media_pipeline_t *pipeline, int delta);
 
 #ifdef __cplusplus
