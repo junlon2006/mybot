@@ -20,6 +20,7 @@
 #define RTC_PCM_FRAME_STREAMS 1
 #endif
 #define RTC_PCM_FRAME_BYTES (RTC_PCM_FRAME_SAMPLES * RTC_PCM_FRAME_STREAMS * sizeof(int16_t))
+#define RTC_REMOTE_PCM_FRAME_BYTES (RTC_PCM_FRAME_SAMPLES * sizeof(int16_t))
 
 static agora_rtc_event_handler_t s_handler;
 static connection_id_t s_next_conn = 1;
@@ -316,7 +317,7 @@ static void on_remote_audio(uint32_t uid, const void *data, size_t len, void *us
     assert(user_data == &s_callback_owner);
     assert(uid == 7);
     assert(data != NULL);
-    assert(len == 5);
+    assert(len == RTC_REMOTE_PCM_FRAME_BYTES);
     s_remote_audio_calls++;
 }
 
@@ -752,10 +753,25 @@ int main(void) {
     s_handler.on_join_channel_success(first_conn, 42, 0);
     aosl_hal_msleep(10);
     s_handler.on_token_privilege_will_expire(first_conn, "old-token");
-    s_handler.on_audio_data(first_conn, 7, 0, "audio", 5, NULL);
-    aosl_hal_msleep(10);
+    audio_frame_info_t pcm_info = {.data_type = AUDIO_DATA_TYPE_PCM};
+    unsigned char pcm_data[RTC_REMOTE_PCM_FRAME_BYTES] = {0};
+    unsigned char oversized_pcm_data[RTC_REMOTE_PCM_FRAME_BYTES + sizeof(int16_t)] = {0};
+    int audio_before_invalid = s_remote_audio_calls;
+    s_handler.on_audio_data(first_conn, 7, 0, pcm_data, sizeof(pcm_data), NULL);
+    s_handler.on_audio_data(first_conn, 7, 0, pcm_data, sizeof(pcm_data),
+                            &(audio_frame_info_t){.data_type = AUDIO_DATA_TYPE_G722});
+    s_handler.on_audio_data(first_conn, 7, 0, pcm_data, sizeof(pcm_data) - 1, &pcm_info);
+    s_handler.on_audio_data(first_conn, 7, 0, pcm_data, sizeof(pcm_data) - 2, &pcm_info);
+    s_handler.on_audio_data(first_conn, 7, 0, oversized_pcm_data, sizeof(oversized_pcm_data),
+                            &pcm_info);
+    assert(s_remote_audio_calls == audio_before_invalid);
+    s_handler.on_audio_data(first_conn, 7, 0, pcm_data, sizeof(pcm_data), &pcm_info);
+    for (int elapsed = 0; elapsed < 100 && s_remote_audio_calls == audio_before_invalid;
+         ++elapsed) {
+        aosl_hal_msleep(1);
+    }
     assert(s_token_expiry_calls == 1);
-    assert(s_remote_audio_calls == 1);
+    assert(s_remote_audio_calls == audio_before_invalid + 1);
 
     assert(mybot_agora_rtc_send_audio(pcm_frame, 0) < 0);
     s_send_result = -1;
@@ -808,7 +824,7 @@ int main(void) {
     int audio_after_leave = s_remote_audio_calls;
     int channel_data_after_leave = s_rtm_subscribe_data_calls;
     s_handler.on_join_channel_success(first_conn, 42, 0);
-    s_handler.on_audio_data(first_conn, 7, 0, "audio", 5, NULL);
+    s_handler.on_audio_data(first_conn, 7, 0, pcm_data, sizeof(pcm_data), &pcm_info);
     s_rtm_handler.on_rtm_subscribe_data("room", "agent-uid", rtm_payload, sizeof(rtm_payload) - 1,
                                         RTM_MESSAGE_TYPE_STRING, "json");
     aosl_hal_msleep(10);

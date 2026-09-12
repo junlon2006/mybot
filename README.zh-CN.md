@@ -215,8 +215,24 @@ mybot_stop();
 ```bash
 cmake -S . -B build-wake \
   -DCONFIG_PLATFORM=linux \
-  -DMYBOT_AUDIO_PTIME_MS=20 \
+  -DMYBOT_AUDIO_PTIME_MS=60 \
   -DMYBOT_WAKE_WORDS=ON
+```
+
+`MYBOT_AUDIO_PTIME_MS` 必须与 RTSA 软件包中的
+`CONFIG_MINIMAL_TIMER_INTERVAL_MS` 一致。仓库附带的 x86_64 Linux 软件包固定为 60 ms；使用
+20 或 40 ms 时，必须通过 `AGORA_SDK_DIR` 和 `AGORA_RTC_LIBRARY` 提供对应版本的软件包。
+CMake 会读取软件包的 `.config` 或 `include/global_config.cmake` 并拒绝不匹配的配置；缺少这些
+构建元数据的软件包也会被拒绝。若宿主工程预先定义了 Agora 导入目标，仍需将
+`AGORA_SDK_DIR` 设置为同一个软件包，以便校验有明确依据。
+
+构建 20 ms 版本时，请指向匹配的 RTSA 软件包，例如：
+
+```bash
+cmake -S . -B build-20 \
+  -DMYBOT_AUDIO_PTIME_MS=20 \
+  -DAGORA_SDK_DIR=/opt/agora-rtsa-20 \
+  -DAGORA_RTC_LIBRARY=/opt/agora-rtsa-20/lib/libagora-rtc-sdk.so
 ```
 
 Linux 参考平台没有本地 ASR 实现，开启 `MYBOT_WAKE_WORDS` 后需要由宿主额外注册实现，

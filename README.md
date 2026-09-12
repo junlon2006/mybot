@@ -248,8 +248,25 @@ For example:
 ```bash
 cmake -S . -B build-wake \
   -DCONFIG_PLATFORM=linux \
-  -DMYBOT_AUDIO_PTIME_MS=20 \
+  -DMYBOT_AUDIO_PTIME_MS=60 \
   -DMYBOT_WAKE_WORDS=ON
+```
+
+`MYBOT_AUDIO_PTIME_MS` must match the RTSA package's
+`CONFIG_MINIMAL_TIMER_INTERVAL_MS` setting. The bundled x86_64 Linux package is fixed at 60 ms;
+for 20 or 40 ms, provide a matching external package with `AGORA_SDK_DIR` and
+`AGORA_RTC_LIBRARY`. CMake checks the package's `.config` or `include/global_config.cmake` and
+rejects a mismatch; packages without this build metadata are rejected. When a parent project
+predefines the Agora imported target, set `AGORA_SDK_DIR` to that same package so the check still
+has a verifiable source of truth.
+
+For a 20 ms build, add the paths to the matching RTSA package, for example:
+
+```bash
+cmake -S . -B build-20 \
+  -DMYBOT_AUDIO_PTIME_MS=20 \
+  -DAGORA_SDK_DIR=/opt/agora-rtsa-20 \
+  -DAGORA_RTC_LIBRARY=/opt/agora-rtsa-20/lib/libagora-rtc-sdk.so
 ```
 
 The Linux reference platform has no local ASR implementation, so enabling `MYBOT_WAKE_WORDS`

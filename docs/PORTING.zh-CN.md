@@ -287,13 +287,20 @@ cmake --build build-target -j
 `AGORA_RTC_LIBRARY` 可指向共享库或静态库。需对照所选 Agora 库核实字节序、指针宽度、
 libc、编译器与浮点 ABI；若使用共享目标包，还需部署该库并配置固件或操作系统的运行时加载器。
 
+所选 `MYBOT_AUDIO_PTIME_MS` 必须与 RTSA 软件包中的 `CONFIG_MINIMAL_TIMER_INTERVAL_MS`
+一致。仓库附带的 x86_64 Linux 软件包固定为 60 ms；使用 20 或 40 ms 时，请通过
+`AGORA_SDK_DIR` 和 `AGORA_RTC_LIBRARY` 指向匹配的软件包。CMake 会读取 `.config` 或
+`include/global_config.cmake`；配置不一致或缺少元数据时直接失败。若宿主预先定义了
+`agora-rtc-sdk` 目标，`AGORA_SDK_DIR` 仍必须指向同一个软件包以进行校验。
+
 ## 第 8 步：验收清单
 
 - 公开头文件以警告即错误编译通过，宿主只链接文档化的目标。
 - HTTPS 拒绝不受信任的 CA、过期证书、错误主机名、缺失 SNI 与握手超时。
 - Wi-Fi 连接、断开与失败路径无死锁完成。
 - KV 在重置后存活，处理缺失与溢出，并保护凭据。
-- 采集/播放通过 20、40 与 60 ms 的 16 kHz 单声道 S16 测试。
+- 使用对应 RTSA 软件包时，采集/播放通过所选 ptime 的 16 kHz 单声道 S16 测试（仓库附带
+  Linux 软件包覆盖 60 ms）。
 - 短 I/O 有进展，stop 能在设备丢失时解除阻塞。
 - `destroy` 返回后没有按键或唤醒词回调运行；LCD 不保留借用的内容。
 - 部分启动失败与重复 start/stop 释放全部资源。

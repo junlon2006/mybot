@@ -77,6 +77,8 @@ additional internal threads whose stacks are vendor-managed.
 
 - Audio format is fixed at 16 kHz, mono, signed 16-bit; ptime is 20 / 40 / 60 ms (default 60 ms,
   i.e. 960 samples / 1920 bytes per frame).
+- The selected ptime must match the target RTSA package's `CONFIG_MINIMAL_TIMER_INTERVAL_MS`;
+  the bundled Linux package is the 60 ms variant.
 - During shutdown the SDK calls both platform `stop` hooks before waiting for audio workers.
   Each hook must safely interrupt an in-flight `read` / `write`; bounded I/O timeouts remain a
   fallback against driver failures (the Linux ALSA implementation polls with a 50 ms timeout).

@@ -417,6 +417,9 @@ static void dev_on_conversation_stop(void *user_data) {
     runtime->rtc_channel[0] = '\0';
     runtime->rtc_agent_uid[0] = '\0';
     mybot_presenter_set_vp_registered(&runtime->presenter, false);
+    /* Render from the current state snapshot before the lifecycle publishes its
+     * next device state, so the old conversation overlay cannot win a race. */
+    mybot_presenter_render_state(&runtime->presenter, &runtime->state_model);
     mybot_media_pipeline_set_rtc_connected(&runtime->media, false);
     if (mybot_agora_rtc_leave() < 0) {
         AOSL_LOG_ERR("failed to leave RTC conversation");

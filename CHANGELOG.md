@@ -21,6 +21,10 @@ This project follows Semantic Versioning.
 - Reject oversized or non-string service response fields instead of silently truncating them, and
   reserve space for the full 512-byte RTC token plus its terminating NUL without changing the
   persisted device-auth layout.
+- Validate RTSA downlink callbacks before handing audio to the PCM pipeline, and require the
+  selected `MYBOT_AUDIO_PTIME_MS` to match the bundled or externally supplied RTSA timer cadence.
+- Clear the voiceprint LCD overlay synchronously when a conversation stops so a stale indicator
+  cannot survive the transition back to `READY`.
 
 ## [1.1.0] - 2026-09-12
 

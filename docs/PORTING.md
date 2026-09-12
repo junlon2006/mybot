@@ -322,13 +322,21 @@ cmake --build build-target -j
 compiler and floating-point ABI against the selected Agora library. For a shared target package,
 also deploy the library and configure the firmware or OS runtime loader to find it.
 
+The selected `MYBOT_AUDIO_PTIME_MS` must match the RTSA package's
+`CONFIG_MINIMAL_TIMER_INTERVAL_MS`. The bundled x86_64 Linux package is fixed at 60 ms; for 20 or
+40 ms, provide a matching package through `AGORA_SDK_DIR` and `AGORA_RTC_LIBRARY`. CMake reads
+`.config` or `include/global_config.cmake` and fails configuration when the values differ or the
+metadata is absent. If the host predefines the `agora-rtc-sdk` target, `AGORA_SDK_DIR` must still
+identify that same package for validation.
+
 ## Step 8: Acceptance checklist
 
 - Public headers compile with warnings as errors and the host links only documented targets.
 - HTTPS rejects an untrusted CA, expired certificate, wrong hostname, missing SNI and handshake timeout.
 - Wi-Fi connected, disconnected and failure paths complete without deadlock.
 - KV survives reset, handles not-found and overflow, and protects credentials.
-- Capture/playback pass 16 kHz mono S16 tests at 20, 40 and 60 ms.
+- Capture/playback pass 16 kHz mono S16 tests at each selected ptime with its matching RTSA package
+  (the bundled Linux package covers 60 ms).
 - Short I/O makes progress and stop unblocks device loss.
 - No key or wake-word callback runs after destroy returns; LCD does not retain borrowed content.
 - Partial startup failure and repeated start/stop release all resources.
