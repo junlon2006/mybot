@@ -6,12 +6,12 @@
 **[English](README.md) | 简体中文**
 
 `mybot` 是面向设备端的跨平台 **AI 语音对话 SDK**：让智能设备通过声网 Agora RTC 与
-云端 AI Agent 进行实时语音聊天。SDK 负责 APSTA 配网、设备配对与认证、会话状态机、
-全双工语音交互（Agora RTSA 与 Agora AI 能力）、按键/LCD 工作流以及可选的本地唤醒词
-识别。平台相关能力通过一组小型 `ops` 接口注入，SDK 核心只依赖 C99 与 AOSL，理论上
+云端 AI Agent 进行实时语音聊天。平台/应用负责 APSTA 配网和 Wi-Fi 凭据；SDK 消费网络
+连接事件，并负责设备配对与认证、会话状态机、全双工语音交互（Agora RTSA 与 Agora AI
+能力）、按键/LCD 工作流以及可选的本地唤醒词识别。平台相关能力通过一组小型 `ops` 接口注入，SDK 核心只依赖 C99 与 AOSL，理论上
 可移植到任意平台——Linux、RTOS 或裸机 MCU。
 
-> 当前版本为 **1.0.0**。仓库内置的 Agora RTSA 二进制与
+> 当前版本为 **1.1.0**。仓库内置的 Agora RTSA 二进制与
 > AOSL 有独立的许可及使用条件；用于产品前请阅读[许可证与第三方依赖](#许可证与第三方依赖)。
 
 ## 目录
@@ -35,7 +35,7 @@
   （ASR / LLM / TTS）由云端编排。
 - **任意平台可移植**：核心只依赖 C99 与 AOSL，设备能力通过 `ops` 契约注入，不直接触碰
   任何 OS 或外设 API；理论上可移植到 Linux、RTOS、裸机等任意平台。
-- **APSTA 配网**：非阻塞启动，通过 Wi-Fi 事件驱动应用状态机推进。
+- **APSTA 集成**：非阻塞启动，由平台拥有配网流程，并通过 Wi-Fi 事件驱动应用状态机推进。
 - **配对与认证**：配对码 → 设备认领 → 长期凭证持久化，认证失效时自动重新配对。
 - **会话状态机**：`unprovisioned / pairing / awaiting_claim / runtime / in_conversation` 五态
   设备服务生命周期驱动设备服务端交互。
@@ -50,6 +50,9 @@
 - **可选的本地唤醒词**：默认关闭；唤醒行为与物理按键启动会话一致。
 - **按键与 LCD 工作流**：语义化屏幕状态（配网 / 配对码 / 就绪 / 会话中），显示方式由
   平台决定。
+- **声纹注册状态**：对话过程中监听当前会话 RTM channel 的
+  `message.sal_status` / `VP_REGISTER_SUCCESS` 消息，并通过
+  `MYBOT_LCD_INDICATOR_VP_REGISTERED` 向 LCD 提供会话内叠加指示。
 - **配对码语音播报**：每个配对码只播报一次，先播固定提示句（“请在控制台输入配对码”），
   再逐位播报数字，走正常扬声器链路。音频资源为 `./assets/locales/<locale>/` 下的原始 16 kHz
   单声道 16-bit PCM 文件（`prompt.pcm`、`0.pcm`~`9.pcm`），由平台持有，SDK 核心不含解码器。
@@ -62,7 +65,7 @@
   60 ms。
 - RTC 实现专用于 Agora RTSA，不提供其他 RTC 协议适配层。
 - 本地 ASR 唤醒词为可选平台实现，默认关闭；开启时必须由平台注册实现。
-- Wi-Fi 接口面向 APSTA 配网场景。
+- APSTA 配网和凭据由平台/应用负责，SDK 的 Wi-Fi 接口只消费网络连接状态事件。
 - 设备服务端不属于本仓库；运行示例与联调需要兼容的服务端地址。
 
 ## 对话流程
@@ -111,7 +114,7 @@ ctest --test-dir build --output-on-failure
 ./build/examples/linux/mybot \
   --server https://api.example.com \
   --device-id AG-DEMO-001 \
-  --fw-ver 1.0.0 \
+  --fw-ver 1.1.0 \
   --hw-model linux-reference
 ```
 

@@ -35,7 +35,6 @@ typedef struct {
     mybot_wifi_runtime_t wifi;
     bool connected;
     bool worker_started;
-    uint32_t event_generation;
     beken_thread_t worker;
     mybot_wifi_credential_list_t credentials;
     wifi_scan_ap_info_t scan_results[NETWORK_SCAN_RESULT_CAPACITY];
@@ -58,28 +57,12 @@ static bool exchange_connected(mybot_network_context_t *ctx, bool connected) {
 static void publish_connected(mybot_network_context_t *ctx, const char *ssid) {
     if (!mybot_wifi_runtime_is_stopping(&ctx->wifi) && !exchange_connected(ctx, true)) {
         NETWORK_LOGI("STA got IPv4: ssid=%s", ssid);
-        if (mybot_event_post_with_generation(MYBOT_EVENT_NETWORK_CONNECTED,
-                                             ctx->event_generation) != 0) {
-            NETWORK_LOGE("failed to post connected event");
-        }
     }
 }
 
 static void publish_disconnected(mybot_network_context_t *ctx, const char *ssid) {
     if (!mybot_wifi_runtime_is_stopping(&ctx->wifi) && exchange_connected(ctx, false)) {
         NETWORK_LOGW("STA disconnected: ssid=%s", ssid);
-        if (mybot_event_post_with_generation(MYBOT_EVENT_NETWORK_DISCONNECTED,
-                                             ctx->event_generation) != 0) {
-            NETWORK_LOGE("failed to post disconnected event");
-        }
-    }
-}
-
-static void publish_failed(mybot_network_context_t *ctx) {
-    if (!mybot_wifi_runtime_is_stopping(&ctx->wifi) &&
-        mybot_event_post_with_generation(MYBOT_EVENT_NETWORK_FAILED,
-                                         ctx->event_generation) != 0) {
-        NETWORK_LOGE("failed to post connection-failed event");
     }
 }
 
@@ -205,7 +188,6 @@ static void network_worker(beken_thread_arg_t arg) {
             if (!connected) {
                 if (!failure_announced) {
                     NETWORK_LOGW("saved-network connection failed");
-                    publish_failed(ctx);
                     failure_announced = true;
                 }
                 (void)mybot_wifi_runtime_stop_sta(&ctx->wifi);
@@ -282,15 +264,14 @@ int mybot_network_is_configured(bool *configured) {
     return result;
 }
 
-int mybot_network_start(uint32_t generation) {
-    if (generation == 0 || s_network) {
+int mybot_network_start(void) {
+    if (s_network) {
         return -1;
     }
     mybot_network_context_t *ctx = psram_zalloc(sizeof(*ctx));
     if (!ctx) {
         return -1;
     }
-    ctx->event_generation = generation;
 
     if (mybot_wifi_credentials_load(&ctx->credentials) < 0 || ctx->credentials.count == 0) {
         NETWORK_LOGE("normal STA start requires saved credentials");
@@ -303,6 +284,9 @@ int mybot_network_start(uint32_t generation) {
     if (mybot_wifi_runtime_register_callbacks(&ctx->wifi) < 0) {
         goto failed;
     }
+    /* Publish ownership before starting the worker. The worker may run to
+     * completion before rtos_create_psram_thread() returns. */
+    s_network = ctx;
     if (rtos_create_psram_thread(&ctx->worker, NETWORK_WORKER_PRIORITY, "mybot_network",
                                  network_worker, NETWORK_WORKER_STACK_SIZE,
                                  (beken_thread_arg_t)ctx) != BK_OK) {
@@ -310,7 +294,6 @@ int mybot_network_start(uint32_t generation) {
         goto failed;
     }
     ctx->worker_started = true;
-    s_network = ctx;
     NETWORK_LOGI("normal STA started");
     return 0;
 
@@ -327,6 +310,7 @@ failed:
         NETWORK_LOGE("startup cleanup incomplete; retaining network context");
         return -1;
     }
+    s_network = NULL;
     destroy_context(ctx);
     return -1;
 }

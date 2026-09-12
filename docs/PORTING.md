@@ -2,7 +2,7 @@
 
 > [English](PORTING.md) | [简体中文](PORTING.zh-CN.md)
 
-This document defines the cross-platform integration specification for mybot 1.0.0.
+This document defines the cross-platform integration specification for mybot 1.1.0.
 Public APIs and ABI follow
 Semantic Versioning. Platform code must include only headers under `include/mybot` and link
 `mybot::sdk`.
@@ -154,6 +154,8 @@ operations table to the platform descriptor.
 `MYBOT_LCD_SCREEN_IN_CONVERSATION`, `MYBOT_LCD_INDICATOR_VP_REGISTERED` means the server completed
 voice-print registration for the active conversation. Render this as an in-conversation indicator;
 ignore bits the platform does not recognize and do not derive lifecycle state from the indicator.
+A platform may show its own pending/unregistered marker while this bit is clear, but the marker is
+only presentation state and must not change the SDK lifecycle.
 
 ### Wake words (optional)
 
@@ -168,7 +170,9 @@ pairing code xxx in the console"). All PCM exchanged with the SDK is raw 16 kHz 
 no audio decoder, so the platform must decode/resample its own assets to that format.
 
 When a pair code is obtained, the SDK queues the fixed prompt sound followed by one sound per
-digit and plays the queue **once** through the normal playback path. The announcement stops when
+digit and plays the queue **once** through the normal playback path. Prompt PCM is selected by the
+playback worker and kept separate from the RTC playback ring; a final partial prompt frame is
+zero-padded. RTC downlink data is discarded while the announcement is active. The announcement stops when
 the device leaves `awaiting_claim` (claimed, re-pairing, or offline). A missing prompt sound
 skips the whole announcement; a missing digit sound skips just that digit — pairing never blocks
 on the audio.
@@ -273,9 +277,12 @@ internal state machine and must not be reconstructed by the platform.
 The Agora RTM integration follows the xiaozhi reference flow. The device-service conversation
 response supplies a server-generated `rtc.uid` (also called `local_uid`) and, for point-to-point
 messages, a top-level `agent_uid`. The SDK uses `rtc.uid` unchanged as both the RTC user account
-and the local RTM UID, and uses the same server-issued RTC token for the RTM login request. The
-`agent_uid` value is the peer passed to `mybot_agora_rtc_send_rtm_data()`; the `AG-*` device ID is
-only the device-service identity and must not be substituted for either account.
+and the local RTM UID. RTM token authentication uses a separate RTM credential; the current
+service response exposes `rtc.token`, so deployments must confirm that the service/app
+authentication mode accepts it for RTM or provide an RTM token through an extended service
+contract. The `agent_uid` value is the peer passed to `mybot_agora_rtc_send_rtm_data()`; the
+`AG-*` device ID is only the device-service identity and must not be substituted for either
+account.
 
 An RTM UID must be non-empty, shorter than 64 bytes, and contain only ASCII letters, digits, space,
 or the punctuation characters accepted by Agora. `mybot_agora_rtc_rtm_uid_is_valid()` exposes the
@@ -287,8 +294,11 @@ Conversation startup requests RTM login first and waits up to five seconds for a
 `MYBOT_RTM_EVENT_LOGIN` callback. It then subscribes to the RTM channel whose name matches the RTC
 channel and waits up to five seconds for subscription success. The SDK does not create or join the
 RTC connection until both operations succeed, so platforms must allow RTM callbacks to run while
-the control owner is waiting. Voiceprint status messages arrive through the RTM channel callback;
-the P2P RTM callback remains available for direct messages.
+the control owner is waiting. Voiceprint status accepts only a channel message whose exact fields are
+`"object":"message.sal_status"` and `"status":"VP_REGISTER_SUCCESS"`, from the current agent on
+the current conversation channel. The SDK resets this indicator at conversation boundaries and
+exposes success through `MYBOT_LCD_INDICATOR_VP_REGISTERED`; the P2P RTM callback remains available
+for direct messages.
 
 ## Step 7: Cross-compile
 
@@ -315,6 +325,10 @@ also deploy the library and configure the firmware or OS runtime loader to find 
 - Short I/O makes progress and stop unblocks device loss.
 - No key or wake-word callback runs after destroy returns; LCD does not retain borrowed content.
 - Partial startup failure and repeated start/stop release all resources.
+- Conversation teardown flushes capture, playback, and AEC reference buffers before a new session;
+  the flush is performed by the corresponding ring-buffer consumer worker.
+- AEC reference samples are committed only after playback accepts the matching samples; prompt PCM
+  is never included in the reference stream.
 - `mybot_get_state()` reports `READY -> IN_CONVERSATION -> READY` for a normal conversation;
   a conversation interrupted by Wi-Fi loss reports `WIFI_DISCONNECTED` and returns to `READY` after
   reconnect, without deadlock during stop or re-pair.

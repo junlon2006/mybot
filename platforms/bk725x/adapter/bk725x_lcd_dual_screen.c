@@ -69,7 +69,7 @@ static int lcd_dual_screen_render(void *ctx, const mybot_lcd_content_t *content)
     default:
         return -1;
     }
-    int result = mybot_display_show_screen(screen);
+    int result = mybot_display_show_screen(screen, content->indicators);
     if (result < 0) {
         MYBOT_LOGE(TAG, "render failed, screen=%d", (int)content->screen);
     }

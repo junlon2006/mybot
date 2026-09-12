@@ -105,11 +105,33 @@ int mybot_audio_bk725x_shared_playback_write(const int16_t *pcm, int frames) {
 }
 
 void *mybot_audio_bk725x_shared_playback_get_context(void) {
-    return s_shared.pb_ctx;
+    void *context = NULL;
+    if (shared_ensure_lock() < 0 || rtos_lock_mutex(&s_shared.lock) != BK_OK) {
+        return NULL;
+    }
+    context = s_shared.started ? s_shared.pb_ctx : NULL;
+    (void)rtos_unlock_mutex(&s_shared.lock);
+    return context;
 }
 
 bool mybot_audio_bk725x_shared_playback_is_started(void) {
-    return s_shared.started;
+    bool started = false;
+    if (shared_ensure_lock() < 0 || rtos_lock_mutex(&s_shared.lock) != BK_OK) {
+        return false;
+    }
+    started = s_shared.started;
+    (void)rtos_unlock_mutex(&s_shared.lock);
+    return started;
+}
+
+bool mybot_audio_bk725x_shared_playback_owns_context(const void *ctx) {
+    bool owns = false;
+    if (!ctx || shared_ensure_lock() < 0 || rtos_lock_mutex(&s_shared.lock) != BK_OK) {
+        return false;
+    }
+    owns = s_shared.started && s_shared.pb_ctx == ctx;
+    (void)rtos_unlock_mutex(&s_shared.lock);
+    return owns;
 }
 
 void mybot_audio_bk725x_shared_playback_stop(void) {

@@ -1,9 +1,9 @@
 # mybot 固件内嵌语音资源
 
 本目录保存 mybot 的提示语音资源。构建前，
-`projects/mybot/scripts/generate_assets_c.py` 会把
+`examples/bk725x/scripts/generate_assets_c.py` 会把
 `locales/` 下的 OGG 文件转换为 C 源文件
-`components/mybot/platforms/bk725x/modules/storage/mybot_assets.c`；该源文件随 AP 固件一起编译，设备直接从
+`platforms/bk725x/modules/storage/mybot_assets.c`；该源文件随 AP 固件一起编译，设备直接从
 固件中的只读数组读取并解码语音，不需要在 SD 卡上保存资源文件。
 
 生成器只收集 `locales/**/*.ogg`。`LICENSE.xiaozhi-esp32` 和本说明文件不会被
@@ -36,9 +36,9 @@ Linux mybot demo（文档标注为同一 `xiaozhi-esp32` 资源的衍生）。�
 3. 重新生成 C 数组：
 
    ```bash
-   python3 projects/mybot/scripts/generate_assets_c.py \
-     projects/mybot/assets \
-     components/mybot/platforms/bk725x/modules/storage/mybot_assets.c
+   python3 examples/bk725x/scripts/generate_assets_c.py \
+     examples/bk725x/assets \
+     platforms/bk725x/modules/storage/mybot_assets.c
    ```
 
 4. 执行 `make bk7258` 重新编译并烧录。生成的数组会随 AP 固件更新。
@@ -48,9 +48,9 @@ Linux mybot demo（文档标注为同一 `xiaozhi-esp32` 资源的衍生）。�
 1. 按上面的步骤生成新的 `.ogg`，并放入对应的 `locales/<lang>/` 目录。
 2. 重新运行 `generate_assets_c.py`。只有被设备代码引用的文件才会播放：
    - `wificonfig.ogg` / `success.ogg`：
-     `components/mybot/platforms/bk725x/modules/audio/mybot_prompt_player_bk725x.c`。
+     `platforms/bk725x/modules/audio/mybot_prompt_player_bk725x.c`。
    - `prompt.ogg` / `0.ogg`~`9.ogg`：
-     `components/mybot/platforms/bk725x/modules/announce/mybot_announce_pcm_bk725x.c`
+     `platforms/bk725x/modules/announce/mybot_announce_pcm_bk725x.c`
      的 `sound_file_name()`（对应 `mybot_announce_sound_t` 枚举）。
 3. 执行 `make bk7258` 并烧录。
 

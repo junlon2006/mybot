@@ -166,6 +166,7 @@ static int s_capture_context;
 static int s_playback_context;
 static bool s_capture_started;
 static bool s_playback_started;
+static int s_playback_write_limit = -1;
 static bool s_block_capture_read;
 static bool s_capture_read_blocked;
 static bool s_capture_read_timed_out;
@@ -334,11 +335,11 @@ static bool sent_frame_matches(int index, int16_t reference_sample) {
     return matches;
 }
 
-static bool wait_for_audio_frame(int16_t reference_sample, int timeout_ms) {
+static bool wait_for_audio_frame_from(int16_t reference_sample, int first_frame, int timeout_ms) {
     for (int elapsed = 0; elapsed < timeout_ms; elapsed++) {
         int send_calls = read_counter(&s_rtc_send_calls);
         int limit = send_calls < TEST_MAX_SENT_FRAMES ? send_calls : TEST_MAX_SENT_FRAMES;
-        for (int i = 0; i < limit; i++) {
+        for (int i = first_frame; i < limit; i++) {
             if (sent_frame_matches(i, reference_sample)) {
                 return true;
             }
@@ -346,6 +347,10 @@ static bool wait_for_audio_frame(int16_t reference_sample, int timeout_ms) {
         aosl_hal_msleep(1);
     }
     return false;
+}
+
+static bool wait_for_audio_frame(int16_t reference_sample, int timeout_ms) {
+    return wait_for_audio_frame_from(reference_sample, 0, timeout_ms);
 }
 
 static void emit_key_event(mybot_key_event_t event) {
@@ -615,11 +620,15 @@ static int playback_write(void *ctx, const void *buf, int frames) {
                          &s_playback_write_timed_out);
     }
     bool started = s_playback_started;
+    int written = frames;
+    if (s_playback_write_limit >= 0 && written > s_playback_write_limit) {
+        written = s_playback_write_limit;
+    }
     if (started) {
         s_playback_write_calls++;
     }
     mock_unlock();
-    return started ? frames : 0;
+    return started ? written : 0;
 }
 
 static int playback_stop(void *ctx) {
@@ -1303,6 +1312,20 @@ int main(void) {
     emit_remote_audio(reference_frame, sizeof(reference_frame));
     assert(wait_for_counter(&s_playback_write_calls, 1, 1000));
     assert(wait_for_audio_frame(TEST_REF_SAMPLE, 2000));
+
+    /* A short playback write must enqueue only the samples accepted by the
+     * device; the second half is committed on the following playback tick. */
+    mock_lock();
+    s_playback_write_limit = TEST_FRAME_SAMPLES / 2;
+    mock_unlock();
+    int short_write_calls_before = read_counter(&s_playback_write_calls);
+    int short_send_calls_before = read_counter(&s_rtc_send_calls);
+    emit_remote_audio(reference_frame, sizeof(reference_frame));
+    assert(wait_for_counter(&s_playback_write_calls, short_write_calls_before + 2, 1000));
+    assert(wait_for_audio_frame_from(TEST_REF_SAMPLE, short_send_calls_before, 2000));
+    mock_lock();
+    s_playback_write_limit = -1;
+    mock_unlock();
 #endif
 
     emit_key_event(MYBOT_KEY_EVENT_CONVERSATION_STOP);

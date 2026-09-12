@@ -2,7 +2,7 @@
 
 > [English](PORTING.md) | 简体中文
 
-本文档定义 mybot 1.0.0 的跨平台集成规范。公开 API 与 ABI 遵循语义化版本。平台代码必须只
+本文档定义 mybot 1.1.0 的跨平台集成规范。公开 API 与 ABI 遵循语义化版本。平台代码必须只
 包含 `include/mybot` 下的头文件，并链接 `mybot::sdk`。
 
 mybot 设计为可移植到几乎任意平台——Linux、RTOS 或裸机——只要 AOSL 有对应的
@@ -137,7 +137,8 @@ BearSSL 或芯片厂商 TLS socket API；SDK 核心
 `mybot_lcd_content_t.indicators` 是用于非互斥叠加提示的位图。在
 `MYBOT_LCD_SCREEN_IN_CONVERSATION` 中，`MYBOT_LCD_INDICATOR_VP_REGISTERED` 表示当前会话的声纹
 已由服务器注册成功，平台应将其渲染为会话界面的附加指示器。平台应忽略无法识别的位，不能
-根据该指示器自行推断生命周期状态。
+根据该指示器自行推断生命周期状态。该位清零时，平台可以自行显示“注册中/未注册”标记，
+但这只是显示状态，不能改变 SDK 生命周期。
 
 ### 唤醒词（可选）
 
@@ -151,6 +152,8 @@ BearSSL 或芯片厂商 TLS socket API；SDK 核心
 自行把资源解码/重采样到该格式。
 
 拿到配对码后，SDK 将固定提示音与逐位数字音依次入队，通过正常播放链路**只播报一次**；
+提示音由播放 worker 直接选择并保持在独立的待播放帧中，不写入 RTC 播放 ring；末尾不足一帧时补零，
+不会与 RTC 音频拼接。提示音播放期间收到的 RTC 下行音频会丢弃；
 设备离开 `awaiting_claim` 状态（认领成功、重新配对或离线）时立即停止。提示音缺失则跳过
 整段播报，某个数字音缺失则只跳过该位——配对流程不会被音频阻塞。
 
@@ -246,9 +249,11 @@ mybot_stop();
 
 Agora RTM 集成遵循 xiaozhi 参考流程。设备服务的启动会话响应提供服务端生成的
 `rtc.uid`（也称 `local_uid`），并在顶层提供点对点消息使用的 `agent_uid`。SDK 原样使用
-`rtc.uid` 作为 RTC user account 和本地 RTM UID，并使用服务端下发的同一个 RTC token 请求
-RTM 登录。`agent_uid` 是传给 `mybot_agora_rtc_send_rtm_data()` 的对端 UID；`AG-*` 设备 ID
-仅用于设备服务身份，不能替代这两个账号。
+`rtc.uid` 作为 RTC user account 和本地 RTM UID。启用 RTM token 鉴权时应使用独立的 RTM
+凭据；当前服务响应只提供 `rtc.token`，部署方必须确认服务端/项目鉴权模式允许该 token
+用于 RTM，或扩展服务协议下发 RTM token。`agent_uid` 是传给
+`mybot_agora_rtc_send_rtm_data()` 的对端 UID；`AG-*` 设备 ID 仅用于设备服务身份，不能替代
+这两个账号。
 
 RTM UID 必须非空、长度小于 64 字节，并且只能包含 Agora 接受的 ASCII 字母、数字、空格和
 标点字符。`mybot_agora_rtc_rtm_uid_is_valid()` 暴露了登录前使用的同一校验规则。RTM 登录是
@@ -258,8 +263,10 @@ RTM UID 必须非空、长度小于 64 字节，并且只能包含 Agora 接受�
 会话启动时 SDK 会先请求 RTM 登录，并最多等待 5 秒直到收到成功的
 `MYBOT_RTM_EVENT_LOGIN` 回调；随后订阅与 RTC channel 同名的 RTM channel，并最多等待 5 秒
 直到订阅成功。两步均成功前不会创建或加入 RTC connection，因此平台必须保证 control owner
-等待期间 RTM 回调线程仍可运行。声纹状态消息通过 RTM channel 回调接收，P2P RTM 回调继续
-保留用于点对点消息。
+等待期间 RTM 回调线程仍可运行。声纹状态只接受当前会话 channel、当前 agent 发送且字段严格
+匹配 `"object":"message.sal_status"` 与 `"status":"VP_REGISTER_SUCCESS"` 的消息。SDK 在
+会话开始和结束时重置该状态，并通过 `MYBOT_LCD_INDICATOR_VP_REGISTERED` 暴露成功指示；P2P
+RTM 回调继续保留用于点对点消息。
 
 ## 第 7 步：交叉编译
 
@@ -288,6 +295,8 @@ libc、编译器与浮点 ABI；若使用共享目标包，还需部署该库并
 - 正常会话期间 `mybot_get_state()` 依次报告 `READY -> IN_CONVERSATION -> READY`；通话中断网
   时报告 `WIFI_DISCONNECTED`，重连后回到 `READY`，停止和重新配对过程不得死锁。
 - 真实设备完成配网、配对、RTC 加入、双向音频、挂断与重启。
+- 会话结束时，采集、播放和 AEC reference 缓冲会在各自消费者 worker 中排空，完成后才允许新会话。
+- AEC reference 仅在播放设备接受对应样本后提交；提示音 PCM 永远不会进入 reference 流。
 - 日志与存储不暴露 token。
 
 ## 已知限制

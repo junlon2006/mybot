@@ -22,7 +22,8 @@ The port provides BK725x implementations for:
 - HTTPS transport using the BK mbedTLS integration;
 - 16 kHz mono PCM capture and playback, device volume, and shared audio power management;
 - OGG/Opus prompt decoding and pairing-code announcement;
-- LCD rendering, semantic key events, and BK button input;
+- LCD rendering, including the conversation voiceprint pending/success marker, semantic key events,
+  and BK button input;
 - BK environment-backed key-value storage.
 
 `adapter/` contains the registration adapters that connect these implementations to the SDK
@@ -32,6 +33,12 @@ The port provides BK725x implementations for:
 The controller, AP/CP entry points, SD-card workflow, USB MSC integration, board configuration,
 partition tables, and product resources are application-level code. They remain in
 `examples/bk725x` and are not part of the platform-neutral SDK core.
+
+The controller keeps provisioning and MyBot as separate product tasks. It stops the SDK before
+entering APSTA provisioning, waits for provisioning to complete, plays the success prompt to
+completion, and only then starts MyBot on the restored STA connection. During a conversation, the
+SDK's `MYBOT_LCD_INDICATOR_VP_REGISTERED` bit is forwarded to both LCD panels; the renderer shows a
+red pending mark until the server reports registration and a green mark afterward.
 
 ## Registration
 

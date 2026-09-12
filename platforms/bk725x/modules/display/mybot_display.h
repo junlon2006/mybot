@@ -3,6 +3,7 @@
 #define MYBOT_DISPLAY_H_
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,7 +28,7 @@ void mybot_display_deinit(void);
 bool mybot_display_is_ready(void);
 
 /* Calls are serialized through the display worker. */
-int mybot_display_show_screen(mybot_display_screen_t screen);
+int mybot_display_show_screen(mybot_display_screen_t screen, uint32_t indicators);
 
 /* The code must contain exactly six ASCII digits. */
 int mybot_display_show_pair_code(const char *pair_code);

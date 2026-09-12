@@ -5,7 +5,6 @@
 #include <os/os.h>
 
 #define MYBOT_EVENT_QUEUE_DEPTH 32
-#define MYBOT_EVENT_POST_TIMEOUT_MS 100
 
 #define TAG "mybot_event"
 #define LOGE(...) MYBOT_LOGE(TAG, ##__VA_ARGS__)
@@ -40,26 +39,19 @@ void mybot_event_deinit(void) {
     LOGI("event queue stopped");
 }
 
-int mybot_event_post_with_generation(mybot_event_type_t type, uint32_t source_generation) {
-    mybot_event_t event = {
-        .type = type,
-        .source_generation = source_generation,
-    };
+int mybot_event_post(mybot_event_type_t type) {
+    mybot_event_t event = {.type = type};
 
     if (!s_event_queue || (unsigned int)type >= MYBOT_EVENT_TYPE_COUNT) {
         LOGE("invalid event post, type=%d", type);
         return -1;
     }
 
-    if (rtos_push_to_queue(&s_event_queue, &event, MYBOT_EVENT_POST_TIMEOUT_MS) != BK_OK) {
+    if (rtos_push_to_queue(&s_event_queue, &event, BEKEN_NO_WAIT) != BK_OK) {
         LOGE("failed to post event, type=%d", type);
         return -1;
     }
     return 0;
-}
-
-int mybot_event_post(mybot_event_type_t type) {
-    return mybot_event_post_with_generation(type, 0);
 }
 
 int mybot_event_wait(mybot_event_t *event, uint32_t timeout_ms) {

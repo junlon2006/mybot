@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "mybot_display.h"
 
+#include <mybot/platform/mybot_lcd.h>
+
 #include <components/bk_display.h>
 #include "mybot_platform_log.h"
 #include <driver/gpio.h>
@@ -55,6 +57,7 @@ typedef enum {
 typedef struct {
     display_command_type_t type;
     mybot_display_screen_t screen;
+    uint32_t indicators;
     char pair_code[7];
     uint32_t trace_id;
 } display_command_t;
@@ -192,6 +195,32 @@ static void draw_ring(uint8_t *pixels, int radius, int thickness, uint16_t color
     }
 }
 
+static void draw_circle(uint8_t *pixels, int center_x, int center_y, int radius,
+                        uint16_t color) {
+    int radius_squared = radius * radius;
+    for (int y = center_y - radius; y <= center_y + radius; ++y) {
+        for (int x = center_x - radius; x <= center_x + radius; ++x) {
+            int dx = x - center_x;
+            int dy = y - center_y;
+            if (dx * dx + dy * dy <= radius_squared) {
+                put_pixel(pixels, x, y, color);
+            }
+        }
+    }
+}
+
+static void draw_vp_indicator(uint8_t *pixels) {
+    draw_circle(pixels, 124, 28, 14, COLOR_GREEN);
+    draw_line(pixels, 116, 28, 122, 34, 3, COLOR_WHITE);
+    draw_line(pixels, 122, 34, 133, 21, 3, COLOR_WHITE);
+}
+
+static void draw_vp_pending_indicator(uint8_t *pixels) {
+    draw_circle(pixels, 124, 28, 14, COLOR_RED);
+    draw_line(pixels, 117, 21, 131, 35, 3, COLOR_WHITE);
+    draw_line(pixels, 131, 21, 117, 35, 3, COLOR_WHITE);
+}
+
 static uint16_t screen_color(mybot_display_screen_t screen) {
     switch (screen) {
     case MYBOT_DISPLAY_SCREEN_STARTING:
@@ -304,6 +333,14 @@ static void render_command(unsigned int slot, const display_command_t *command) 
 
     draw_state_panel(panel_pixels(slot, 0), command->screen);
     draw_state_panel(panel_pixels(slot, 1), command->screen);
+    if (command->screen == MYBOT_DISPLAY_SCREEN_IN_CONVERSATION &&
+        (command->indicators & MYBOT_LCD_INDICATOR_VP_REGISTERED)) {
+        draw_vp_indicator(panel_pixels(slot, 0));
+        draw_vp_indicator(panel_pixels(slot, 1));
+    } else if (command->screen == MYBOT_DISPLAY_SCREEN_IN_CONVERSATION) {
+        draw_vp_pending_indicator(panel_pixels(slot, 0));
+        draw_vp_pending_indicator(panel_pixels(slot, 1));
+    }
 }
 
 static bk_err_t flush_complete_callback(void *frame) {
@@ -850,7 +887,7 @@ static int send_command(const display_command_t *command) {
     return result;
 }
 
-int mybot_display_show_screen(mybot_display_screen_t screen) {
+int mybot_display_show_screen(mybot_display_screen_t screen, uint32_t indicators) {
     if (screen < MYBOT_DISPLAY_SCREEN_STARTING || screen >= MYBOT_DISPLAY_SCREEN_COUNT) {
         return -1;
     }
@@ -858,6 +895,7 @@ int mybot_display_show_screen(mybot_display_screen_t screen) {
     display_command_t command = {
         .type = DISPLAY_COMMAND_SCREEN,
         .screen = screen,
+        .indicators = indicators,
     };
     return send_command(&command);
 }
