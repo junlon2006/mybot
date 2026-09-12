@@ -23,7 +23,7 @@
     ctest --test-dir build-release --output-on-failure
     git diff --check
 
-- [ ] 测试 20、40 与 60 ms 音频包长。
+- [ ] 使用随附 RTSA 软件包测试 60 ms；20/40 ms 仅在提供匹配 RTSA 软件包时测试。
 - [ ] 使用兼容服务验证 RTM 登录、会话 channel 订阅以及
       `VP_REGISTER_SUCCESS` LCD 指示器。
 - [ ] 在 BK725x 参考工程验证声纹注册中/成功标记，以及 MyBot 启动前完整播报配网成功提示音。

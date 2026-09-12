@@ -4,28 +4,6 @@ This project follows Semantic Versioning.
 
 ## [Unreleased]
 
-### Fixed
-
-- Keep the playback ring buffer strictly SPSC by feeding announcements directly into the playback
-  worker's pending frame; non-frame-aligned prompt tails are zero-padded and never joined to RTC
-  audio.
-- Flush capture, playback, and AEC reference buffers at conversation boundaries through their
-  owning consumer workers, reject uplink sends after the pipeline stops, and retain resources when
-  an MPQ shutdown wait fails.
-- Commit AEC reference PCM only after the playback device accepts the corresponding samples,
-  including short writes; announcement PCM is never used as an AEC reference.
-- Expose online `unprovisioned`, `pairing`, and `awaiting_claim` device phases as the public
-  `MYBOT_STATE_PAIRING` state so `MYBOT_STATE_READY` is reserved for authenticated runtime devices.
-- Restart pairing after an `unbound` response instead of leaving the device without a pending
-  pair-code request.
-- Reject oversized or non-string service response fields instead of silently truncating them, and
-  reserve space for the full 512-byte RTC token plus its terminating NUL without changing the
-  persisted device-auth layout.
-- Validate RTSA downlink callbacks before handing audio to the PCM pipeline, and require the
-  selected `MYBOT_AUDIO_PTIME_MS` to match the bundled or externally supplied RTSA timer cadence.
-- Clear the voiceprint LCD overlay synchronously when a conversation stops so a stale indicator
-  cannot survive the transition back to `READY`.
-
 ## [1.1.0] - 2026-09-12
 
 ### Added
@@ -57,6 +35,28 @@ This project follows Semantic Versioning.
   with G.722, RTM channel support, string UIDs, audio jitter buffering, and a fixed 60 ms minimal
   timer interval. Adapt the wrapper to the new RTM message-type callback and canonical
   `agora_rtm_*` P2P APIs; jitter-buffer output duration is now determined by the library build.
+
+### Fixed
+
+- Keep the playback ring buffer strictly SPSC by feeding announcements directly into the playback
+  worker's pending frame; non-frame-aligned prompt tails are zero-padded and never joined to RTC
+  audio.
+- Flush capture, playback, and AEC reference buffers at conversation boundaries through their
+  owning consumer workers, reject uplink sends after the pipeline stops, and retain resources when
+  an MPQ shutdown wait fails.
+- Commit AEC reference PCM only after the playback device accepts the corresponding samples,
+  including short writes; announcement PCM is never used as an AEC reference.
+- Expose online `unprovisioned`, `pairing`, and `awaiting_claim` device phases as the public
+  `MYBOT_STATE_PAIRING` state so `MYBOT_STATE_READY` is reserved for authenticated runtime devices.
+- Restart pairing after an `unbound` response instead of leaving the device without a pending
+  pair-code request.
+- Reject oversized or non-string service response fields instead of silently truncating them, and
+  reserve space for the full 512-byte RTC token plus its terminating NUL without changing the
+  persisted device-auth layout.
+- Validate RTSA downlink callbacks before handing audio to the PCM pipeline, and require the
+  selected `MYBOT_AUDIO_PTIME_MS` to match the bundled or externally supplied RTSA timer cadence.
+- Clear the voiceprint LCD overlay synchronously when a conversation stops so a stale indicator
+  cannot survive the transition back to `READY`.
 
 ### Compatibility
 
