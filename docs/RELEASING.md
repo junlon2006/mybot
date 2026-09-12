@@ -25,7 +25,7 @@
     ctest --test-dir build-release --output-on-failure
     git diff --check
 
-- [ ] Test 20, 40, and 60 ms packet durations.
+- [ ] Test the bundled RTSA package at 60 ms; test 20/40 ms only with matching RTSA packages.
 - [ ] Verify RTM login, conversation-channel subscription, and the
       `VP_REGISTER_SUCCESS` LCD indicator with a compatible service.
 - [ ] On the BK725x reference, verify the pending/success voiceprint markers and the
