@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.16)
 # generated from mybot_version.h.in at configure time, so the code can never
 # drift from the version declared here.
 set(MYBOT_VERSION_MAJOR 1)
-set(MYBOT_VERSION_MINOR 0)
+set(MYBOT_VERSION_MINOR 1)
 set(MYBOT_VERSION_PATCH 0)
 set(MYBOT_VERSION_PRERELEASE "")
 if(MYBOT_VERSION_PRERELEASE)

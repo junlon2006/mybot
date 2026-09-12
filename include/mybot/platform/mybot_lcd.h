@@ -71,6 +71,9 @@ typedef struct {
      * Optional non-exclusive screen indicators. This field is currently
      * meaningful on MYBOT_LCD_SCREEN_IN_CONVERSATION; other screens should
      * normally be rendered with MYBOT_LCD_INDICATOR_NONE.
+     *
+     * @note The field is appended to the 1.1.0 content structure. Build the
+     *       SDK and platform LCD adapter against the same public header.
      */
     uint32_t indicators;
 } mybot_lcd_content_t;

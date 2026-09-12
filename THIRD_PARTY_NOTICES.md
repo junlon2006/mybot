@@ -29,7 +29,7 @@ Package provenance recorded for this update:
 - `libagora-rtc-sdk.so` SHA-256: `269d985f2fcb86ce259591853e59bc5a5d86f5f8fa82a1408bc7ac3795c3f999`
 
 No standalone license or NOTICE for the bundled RTSA binary was found in the package during the
-1.0.0 audit. Possession of the files is not evidence of redistribution rights. Commercial or
+1.1.0 audit. Possession of the files is not evidence of redistribution rights. Commercial or
 production use and redistribution (source archives, binaries, container/firmware images, mirrors)
 require a separate license from Agora (声网): contact Agora's sales/business channel to obtain the
 applicable terms and written redistribution authorization before publishing any release artifact

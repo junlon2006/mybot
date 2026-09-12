@@ -25,6 +25,9 @@ int mybot_audio_bk725x_shared_playback_write(const int16_t *pcm, int frames);
  * playback ops write path. */
 void *mybot_audio_bk725x_shared_playback_get_context(void);
 
+/* Returns true when ctx is the currently published shared playback context. */
+bool mybot_audio_bk725x_shared_playback_owns_context(const void *ctx);
+
 /* Return true when the shared pipeline is running. */
 bool mybot_audio_bk725x_shared_playback_is_started(void);
 

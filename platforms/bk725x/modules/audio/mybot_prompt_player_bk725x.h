@@ -12,6 +12,9 @@ int mybot_prompt_player_bk725x_play_provisioning(void);
 /* Starts the local "provisioning success" PCM prompt asynchronously. */
 int mybot_prompt_player_bk725x_play_success(void);
 
+/* Starts the success prompt and waits until it has drained. */
+int mybot_prompt_player_bk725x_play_success_sync(void);
+
 /* Cancels any prompt and waits until its playback resources are released. */
 void mybot_prompt_player_bk725x_stop(void);
 

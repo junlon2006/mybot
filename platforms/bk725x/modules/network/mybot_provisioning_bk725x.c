@@ -62,7 +62,6 @@ typedef struct {
     bool worker_started;
     uint32_t last_scan_time;
     uint32_t scan_deadline;
-    uint32_t event_generation;
     char ap_ssid[WIFI_SSID_STR_LEN];
     mybot_wifi_credential_list_t credentials;
     wifi_scan_ap_info_t scan_results[BK725X_APSTA_MAX_SCAN_RESULTS];
@@ -925,13 +924,8 @@ static void wifi_worker(beken_thread_arg_t arg) {
         PROV_LOGE("[prov] APSTA worker could not release Wi-Fi ownership");
     }
     if (!is_stopping(ctx)) {
-        mybot_event_type_t event = result == 0 ? MYBOT_EVENT_PROVISIONING_COMPLETED
-                                               : MYBOT_EVENT_PROVISIONING_FAILED;
         set_provisioning_state(result == 0 ? MYBOT_PROVISIONING_STATE_COMPLETED
                                            : MYBOT_PROVISIONING_STATE_FAILED);
-        if (mybot_event_post_with_generation(event, ctx->event_generation) != 0) {
-            PROV_LOGE("[prov] failed to post provisioning result: result=%d", result);
-        }
     }
     PROV_LOGI("[prov] APSTA worker stopped: result=%d", result);
     rtos_delete_thread(NULL);
@@ -942,8 +936,8 @@ static void destroy_context_resources(bk725x_wifi_apsta_ctx_t *ctx) {
     psram_free(ctx);
 }
 
-static int start_context(const char *device_id, uint32_t generation) {
-    if (!device_id || !device_id[0] || generation == 0) {
+static int start_context(const char *device_id) {
+    if (!device_id || !device_id[0]) {
         return -1;
     }
 
@@ -952,7 +946,6 @@ static int start_context(const char *device_id, uint32_t generation) {
     if (!ctx) {
         return -1;
     }
-    ctx->event_generation = generation;
     if (s_active_ctx) {
         psram_free(ctx);
         return -1;
@@ -976,13 +969,15 @@ static int start_context(const char *device_id, uint32_t generation) {
         goto failed;
     }
 
+    /* Publish ownership before starting the worker so a fast worker cannot
+     * finish before stop() can find its context. */
+    s_active_ctx = ctx;
     if (rtos_create_psram_thread(&ctx->worker_thread, 2, "mybot_provision", wifi_worker, 8192,
                                  (beken_thread_arg_t)ctx) != BK_OK) {
         PROV_LOGE("[prov] worker thread creation failed");
         goto failed;
     }
     ctx->worker_started = true;
-    s_active_ctx = ctx;
     PROV_LOGI("[prov] started: ap_ssid=%s saved=%u", ctx->ap_ssid,
               (unsigned)ctx->credentials.count);
     return 0;
@@ -1020,8 +1015,8 @@ failed:
     return -1;
 }
 
-int mybot_provisioning_start(const char *device_id, uint32_t generation) {
-    return start_context(device_id, generation);
+int mybot_provisioning_start(const char *device_id) {
+    return start_context(device_id);
 }
 
 int mybot_provisioning_stop(void) {

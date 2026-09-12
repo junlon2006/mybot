@@ -12,8 +12,8 @@ extern "C" {
 /* Reports whether at least one valid STA credential is persisted. */
 int mybot_network_is_configured(bool *configured);
 
-/* Starts the normal STA worker. generation must uniquely identify this instance. */
-int mybot_network_start(uint32_t generation);
+/* Starts the normal STA worker. */
+int mybot_network_start(void);
 
 /* Stops STA, unregisters callbacks, and joins the worker. Idempotent. */
 int mybot_network_stop(void);

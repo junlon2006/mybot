@@ -6,14 +6,15 @@
 **[English](README.md) | [简体中文](README.zh-CN.md)**
 
 `mybot` is a cross-platform **AI voice-chat SDK** for edge devices: it lets smart devices hold
-real-time voice conversations with cloud AI agents over Agora RTC. The SDK handles APSTA
-provisioning, device pairing and authentication, a conversation state machine, full-duplex voice
-interaction (Agora RTSA with Agora AI capabilities), button/LCD workflows, and optional local wake-word
-recognition. Platform-specific capabilities are injected through a small set of `ops` interfaces;
+real-time voice conversations with cloud AI agents over Agora RTC. The platform/application owns
+APSTA provisioning and Wi-Fi credentials; the SDK consumes connectivity events and handles device
+pairing and authentication, a conversation state machine, full-duplex voice interaction (Agora RTSA
+with Agora AI capabilities), button/LCD workflows, and optional local wake-word recognition.
+Platform-specific capabilities are injected through a small set of `ops` interfaces;
 the core depends only on C99 and AOSL and can be ported to virtually any platform — Linux, an
 RTOS, or a bare-metal MCU.
 
-> Current version: **1.0.0**. The bundled Agora RTSA
+> Current version: **1.1.0**. The bundled Agora RTSA
 > binary and AOSL have separate licensing and usage terms; read
 > [License and third-party dependencies](#license-and-third-party-dependencies) before using the
 > SDK in a product.
@@ -40,7 +41,8 @@ RTOS, or a bare-metal MCU.
 - **Portable to virtually any platform**: The core depends only on C99 and AOSL, and device
   capabilities are injected through the `ops` contract, so it never touches any OS or peripheral
   API directly — Linux, an RTOS, or a bare-metal MCU.
-- **APSTA provisioning**: Non-blocking startup; Wi-Fi events drive the application state machine.
+- **APSTA integration**: Non-blocking startup; the platform owns provisioning and Wi-Fi events drive
+  the application state machine.
 - **Pairing and authentication**: Pair code → device claim → persisted long-lived credential, with
   automatic re-pairing when authentication is rejected.
 - **Conversation state machine**: Five device-service lifecycle states — `unprovisioned / pairing /
@@ -62,6 +64,9 @@ RTOS, or a bare-metal MCU.
   conversation with a physical button.
 - **Button and LCD workflows**: Semantic screen states (provisioning / pair code / ready / in
   conversation); how each is displayed is up to the platform.
+- **Voiceprint registration status**: During an active conversation, the SDK listens on the
+  conversation RTM channel for the server's `message.sal_status` / `VP_REGISTER_SUCCESS` message
+  and exposes `MYBOT_LCD_INDICATOR_VP_REGISTERED` as an in-conversation LCD overlay.
 - **Pairing-code voice prompt**: Once per pair code, plays a fixed prompt ("Please enter the
   pairing code in the console") followed by one sound per digit through the normal speaker path. Assets are raw
   16 kHz mono s16 PCM files under `./assets/locales/<locale>/` (`prompt.pcm`, `0.pcm`..`9.pcm`);
@@ -77,7 +82,8 @@ RTOS, or a bare-metal MCU.
 - The RTC implementation is specific to Agora RTSA; no other RTC protocol adapter is provided.
 - Local ASR wake words are an optional platform implementation, off by default; enabling them
   requires the platform to register an implementation.
-- The Wi-Fi interface targets APSTA provisioning scenarios.
+- The platform/application owns APSTA provisioning and credential storage; the SDK consumes only
+  connectivity events through the Wi-Fi interface.
 - The device server is not part of this repository; running the examples requires a compatible
   server endpoint.
 
@@ -132,7 +138,7 @@ Run the example:
 ./build/examples/linux/mybot \
   --server https://api.example.com \
   --device-id AG-DEMO-001 \
-  --fw-ver 1.0.0 \
+  --fw-ver 1.1.0 \
   --hw-model linux-reference
 ```
 

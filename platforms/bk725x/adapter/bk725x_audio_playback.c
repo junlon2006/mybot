@@ -17,11 +17,8 @@
 
 static int adapter_playback_init(void **ctx, int rate, int channels, int bits) {
     MYBOT_LOGI(TAG, "adapter init: rate=%d ch=%d bits=%d", rate, channels, bits);
-    if (mybot_audio_bk725x_shared_playback_is_started()) {
-        *ctx = mybot_audio_bk725x_shared_playback_get_context();
-        if (!*ctx) {
-            return -1;
-        }
+    *ctx = mybot_audio_bk725x_shared_playback_get_context();
+    if (*ctx) {
         MYBOT_LOGI(TAG, "shared playback: using existing pipeline");
         return 0;
     }
@@ -30,7 +27,7 @@ static int adapter_playback_init(void **ctx, int rate, int channels, int bits) {
 
 static int adapter_playback_start(void *ctx) {
     MYBOT_LOGI(TAG, "adapter start");
-    if (mybot_audio_bk725x_shared_playback_is_started()) {
+    if (mybot_audio_bk725x_shared_playback_owns_context(ctx)) {
         return 0; /* already running */
     }
     return mybot_audio_bk725x_playback_start(ctx);
@@ -46,7 +43,7 @@ static int adapter_playback_write(void *ctx, const void *buf, int frames) {
 
 static int adapter_playback_stop(void *ctx) {
     MYBOT_LOGI(TAG, "adapter stop");
-    if (mybot_audio_bk725x_shared_playback_is_started()) {
+    if (mybot_audio_bk725x_shared_playback_owns_context(ctx)) {
         return 0; /* shared module manages lifecycle */
     }
     return mybot_audio_bk725x_playback_stop(ctx);
@@ -54,7 +51,7 @@ static int adapter_playback_stop(void *ctx) {
 
 static void adapter_playback_destroy(void *ctx) {
     MYBOT_LOGI(TAG, "adapter destroy");
-    if (mybot_audio_bk725x_shared_playback_is_started()) {
+    if (mybot_audio_bk725x_shared_playback_owns_context(ctx)) {
         return; /* shared module manages lifecycle */
     }
     mybot_audio_bk725x_playback_destroy(ctx);

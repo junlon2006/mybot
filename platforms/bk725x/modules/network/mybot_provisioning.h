@@ -15,8 +15,8 @@ typedef enum {
     MYBOT_PROVISIONING_STATE_FAILED,
 } mybot_provisioning_state_t;
 
-/* Starts the APSTA portal. generation must uniquely identify this instance. */
-int mybot_provisioning_start(const char *device_id, uint32_t generation);
+/* Starts the APSTA portal. */
+int mybot_provisioning_start(const char *device_id);
 
 /* Stops SoftAP and temporary STA, unregisters callbacks, and joins the worker. */
 int mybot_provisioning_stop(void);

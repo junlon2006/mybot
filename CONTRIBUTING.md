@@ -1,6 +1,6 @@
 # Contributing
 
-Contributions are welcome for the 1.0 release series. Public APIs and ABI follow Semantic Versioning.
+Contributions are welcome for the 1.1 release series. Public APIs and ABI follow Semantic Versioning.
 
 > [English](CONTRIBUTING.md) | [简体中文](CONTRIBUTING.zh-CN.md)
 

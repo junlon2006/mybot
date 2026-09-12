@@ -190,14 +190,14 @@ int mybot_wifi_runtime_register_callbacks(mybot_wifi_runtime_t *runtime) {
         return -1;
     }
     bk_err_t result = bk_event_register_cb(EVENT_MOD_WIFI, EVENT_ID_ALL, wifi_event_cb, runtime);
-    if (result != BK_OK && result != BK_ERR_EVENT_CB_EXIST) {
+    if (result != BK_OK) {
         WIFI_LOGE("Wi-Fi event registration failed: %d", result);
         return -1;
     }
     runtime->wifi_event_registered = true;
 
     result = bk_event_register_cb(EVENT_MOD_NETIF, EVENT_ID_ALL, netif_event_cb, runtime);
-    if (result != BK_OK && result != BK_ERR_EVENT_CB_EXIST) {
+    if (result != BK_OK) {
         WIFI_LOGE("netif event registration failed: %d", result);
         (void)mybot_wifi_runtime_unregister_callbacks(runtime);
         return -1;

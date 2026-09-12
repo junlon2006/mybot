@@ -26,6 +26,10 @@
     git diff --check
 
 - [ ] Test 20, 40, and 60 ms packet durations.
+- [ ] Verify RTM login, conversation-channel subscription, and the
+      `VP_REGISTER_SUCCESS` LCD indicator with a compatible service.
+- [ ] On the BK725x reference, verify the pending/success voiceprint markers and the
+      provisioning-success prompt gate before MyBot startup.
 - [ ] Run provisioning, pairing, bidirectional audio, hangup, shutdown, and reboot on real hardware.
 - [ ] Test network loss, audio-device loss, storage failure, and partial startup failure.
 - [ ] Confirm logs and release archives contain no credentials.
@@ -34,7 +38,9 @@
 
 ## Publish
 
-- [ ] Create an annotated release tag matching `MYBOT_VERSION_STRING` (e.g. `v1.0.0`).
+- [ ] Confirm the existing `v1.0.0` tag still points to the historical 1.0.0 release; never move
+      or overwrite an existing release tag.
+- [ ] Create an annotated release tag matching `MYBOT_VERSION_STRING` (e.g. `v1.1.0`).
 - [ ] Attach source and binary artifacts only after third-party authorization review.
 - [ ] Include `LICENSE`, `THIRD_PARTY_NOTICES.md`, changelog, and checksums.
 - [ ] Publish the GitHub release as a stable release (not marked as a prerelease) and list

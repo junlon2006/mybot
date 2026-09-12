@@ -165,6 +165,16 @@ static int start_prompt_thread(const char *path) {
     return 0;
 }
 
+static int play_prompt_sync(const char *path) {
+    if (start_prompt_thread(path) < 0) {
+        return -1;
+    }
+    rtos_thread_join(&s_prompt_thread);
+    s_prompt_thread = NULL;
+    rtos_deinit_semaphore(&s_stop_requested);
+    return 0;
+}
+
 int mybot_prompt_player_bk725x_play_provisioning(void) {
     MYBOT_LOGI(TAG, "play provisioning prompt requested");
     return start_prompt_thread(PROVISIONING_PROMPT_PATH);
@@ -173,6 +183,11 @@ int mybot_prompt_player_bk725x_play_provisioning(void) {
 int mybot_prompt_player_bk725x_play_success(void) {
     MYBOT_LOGI(TAG, "play success prompt requested");
     return start_prompt_thread(SUCCESS_PROMPT_PATH);
+}
+
+int mybot_prompt_player_bk725x_play_success_sync(void) {
+    MYBOT_LOGI(TAG, "play success prompt synchronously");
+    return play_prompt_sync(SUCCESS_PROMPT_PATH);
 }
 
 void mybot_prompt_player_bk725x_stop(void) {
