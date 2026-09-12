@@ -236,7 +236,8 @@ mybot_stop();
 非阻塞的；Wi-Fi 上报网络可用后服务继续运行。不要
 从平台回调中调用 stop，因为它会等待工作线程与回调。`mybot_start()` 获取一份应用持有的
  AOSL 引用，`mybot_stop()` 在工作线程、缓冲区和 RTC 回调队列全部销毁后最后释放该
-引用。RTSA 生命周期通过 `agora_rtc_init()` / `agora_rtc_fini()` 管理。宿主若直接使用 AOSL，
+引用。RTC 生命周期、状态和 vendor 回调由专用 `rtc_mpq` 串行处理，应用回调不得重入 RTC 接口。
+RTSA 生命周期通过 `agora_rtc_init()` / `agora_rtc_fini()` 管理。宿主若直接使用 AOSL，
 必须自行配对 `aosl_ctor()` 与 `aosl_dtor()`，并在所有 AOSL 用户停止前保持该引用。
 
 `mybot_get_state()` 是线程安全的应用层状态查询接口。设备服务接受会话后返回

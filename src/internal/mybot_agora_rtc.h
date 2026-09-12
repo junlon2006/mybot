@@ -40,9 +40,11 @@ typedef enum {
 #define MYBOT_RTM_UID_MAX_LEN 64
 
 /* Agora RTSA is process-wide and supports one active 1-to-1 conversation.
- * The control owner serializes init, join, leave, and fini. Callbacks must not
- * re-enter this API. Only connection-scoped events update call state; RTSA
- * global errors are logged without being forwarded. */
+ * A dedicated RTC MPQ owns all mutable state and serializes lifecycle and
+ * media operations. Vendor callbacks are copied and queued to that worker;
+ * application callbacks must not re-enter this API. Only connection-scoped
+ * events update call state; RTSA global errors are logged without being
+ * forwarded. */
 typedef struct {
     void (*on_remote_audio)(uint32_t uid, const void *data, size_t len, void *user_data);
     void (*on_token_will_expire)(void *user_data);
@@ -61,8 +63,8 @@ typedef struct {
 
 /** Initialize the process-wide RTSA service once for the current mybot run.
  *  Repeated calls are accepted only after a successful initialization with
- *  the same App ID and while no conversation is active. An initialization
- *  failure disables RTC until the process restarts. */
+ *  the same App ID and while no conversation is active. All state and vendor
+ *  calls are serialized by a dedicated RTC MPQ worker. */
 int mybot_agora_rtc_init(const char *app_id, const mybot_agora_rtc_callbacks_t *callbacks);
 
 /**

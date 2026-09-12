@@ -261,7 +261,9 @@ initialization when a required ops table, such as the TLS transport, is absent. 
 services continue after Wi-Fi reports usable network connectivity. Do not call stop from a platform callback because
 it waits for workers and callbacks. `mybot_start()` acquires one application reference to the
 process-wide AOSL runtime and `mybot_stop()` releases that reference last, after workers, buffers
-and the RTC callback queue have been torn down. The RTSA lifecycle is managed through
+and the RTC callback queues have been torn down. MyBot serializes RTSA lifecycle, state, and
+vendor callback dispatch on a dedicated `rtc_mpq`; application callbacks must not re-enter the RTC
+API. The RTSA lifecycle is managed through
 `agora_rtc_init()` / `agora_rtc_fini()`. A host that uses AOSL directly must pair its own
 `aosl_ctor()` and `aosl_dtor()` calls and keep that reference until all of its AOSL users have stopped.
 

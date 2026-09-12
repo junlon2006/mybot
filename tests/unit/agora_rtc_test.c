@@ -540,12 +540,14 @@ int main(void) {
     assert(s_rtm_handler.on_rtm_data != NULL);
     s_rtm_handler.on_rtm_data("agent-uid", rtm_payload, sizeof(rtm_payload) - 1,
                               RTM_MESSAGE_TYPE_STRING, "json");
+    aosl_hal_msleep(10);
     assert(s_rtm_data_calls == 1);
     assert(strcmp(s_last_rtm_data_uid, "agent-uid") == 0);
     assert(s_last_rtm_data_len == sizeof(rtm_payload) - 1);
     assert(strcmp(s_last_rtm_custom_type, "json") == 0);
     assert(s_rtm_handler.on_rtm_send_data_result != NULL);
     s_rtm_handler.on_rtm_send_data_result("agent-uid", 7, RTM_MSG_STATE_RECEIVED);
+    aosl_hal_msleep(10);
     assert(s_rtm_send_result_calls == 1);
     assert(strcmp(s_last_rtm_send_uid, "agent-uid") == 0);
     assert(s_last_rtm_result_msg_id == 7);
@@ -699,23 +701,30 @@ int main(void) {
 
     int states_before_wrong_conn = s_state_calls;
     s_handler.on_join_channel_success(first_conn + 100, 42, 0);
+    aosl_hal_msleep(10);
     assert(s_state_calls == states_before_wrong_conn);
     s_handler.on_join_channel_success(first_conn, 42, 10);
+    aosl_hal_msleep(10);
     assert(s_last_state == MYBOT_RTC_STATE_CONNECTED);
     s_handler.on_reconnecting(first_conn);
+    aosl_hal_msleep(10);
     assert(s_last_state == MYBOT_RTC_STATE_RECONNECTING);
     s_handler.on_connection_lost(first_conn);
+    aosl_hal_msleep(10);
     assert(s_last_state == MYBOT_RTC_STATE_DISCONNECTED);
     assert(mybot_agora_rtc_send_audio(pcm_frame, sizeof(pcm_frame)) < 0);
     s_handler.on_rejoin_channel_success(first_conn, 42, 10);
+    aosl_hal_msleep(10);
     assert(s_last_state == MYBOT_RTC_STATE_CONNECTED);
 
     int channel_data_before_wrong_channel = s_rtm_subscribe_data_calls;
     s_rtm_handler.on_rtm_subscribe_data("other-room", "agent-uid", rtm_payload,
                                         sizeof(rtm_payload) - 1, RTM_MESSAGE_TYPE_STRING, "json");
+    aosl_hal_msleep(10);
     assert(s_rtm_subscribe_data_calls == channel_data_before_wrong_channel);
     s_rtm_handler.on_rtm_subscribe_data("room", "agent-uid", rtm_payload, sizeof(rtm_payload) - 1,
                                         RTM_MESSAGE_TYPE_STRING, "json");
+    aosl_hal_msleep(10);
     assert(s_rtm_subscribe_data_calls == channel_data_before_wrong_channel + 1);
     assert(strcmp(s_last_rtm_subscribe_channel, "room") == 0);
     assert(strcmp(s_last_rtm_subscribe_uid, "agent-uid") == 0);
@@ -729,16 +738,22 @@ int main(void) {
     s_handler.on_user_offline_with_user_account(first_conn, NULL, 0);
     s_handler.on_user_offline_with_user_account(first_conn, &user, 0);
     s_handler.on_error(first_conn, -1, NULL);
+    aosl_hal_msleep(10);
     assert(s_last_state == MYBOT_RTC_STATE_ERROR);
     s_handler.on_join_channel_success(first_conn, 42, 0);
+    aosl_hal_msleep(10);
     int states_before_global_error = s_state_calls;
     s_handler.on_error(CONNECTION_ID_ALL, -1, "global");
+    aosl_hal_msleep(10);
     assert(s_state_calls == states_before_global_error);
     s_handler.on_license_validation_failure(first_conn, 1);
+    aosl_hal_msleep(10);
     assert(s_last_state == MYBOT_RTC_STATE_ERROR);
     s_handler.on_join_channel_success(first_conn, 42, 0);
+    aosl_hal_msleep(10);
     s_handler.on_token_privilege_will_expire(first_conn, "old-token");
     s_handler.on_audio_data(first_conn, 7, 0, "audio", 5, NULL);
+    aosl_hal_msleep(10);
     assert(s_token_expiry_calls == 1);
     assert(s_remote_audio_calls == 1);
 
@@ -781,7 +796,7 @@ int main(void) {
     assert(pthread_join(sender, &thread_result) == 0);
     assert((intptr_t)thread_result == 0);
     assert(pthread_join(leaver, &thread_result) == 0);
-    assert((intptr_t)thread_result == 0);
+    assert((intptr_t)thread_result < 0);
     assert(s_leave_seq < s_destroy_seq);
     assert(s_rtm_unsubscribe_calls == unsubscribes_before_leave + 1);
     s_leave_result = 0;
@@ -796,6 +811,7 @@ int main(void) {
     s_handler.on_audio_data(first_conn, 7, 0, "audio", 5, NULL);
     s_rtm_handler.on_rtm_subscribe_data("room", "agent-uid", rtm_payload, sizeof(rtm_payload) - 1,
                                         RTM_MESSAGE_TYPE_STRING, "json");
+    aosl_hal_msleep(10);
     assert(s_state_calls == state_after_leave);
     assert(s_remote_audio_calls == audio_after_leave);
     assert(s_rtm_subscribe_data_calls == channel_data_after_leave);
@@ -874,13 +890,16 @@ int main(void) {
     assert(s_fini_calls == 3);
 
     s_init_result = -1;
+    int init_calls_before_retry = s_init_calls;
+    int fini_calls_before_retry = s_fini_calls;
     assert(mybot_agora_rtc_init("app-fail", &callbacks) < 0);
-    assert(s_init_calls == 4);
+    assert(s_init_calls == init_calls_before_retry + 1);
+    assert(s_fini_calls == fini_calls_before_retry);
     s_init_result = 0;
-    assert(mybot_agora_rtc_init("app-fail", &callbacks) < 0);
-    assert(s_init_calls == 4);
+    assert(mybot_agora_rtc_init("app-fail", &callbacks) == 0);
+    assert(s_init_calls == init_calls_before_retry + 2);
     mybot_agora_rtc_fini();
-    assert(s_fini_calls == 3);
+    assert(s_fini_calls == fini_calls_before_retry + 1);
 
     aosl_dtor();
     puts("agora_rtc_test: ok");
