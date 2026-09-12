@@ -11,6 +11,7 @@
 #include <hal/aosl_hal_memory.h>
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -24,6 +25,13 @@
 #endif
 
 #define MYBOT_RTM_LOGIN_POLL_MS 10U
+
+#define MYBOT_RTC_PCM_SAMPLE_RATE 16000U
+#define MYBOT_RTC_PCM_CHANNELS 1U
+#define MYBOT_RTC_PCM_BYTES_PER_SAMPLE sizeof(int16_t)
+#define MYBOT_RTC_PCM_FRAME_BYTES                                                                  \
+    (MYBOT_RTC_PCM_SAMPLE_RATE * MYBOT_AUDIO_PTIME_MS / 1000U * MYBOT_RTC_PCM_CHANNELS *           \
+     MYBOT_RTC_PCM_BYTES_PER_SAMPLE)
 
 typedef struct {
     mybot_rtc_state_t state;
@@ -762,8 +770,17 @@ static void process_user_offline(connection_id_t conn_id, const user_info_t *use
 static void process_audio_data(connection_id_t conn_id, uint32_t uid, uint16_t sent_ts,
                                const void *data, size_t len, const audio_frame_info_t *info) {
     (void)sent_ts;
-    (void)info;
     if (!connection_is_active(conn_id)) {
+        return;
+    }
+    /* The selected RTSA build emits one decoded PCM frame per callback; its
+     * frame duration is tied to MYBOT_AUDIO_PTIME_MS at configuration time. */
+    if (!data || !info || info->data_type != AUDIO_DATA_TYPE_PCM || len == 0 ||
+        (len % MYBOT_RTC_PCM_BYTES_PER_SAMPLE) != 0 || len != MYBOT_RTC_PCM_FRAME_BYTES) {
+        AOSL_LOG_WRN(
+            "[RTC] dropped invalid downlink audio (len=%zu, info=%s, type=%d, expected=%u)", len,
+            info ? "present" : "missing", info ? (int)info->data_type : -1,
+            (unsigned int)MYBOT_RTC_PCM_FRAME_BYTES);
         return;
     }
     if (s_rtc.callbacks.on_remote_audio) {
@@ -950,8 +967,14 @@ static void on_user_offline(connection_id_t c, const user_info_t *u, int reason)
 }
 static void on_audio_data(connection_id_t c, uint32_t uid, uint16_t ts, const void *d, size_t len,
                           const audio_frame_info_t *i) {
-    if (!d || !len)
+    if (!d || !i || i->data_type != AUDIO_DATA_TYPE_PCM || len == 0 ||
+        (len % MYBOT_RTC_PCM_BYTES_PER_SAMPLE) != 0 || len != MYBOT_RTC_PCM_FRAME_BYTES) {
+        AOSL_LOG_WRN("[RTC] ignored invalid downlink audio callback (len=%zu, info=%s, type=%d, "
+                     "expected=%u)",
+                     len, i ? "present" : "missing", i ? (int)i->data_type : -1,
+                     (unsigned int)MYBOT_RTC_PCM_FRAME_BYTES);
         return;
+    }
     rtc_event_t *e = rtc_event_new(RTC_EVENT_AUDIO);
     if (e) {
         e->conn_id = c;

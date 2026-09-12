@@ -140,9 +140,10 @@ source and wait for all handlers. Add the operations table to the platform descr
 For a single hardware toggle button, query the thread-safe `mybot_get_state()` when handling the
 button: emit `MYBOT_KEY_EVENT_CONVERSATION_START` only from `MYBOT_STATE_READY`, and emit
 `MYBOT_KEY_EVENT_CONVERSATION_STOP` only from `MYBOT_STATE_IN_CONVERSATION`. Ignore the toggle in
-provisioning, startup, disconnected, failed, and stopping states. Do not infer conversation state
-from the LCD or maintain a second platform-side state; runtime connectivity loss is reported as
-`MYBOT_STATE_WIFI_DISCONNECTED` and the SDK ends the conversation locally.
+pairing, provisioning, startup, disconnected, failed, and stopping states. `MYBOT_STATE_PAIRING`
+covers the device-service `unprovisioned`, `pairing`, and `awaiting_claim` phases. Do not infer
+conversation state from the LCD or maintain a second platform-side state; runtime connectivity
+loss is reported as `MYBOT_STATE_WIFI_DISCONNECTED` and the SDK ends the conversation locally.
 
 ### LCD (optional)
 
@@ -268,10 +269,12 @@ API. The RTSA lifecycle is managed through
 `aosl_ctor()` and `aosl_dtor()` calls and keep that reference until all of its AOSL users have stopped.
 
 `mybot_get_state()` is the thread-safe application-level state query. It reports
-`MYBOT_STATE_IN_CONVERSATION` after the device service accepts a conversation and returns to
+`MYBOT_STATE_PAIRING` while the device service is unprovisioned, requesting a pair code, or waiting
+for a claim; only the authenticated `runtime` phase reports `MYBOT_STATE_READY`. After the device
+service accepts a conversation it reports `MYBOT_STATE_IN_CONVERSATION` and returns to
 `MYBOT_STATE_READY` after normal teardown. If runtime connectivity is lost,
 `MYBOT_STATE_WIFI_DISCONNECTED` takes precedence until reconnect. The device-service lifecycle
-states (`unprovisioned`, `pairing`, `awaiting_claim`, `runtime`, and `in_conversation`) are an
+states (`unprovisioned`, `pairing`, `awaiting_claim`, `runtime`, and `in_conversation`) remain an
 internal state machine and must not be reconstructed by the platform.
 
 ### RTM account mapping
@@ -291,6 +294,8 @@ or the punctuation characters accepted by Agora. `mybot_agora_rtc_rtm_uid_is_val
 same validation used before login. RTM login is asynchronous: a send is allowed only after the
 `MYBOT_RTM_EVENT_LOGIN` callback reports error code 0. RTM payloads are limited to 31 KiB and
 custom types to 32 bytes.
+The device-service client rejects response strings that exceed their destination buffers; RTC token
+storage reserves space for 512 bytes of content plus the terminating NUL.
 
 Conversation startup requests RTM login first and waits up to five seconds for a successful
 `MYBOT_RTM_EVENT_LOGIN` callback. It then subscribes to the RTM channel whose name matches the RTC
@@ -317,13 +322,21 @@ cmake --build build-target -j
 compiler and floating-point ABI against the selected Agora library. For a shared target package,
 also deploy the library and configure the firmware or OS runtime loader to find it.
 
+The selected `MYBOT_AUDIO_PTIME_MS` must match the RTSA package's
+`CONFIG_MINIMAL_TIMER_INTERVAL_MS`. The bundled x86_64 Linux package is fixed at 60 ms; for 20 or
+40 ms, provide a matching package through `AGORA_SDK_DIR` and `AGORA_RTC_LIBRARY`. CMake reads
+`.config` or `include/global_config.cmake` and fails configuration when the values differ or the
+metadata is absent. If the host predefines the `agora-rtc-sdk` target, `AGORA_SDK_DIR` must still
+identify that same package for validation.
+
 ## Step 8: Acceptance checklist
 
 - Public headers compile with warnings as errors and the host links only documented targets.
 - HTTPS rejects an untrusted CA, expired certificate, wrong hostname, missing SNI and handshake timeout.
 - Wi-Fi connected, disconnected and failure paths complete without deadlock.
 - KV survives reset, handles not-found and overflow, and protects credentials.
-- Capture/playback pass 16 kHz mono S16 tests at 20, 40 and 60 ms.
+- Capture/playback pass 16 kHz mono S16 tests at each selected ptime with its matching RTSA package
+  (the bundled Linux package covers 60 ms).
 - Short I/O makes progress and stop unblocks device loss.
 - No key or wake-word callback runs after destroy returns; LCD does not retain borrowed content.
 - Partial startup failure and repeated start/stop release all resources.
@@ -331,9 +344,9 @@ also deploy the library and configure the firmware or OS runtime loader to find 
   the flush is performed by the corresponding ring-buffer consumer worker.
 - AEC reference samples are committed only after playback accepts the matching samples; prompt PCM
   is never included in the reference stream.
-- `mybot_get_state()` reports `READY -> IN_CONVERSATION -> READY` for a normal conversation;
-  a conversation interrupted by Wi-Fi loss reports `WIFI_DISCONNECTED` and returns to `READY` after
-  reconnect, without deadlock during stop or re-pair.
+- `mybot_get_state()` reports `READY -> IN_CONVERSATION -> READY` for a normal runtime conversation;
+  a conversation interrupted by Wi-Fi loss reports `WIFI_DISCONNECTED` and returns to the
+  corresponding online state after reconnect, without deadlock during stop or re-pair.
 - A real device completes provisioning, pairing, RTC join, bidirectional audio, hangup and reboot.
 - Logs and storage do not expose tokens.
 

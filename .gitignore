@@ -4,6 +4,10 @@
 cmake-build-*/
 compile_commands.json
 
+# Python caches
+__pycache__/
+*.pyc
+
 # Runtime data
 /.mybot-kv-store/
 /.mybot-flash/

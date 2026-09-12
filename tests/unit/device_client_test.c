@@ -240,6 +240,8 @@ static void test_binding_failures(void) {
     long_value[sizeof(long_value) - 1] = '\0';
     assert(mybot_device_client_get_binding_status(long_value, "device", "Pair token", &binding) <
            0);
+    assert(mybot_device_client_get_binding_status("http://server", long_value, "Pair token",
+                                                  &binding) < 0);
     assert(mybot_device_client_get_binding_status("http://server", "device", "", &binding) < 0);
     assert(mybot_device_client_get_binding_status("http://server", "device", "Pair\x7ftoken",
                                                   &binding) < 0);
@@ -274,6 +276,10 @@ static void test_conversation_failures(void) {
     mybot_device_conversation_t conversation;
     char long_base[700];
     char oversized_agent_response[512];
+    char oversized_rtc_response[512];
+    char token[MYBOT_DEVICE_CLIENT_MAX_RTC_TOKEN];
+    char oversized_token[MYBOT_DEVICE_CLIENT_MAX_RTC_TOKEN + 1];
+    char token_response[2048];
     int calls;
 
     reset_http_mock(s_valid_response_body);
@@ -296,6 +302,21 @@ static void test_conversation_failures(void) {
 
     reset_http_mock(s_valid_response_body);
     s_http_result = -1;
+    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+                                                  &conversation) < 0);
+
+    assert(snprintf(oversized_rtc_response, sizeof(oversized_rtc_response),
+                    "{\"data\":{\"conversation_id\":\"c-1\",\"rtc\":{"
+                    "\"app_id\":\"%064d\",\"channel\":\"channel\",\"uid\":\"uid\"}}}",
+                    0) > 0);
+    reset_http_mock(oversized_rtc_response);
+    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+                                                  &conversation) < 0);
+    assert(snprintf(oversized_rtc_response, sizeof(oversized_rtc_response),
+                    "{\"data\":{\"conversation_id\":\"c-1\",\"rtc\":{"
+                    "\"app_id\":\"app-1\",\"channel\":\"%0128d\",\"uid\":\"uid\"}}}",
+                    0) > 0);
+    reset_http_mock(oversized_rtc_response);
     assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
                                                   &conversation) < 0);
     reset_http_mock(s_valid_response_body);
@@ -339,6 +360,28 @@ static void test_conversation_failures(void) {
                                                   &conversation) == 0);
     assert(strcmp(conversation.rtc_agent_uid, "agent-uid") == 0);
 
+    /* Agora allows 512 bytes of token content; the destination must retain
+     * all bytes plus the terminating NUL and reject the next byte. */
+    memset(token, 't', sizeof(token) - 1);
+    token[sizeof(token) - 1] = '\0';
+    assert(snprintf(token_response, sizeof(token_response),
+                    "{\"data\":{\"conversation_id\":\"c-1\",\"rtc\":{"
+                    "\"channel\":\"channel\",\"uid\":\"uid\",\"token\":\"%s\"}}}",
+                    token) > 0);
+    reset_http_mock(token_response);
+    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+                                                  &conversation) == 0);
+    assert(strlen(conversation.rtc_token) == sizeof(token) - 1);
+    memset(oversized_token, 't', sizeof(oversized_token) - 1);
+    oversized_token[sizeof(oversized_token) - 1] = '\0';
+    assert(snprintf(token_response, sizeof(token_response),
+                    "{\"data\":{\"conversation_id\":\"c-1\",\"rtc\":{"
+                    "\"channel\":\"channel\",\"uid\":\"uid\",\"token\":\"%s\"}}}",
+                    oversized_token) > 0);
+    reset_http_mock(token_response);
+    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+                                                  &conversation) < 0);
+
     /* RTM peer accounts must not be silently truncated at the 64-byte limit. */
     assert(snprintf(oversized_agent_response, sizeof(oversized_agent_response),
                     "{\"data\":{\"conversation_id\":\"c-1\",\"agent_uid\":\"%064d\","
@@ -368,6 +411,8 @@ static void test_conversation_failures(void) {
 static void test_renew_failures(void) {
     mybot_device_rtc_token_t token;
     char long_base[700];
+    char max_token[MYBOT_DEVICE_CLIENT_MAX_RTC_TOKEN];
+    char max_token_response[2048];
     int calls;
 
     calls = s_post_ex_call_count;
@@ -416,6 +461,17 @@ static void test_renew_failures(void) {
     assert(mybot_device_client_renew_rtc_token("http://server", "device", "token", "channel", "uid",
                                                &token) == 0);
     assert(strcmp(token.rtc_token, "renewed") == 0);
+
+    memset(max_token, 'r', sizeof(max_token) - 1);
+    max_token[sizeof(max_token) - 1] = '\0';
+    assert(snprintf(max_token_response, sizeof(max_token_response),
+                    "{\"data\":{\"rtc\":{\"channel\":\"channel\","
+                    "\"uid\":\"uid\",\"token\":\"%s\"}}}",
+                    max_token) > 0);
+    reset_http_mock(max_token_response);
+    assert(mybot_device_client_renew_rtc_token("http://server", "device", "token", "channel", "uid",
+                                               &token) == 0);
+    assert(strlen(token.rtc_token) == sizeof(max_token) - 1);
 }
 
 static void test_stop_conversation(void) {
@@ -548,6 +604,14 @@ int main(void) {
     assert(mybot_device_client_get_binding_status("http://server", "device-1", "Pair token",
                                                   &binding) == 0);
     assert(binding.poll_after_seconds == INT_MAX);
+    reset_http_mock("{\"data\":{\"status\":\"pending\",\"device_token\":null}}");
+    assert(mybot_device_client_get_binding_status("http://server", "device-1", "Pair token",
+                                                  &binding) == 0);
+    assert(strcmp(binding.status, "pending") == 0);
+    assert(binding.device_token[0] == '\0');
+    reset_http_mock("{\"data\":{\"status\":123}}");
+    assert(mybot_device_client_get_binding_status("http://server", "device-1", "Pair token",
+                                                  &binding) < 0);
 
     reset_http_mock(s_missing_id_response_body);
     assert(mybot_device_client_start_conversation("http://server", "device-1", "token", NULL,

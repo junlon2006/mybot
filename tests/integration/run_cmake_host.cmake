@@ -27,3 +27,22 @@ execute_process(
 if(NOT run_result EQUAL 0)
     message(FATAL_ERROR "CMake host fixture failed: ${run_result}")
 endif()
+
+# The bundled RTSA package is built with a 60 ms timer cadence. A different
+# packet duration must be rejected unless the caller supplies a matching SDK.
+set(ptime_mismatch_dir "${MYBOT_BINARY_DIR}/ptime-mismatch")
+file(REMOVE_RECURSE "${ptime_mismatch_dir}")
+execute_process(
+    COMMAND "${CMAKE_COMMAND}" -S "${MYBOT_SOURCE_DIR}" -B "${ptime_mismatch_dir}"
+            -DCONFIG_PLATFORM=linux
+            -DMYBOT_BUILD_LINUX_PLATFORM=OFF
+            -DMYBOT_BUILD_EXAMPLES=OFF
+            -DMYBOT_BUILD_TESTS=OFF
+            -DMYBOT_ENABLE_HTTPS=OFF
+            -DMYBOT_ALLOW_INSECURE_HTTP=ON
+            -DMYBOT_AUDIO_PTIME_MS=20
+    RESULT_VARIABLE ptime_mismatch_result
+)
+if(ptime_mismatch_result EQUAL 0)
+    message(FATAL_ERROR "CMake accepted an RTSA/ptime mismatch for the bundled SDK")
+endif()

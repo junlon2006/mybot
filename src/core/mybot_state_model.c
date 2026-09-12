@@ -150,9 +150,18 @@ static mybot_state_t project_app_state(uintptr_t snapshot) {
         if (!snapshot_online(snapshot)) {
             return MYBOT_STATE_WIFI_DISCONNECTED;
         }
-        return snapshot_device_state(snapshot) == MYBOT_DEVICE_STATE_IN_CONVERSATION
-                   ? MYBOT_STATE_IN_CONVERSATION
-                   : MYBOT_STATE_READY;
+        switch (snapshot_device_state(snapshot)) {
+        case MYBOT_DEVICE_STATE_RUNTIME:
+            return MYBOT_STATE_READY;
+        case MYBOT_DEVICE_STATE_IN_CONVERSATION:
+            return MYBOT_STATE_IN_CONVERSATION;
+        case MYBOT_DEVICE_STATE_UNPROVISIONED:
+        case MYBOT_DEVICE_STATE_PAIRING:
+        case MYBOT_DEVICE_STATE_AWAITING_CLAIM:
+            return MYBOT_STATE_PAIRING;
+        default:
+            return MYBOT_STATE_FAILED;
+        }
     }
     return MYBOT_STATE_FAILED;
 }

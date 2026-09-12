@@ -40,7 +40,8 @@ x86_64 Linux 参考构建（GCC 13，默认优化），**仅供参考**——请
 
 线程安全的应用状态模型使用一个原子快照统一保存运行阶段、网络状态和设备生命周期投影。
 `mybot_get_state()` 从该快照派生公开状态：离线时 `MYBOT_STATE_WIFI_DISCONNECTED` 优先；
-在线且设备服务接受会话后返回 `MYBOT_STATE_IN_CONVERSATION`，正常拆除后回到
+在线但未配网、配对或等待认领时返回 `MYBOT_STATE_PAIRING`，只有认证后的 runtime 返回
+`MYBOT_STATE_READY`；设备服务接受会话后返回 `MYBOT_STATE_IN_CONVERSATION`，正常拆除后回到
 `MYBOT_STATE_READY`。
 
 ## 线程与栈
@@ -67,6 +68,8 @@ RTC 接口。
 
 - 音频格式固定为 16 kHz、单声道、16 位有符号；ptime 为 20 / 40 / 60 ms（默认 60 ms，
   即每帧 960 样本 / 1920 字节）。
+- 所选 ptime 必须与目标 RTSA 软件包的 `CONFIG_MINIMAL_TIMER_INTERVAL_MS` 一致；仓库附带的
+  Linux 软件包为 60 ms 版本。
 - 关闭时 SDK 会先调用采集和播放的 `stop`，再等待音频工作线程退出。每个 `stop` 必须安全
   中断在途 `read` / `write`；有界 I/O 超时仍作为驱动异常时的兜底（Linux ALSA 实现使用
   50 ms 轮询超时）。

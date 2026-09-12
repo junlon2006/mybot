@@ -5,6 +5,8 @@ if(UNIX)
     find_dependency(Threads)
 endif()
 
+include("${CMAKE_CURRENT_LIST_DIR}/mybot_rtsa_ptime.cmake")
+
 include("${CMAKE_CURRENT_LIST_DIR}/mybotTargets.cmake")
 
 # The Agora RTSA library is not redistributed with this package (see
@@ -35,5 +37,7 @@ if(NOT TARGET mybot::agora-rtc-sdk)
         INTERFACE_INCLUDE_DIRECTORIES "${MYBOT_AGORA_SDK_DIR}/include")
     unset(_mybot_agora_rtc_library_type)
 endif()
+
+mybot_check_rtsa_ptime("${MYBOT_AGORA_SDK_DIR}" "@MYBOT_AUDIO_PTIME_MS@")
 
 check_required_components(mybot)

@@ -15,7 +15,10 @@ extern "C" {
  * ---------------------------------------------------------- */
 
 #define MYBOT_DEVICE_CLIENT_MAX_URL 640
+/* Keep this capacity unchanged: it is part of the persisted device-auth layout. */
 #define MYBOT_DEVICE_CLIENT_MAX_TOKEN 512
+/* Agora RTC tokens may contain 512 bytes, plus the terminating NUL. */
+#define MYBOT_DEVICE_CLIENT_MAX_RTC_TOKEN (MYBOT_DEVICE_CLIENT_MAX_TOKEN + 1)
 #define MYBOT_DEVICE_CLIENT_MAX_ID 128
 
 #define MYBOT_CONVERSATION_STOP_REASON_USER_REQUESTED "user_requested"
@@ -45,14 +48,14 @@ typedef struct {
     char rtc_channel[128];
     char rtc_uid[64];       /* string UID assigned by server */
     char rtc_agent_uid[64]; /* string RTM peer UID assigned by server */
-    char rtc_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
+    char rtc_token[MYBOT_DEVICE_CLIENT_MAX_RTC_TOKEN];
 } mybot_device_conversation_t;
 
 /** RTC-token renewal response. */
 typedef struct {
     char rtc_channel[128];
     char rtc_uid[64];
-    char rtc_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
+    char rtc_token[MYBOT_DEVICE_CLIENT_MAX_RTC_TOKEN];
 } mybot_device_rtc_token_t;
 
 /* ----------------------------------------------------------

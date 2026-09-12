@@ -47,8 +47,10 @@ RTOS, or a bare-metal MCU.
   automatic re-pairing when authentication is rejected.
 - **Conversation state machine**: Five device-service lifecycle states — `unprovisioned / pairing /
   awaiting_claim / runtime / in_conversation` — drive the device-server interaction.
-- **Application lifecycle state**: `mybot_get_state()` exposes startup, connectivity, shutdown, and
-  conversation state. After the device service accepts a conversation it returns
+- **Application lifecycle state**: `mybot_get_state()` exposes startup, pairing, connectivity,
+  shutdown, and conversation state. During device-service provisioning (`unprovisioned`, `pairing`,
+  or `awaiting_claim`) it returns `MYBOT_STATE_PAIRING`; only an authenticated runtime is
+  `MYBOT_STATE_READY`. After the device service accepts a conversation it returns
   `MYBOT_STATE_IN_CONVERSATION`; normal teardown returns to `MYBOT_STATE_READY`, while
   `MYBOT_STATE_WIFI_DISCONNECTED` takes precedence when connectivity is lost.
 - **Full-duplex voice · barge-in**: Uplink and downlink run simultaneously; the user can interrupt
@@ -62,8 +64,8 @@ RTOS, or a bare-metal MCU.
   application-facing volume API.
 - **Optional local wake words**: Off by default; wake behavior is identical to starting a
   conversation with a physical button.
-- **Button and LCD workflows**: Semantic screen states (provisioning / pair code / ready / in
-  conversation); how each is displayed is up to the platform.
+- **Button and LCD workflows**: Semantic screen states (provisioning / pairing / pair code / ready /
+  in conversation); how each is displayed is up to the platform.
 - **Voiceprint registration status**: During an active conversation, the SDK listens on the
   conversation RTM channel for the server's `message.sal_status` / `VP_REGISTER_SUCCESS` message
   and exposes `MYBOT_LCD_INDICATOR_VP_REGISTERED` as an in-conversation LCD overlay.
@@ -246,8 +248,25 @@ For example:
 ```bash
 cmake -S . -B build-wake \
   -DCONFIG_PLATFORM=linux \
-  -DMYBOT_AUDIO_PTIME_MS=20 \
+  -DMYBOT_AUDIO_PTIME_MS=60 \
   -DMYBOT_WAKE_WORDS=ON
+```
+
+`MYBOT_AUDIO_PTIME_MS` must match the RTSA package's
+`CONFIG_MINIMAL_TIMER_INTERVAL_MS` setting. The bundled x86_64 Linux package is fixed at 60 ms;
+for 20 or 40 ms, provide a matching external package with `AGORA_SDK_DIR` and
+`AGORA_RTC_LIBRARY`. CMake checks the package's `.config` or `include/global_config.cmake` and
+rejects a mismatch; packages without this build metadata are rejected. When a parent project
+predefines the Agora imported target, set `AGORA_SDK_DIR` to that same package so the check still
+has a verifiable source of truth.
+
+For a 20 ms build, add the paths to the matching RTSA package, for example:
+
+```bash
+cmake -S . -B build-20 \
+  -DMYBOT_AUDIO_PTIME_MS=20 \
+  -DAGORA_SDK_DIR=/opt/agora-rtsa-20 \
+  -DAGORA_RTC_LIBRARY=/opt/agora-rtsa-20/lib/libagora-rtc-sdk.so
 ```
 
 The Linux reference platform has no local ASR implementation, so enabling `MYBOT_WAKE_WORDS`
@@ -332,11 +351,12 @@ Layer notes:
 - **Public API** ([include/mybot/mybot.h](include/mybot/mybot.h)): application lifecycle and
   state queries (`mybot_start` / `mybot_is_running` / `mybot_get_state` / `mybot_stop`);
   non-blocking startup. Use `mybot_get_state()` for key or UI decisions:
-  `MYBOT_STATE_READY` can start a conversation and `MYBOT_STATE_IN_CONVERSATION` can stop one.
-  LCD output is only a rendering result, not a source of lifecycle state. Conversation and pairing
-  actions are triggered by platform key / wake-word events and handled inside the SDK core. Wi-Fi
-  and device-lifecycle events update one atomic state-model snapshot; `mybot_get_state()` and the LCD
-  presenter derive their views from that same snapshot.
+  `MYBOT_STATE_READY` can start a conversation and `MYBOT_STATE_IN_CONVERSATION` can stop one;
+  `MYBOT_STATE_PAIRING` is not conversation-ready. LCD output is only a rendering result, not a
+  source of lifecycle state. Conversation and pairing actions are triggered by platform key /
+  wake-word events and handled inside the SDK core. Wi-Fi and device-lifecycle events update one
+  atomic state-model snapshot; `mybot_get_state()` and the LCD presenter derive their views from
+  that same snapshot.
 - **SDK core** ([src/](src/)): one control owner serializes application state, the device lifecycle,
   RTC control, UI and volume actions, and resource startup and shutdown. Control callbacks only
   publish short events or atomic mailboxes to that owner. The core also contains the

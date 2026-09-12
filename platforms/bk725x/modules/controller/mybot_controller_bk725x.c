@@ -86,6 +86,8 @@ static const char *controller_state_name(mybot_state_t state) {
         return "stopping";
     case MYBOT_STATE_IN_CONVERSATION:
         return "in_conversation";
+    case MYBOT_STATE_PAIRING:
+        return "pairing";
     default:
         break;
     }

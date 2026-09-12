@@ -256,6 +256,8 @@ static void action_poll_binding_pair(mybot_device_lifecycle_t *lifecycle) {
         /* Unexpected during pairing, but handle it gracefully. */
         AOSL_LOG_NTC("unexpected unbound during pairing");
         set_state(lifecycle, MYBOT_DEVICE_STATE_UNPROVISIONED);
+        /* Re-enter the pairing flow on the next tick. */
+        lifecycle->pairing_requested = true;
     } else {
         /* Unknown status. */
         AOSL_LOG_ERR("unknown bind status: %s", resp.status);

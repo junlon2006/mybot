@@ -45,8 +45,10 @@ target-architecture package (the bundled shared library is x86_64 Linux only).
 
 The thread-safe application state model stores runtime phase, connectivity, and the device-lifecycle
 projection in one atomic snapshot. `mybot_get_state()` derives the public state from that snapshot:
-`MYBOT_STATE_WIFI_DISCONNECTED` takes precedence while offline, otherwise an accepted conversation
-reports `MYBOT_STATE_IN_CONVERSATION` until normal teardown returns to `MYBOT_STATE_READY`.
+`MYBOT_STATE_WIFI_DISCONNECTED` takes precedence while offline; online unprovisioned, pairing, and
+awaiting-claim phases report `MYBOT_STATE_PAIRING`, while an authenticated runtime reports
+`MYBOT_STATE_READY`. An accepted conversation reports `MYBOT_STATE_IN_CONVERSATION` until normal
+teardown returns to `MYBOT_STATE_READY`.
 
 ## Threads and stacks
 
@@ -75,6 +77,8 @@ additional internal threads whose stacks are vendor-managed.
 
 - Audio format is fixed at 16 kHz, mono, signed 16-bit; ptime is 20 / 40 / 60 ms (default 60 ms,
   i.e. 960 samples / 1920 bytes per frame).
+- The selected ptime must match the target RTSA package's `CONFIG_MINIMAL_TIMER_INTERVAL_MS`;
+  the bundled Linux package is the 60 ms variant.
 - During shutdown the SDK calls both platform `stop` hooks before waiting for audio workers.
   Each hook must safely interrupt an in-flight `read` / `write`; bounded I/O timeouts remain a
   fallback against driver failures (the Linux ALSA implementation polls with a 50 ms timeout).

@@ -39,8 +39,10 @@
 - **配对与认证**：配对码 → 设备认领 → 长期凭证持久化，认证失效时自动重新配对。
 - **会话状态机**：`unprovisioned / pairing / awaiting_claim / runtime / in_conversation` 五态
   设备服务生命周期驱动设备服务端交互。
-- **应用生命周期状态**：`mybot_get_state()` 暴露启动、网络、停止与会话状态。设备服务接受会话
-  后返回 `MYBOT_STATE_IN_CONVERSATION`；正常拆除后回到 `MYBOT_STATE_READY`；网络丢失时
+- **应用生命周期状态**：`mybot_get_state()` 暴露启动、配对、网络、停止与会话状态。设备服务
+  处于未配网、配对或等待认领（`unprovisioned / pairing / awaiting_claim`）时返回
+  `MYBOT_STATE_PAIRING`，只有认证后的 runtime 才是 `MYBOT_STATE_READY`。设备服务接受会话后
+  返回 `MYBOT_STATE_IN_CONVERSATION`；正常拆除后回到 `MYBOT_STATE_READY`；网络丢失时
   `MYBOT_STATE_WIFI_DISCONNECTED` 优先。
 - **全双工语音 · 支持打断**：上行与下行同时进行；AI 回复期间用户可随时说话打断，
   麦克风持续上行，云端 Agent 感知新输入并即时响应。
@@ -48,7 +50,7 @@
 - **音量控制**：两个相互独立的层次——SDK 管理的媒体音量（对播放 PCM 做数字软件增益，
   所有平台可用）与可选的设备真实音量实现（Codec / 功放 / 混音器），由平台注册。
 - **可选的本地唤醒词**：默认关闭；唤醒行为与物理按键启动会话一致。
-- **按键与 LCD 工作流**：语义化屏幕状态（配网 / 配对码 / 就绪 / 会话中），显示方式由
+- **按键与 LCD 工作流**：语义化屏幕状态（配网 / 配对 / 配对码 / 就绪 / 会话中），显示方式由
   平台决定。
 - **声纹注册状态**：对话过程中监听当前会话 RTM channel 的
   `message.sal_status` / `VP_REGISTER_SUCCESS` 消息，并通过
@@ -213,8 +215,24 @@ mybot_stop();
 ```bash
 cmake -S . -B build-wake \
   -DCONFIG_PLATFORM=linux \
-  -DMYBOT_AUDIO_PTIME_MS=20 \
+  -DMYBOT_AUDIO_PTIME_MS=60 \
   -DMYBOT_WAKE_WORDS=ON
+```
+
+`MYBOT_AUDIO_PTIME_MS` 必须与 RTSA 软件包中的
+`CONFIG_MINIMAL_TIMER_INTERVAL_MS` 一致。仓库附带的 x86_64 Linux 软件包固定为 60 ms；使用
+20 或 40 ms 时，必须通过 `AGORA_SDK_DIR` 和 `AGORA_RTC_LIBRARY` 提供对应版本的软件包。
+CMake 会读取软件包的 `.config` 或 `include/global_config.cmake` 并拒绝不匹配的配置；缺少这些
+构建元数据的软件包也会被拒绝。若宿主工程预先定义了 Agora 导入目标，仍需将
+`AGORA_SDK_DIR` 设置为同一个软件包，以便校验有明确依据。
+
+构建 20 ms 版本时，请指向匹配的 RTSA 软件包，例如：
+
+```bash
+cmake -S . -B build-20 \
+  -DMYBOT_AUDIO_PTIME_MS=20 \
+  -DAGORA_SDK_DIR=/opt/agora-rtsa-20 \
+  -DAGORA_RTC_LIBRARY=/opt/agora-rtsa-20/lib/libagora-rtc-sdk.so
 ```
 
 Linux 参考平台没有本地 ASR 实现，开启 `MYBOT_WAKE_WORDS` 后需要由宿主额外注册实现，
@@ -296,10 +314,10 @@ flowchart TB
 - **公共 API**（[include/mybot/mybot.h](include/mybot/mybot.h)）：应用生命周期与状态
   查询（`mybot_start` / `mybot_is_running` / `mybot_get_state` / `mybot_stop`），非阻塞启动。
   按键或 UI 应通过 `mybot_get_state()` 判断动作：
-  `MYBOT_STATE_READY` 时可开始会话，`MYBOT_STATE_IN_CONVERSATION` 时可停止会话。LCD
-  仅用于显示，不是生命周期状态来源。会话与配对动作由平台按键 / 唤醒词事件触发，由 SDK
-  核心内部处理。Wi-Fi 与设备生命周期事件共同更新一个原子状态模型快照；
-  `mybot_get_state()` 与 LCD presenter 都从同一份快照派生各自视图。
+  `MYBOT_STATE_READY` 时可开始会话，`MYBOT_STATE_IN_CONVERSATION` 时可停止会话；
+  `MYBOT_STATE_PAIRING` 不允许开始会话。LCD 仅用于显示，不是生命周期状态来源。会话与配对
+  动作由平台按键 / 唤醒词事件触发，由 SDK 核心内部处理。Wi-Fi 与设备生命周期事件共同更新
+  一个原子状态模型快照；`mybot_get_state()` 与 LCD presenter 都从同一份快照派生各自视图。
 - **SDK 核心**（[src/](src/)）：单一控制 owner 串行负责应用状态、设备生命周期、RTC 控制、
   UI / 音量动作以及资源启停；控制回调只向 owner 投递短事件或原子 mailbox。
   核心还包含设备服务 HTTP 客户端、Agora RTSA 会话封装、音频环形缓冲与可选本地唤醒词。

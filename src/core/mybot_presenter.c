@@ -67,6 +67,22 @@ void mybot_presenter_set_vp_registered(mybot_presenter_t *presenter, bool regist
     }
 }
 
+static bool app_state_matches_device_state(mybot_device_state_t device_state,
+                                           mybot_state_t app_state) {
+    switch (device_state) {
+    case MYBOT_DEVICE_STATE_UNPROVISIONED:
+    case MYBOT_DEVICE_STATE_PAIRING:
+    case MYBOT_DEVICE_STATE_AWAITING_CLAIM:
+        return app_state == MYBOT_STATE_PAIRING;
+    case MYBOT_DEVICE_STATE_RUNTIME:
+        return app_state == MYBOT_STATE_READY;
+    case MYBOT_DEVICE_STATE_IN_CONVERSATION:
+        return app_state == MYBOT_STATE_IN_CONVERSATION;
+    default:
+        return false;
+    }
+}
+
 void mybot_presenter_render_state(mybot_presenter_t *presenter,
                                   const mybot_state_model_t *state_model) {
     if (!presenter || !state_model) {
@@ -75,9 +91,7 @@ void mybot_presenter_render_state(mybot_presenter_t *presenter,
     mybot_state_view_t state = mybot_state_model_get_view(state_model);
     mybot_device_state_t device_state = state.device_state;
     mybot_state_t app_state = state.app_state;
-    if ((device_state == MYBOT_DEVICE_STATE_IN_CONVERSATION &&
-         app_state != MYBOT_STATE_IN_CONVERSATION) ||
-        (device_state != MYBOT_DEVICE_STATE_IN_CONVERSATION && app_state != MYBOT_STATE_READY)) {
+    if (!app_state_matches_device_state(device_state, app_state)) {
         return;
     }
 

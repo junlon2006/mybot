@@ -79,6 +79,8 @@ set(AGORA_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/agora_rtsa_sdk/agora_
 set(AGORA_RTC_LIBRARY "${AGORA_SDK_DIR}/lib/x86_64/libagora-rtc-sdk.so" CACHE FILEPATH
     "Path to the Agora RTSA library for the target architecture")
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/mybot_rtsa_ptime.cmake")
+
 if(NOT TARGET aosl)
     set(AOSL_DECLARE_PROJECT OFF CACHE BOOL "Build AOSL as a standalone project" FORCE)
     set(AOSL_COMPILE_TEST OFF CACHE BOOL "Build AOSL tests" FORCE)
@@ -110,7 +112,6 @@ if(NOT TARGET agora-rtc-sdk)
     if(NOT EXISTS "${AGORA_RTC_LIBRARY}")
         message(FATAL_ERROR "Agora RTSA library was not found: ${AGORA_RTC_LIBRARY}")
     endif()
-
     set(_agora_rtc_library_type STATIC)
     if(AGORA_RTC_LIBRARY MATCHES "\\.so(\\.[0-9]+)*$" OR
        AGORA_RTC_LIBRARY MATCHES "\\.dylib$")
@@ -123,6 +124,8 @@ if(NOT TARGET agora-rtc-sdk)
     )
     unset(_agora_rtc_library_type)
 endif()
+
+mybot_check_rtsa_ptime("${AGORA_SDK_DIR}" "${MYBOT_AUDIO_PTIME_MS}")
 
 function(mybot_enable_sanitizers target)
     if(MYBOT_ENABLE_ASAN AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
@@ -250,6 +253,8 @@ configure_package_config_file(
     ${CMAKE_CURRENT_BINARY_DIR}/mybotConfig.cmake
     INSTALL_DESTINATION ${MYBOT_INSTALL_CMAKEDIR}
 )
+configure_file(cmake/mybot_rtsa_ptime.cmake
+               ${CMAKE_CURRENT_BINARY_DIR}/mybot_rtsa_ptime.cmake COPYONLY)
 write_basic_package_version_file(
     ${CMAKE_CURRENT_BINARY_DIR}/mybotConfigVersion.cmake
     VERSION ${PROJECT_VERSION}
@@ -258,6 +263,7 @@ write_basic_package_version_file(
 install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/mybotConfig.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/mybotConfigVersion.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/mybot_rtsa_ptime.cmake
     DESTINATION ${MYBOT_INSTALL_CMAKEDIR}
 )
 

@@ -417,6 +417,9 @@ static void dev_on_conversation_stop(void *user_data) {
     runtime->rtc_channel[0] = '\0';
     runtime->rtc_agent_uid[0] = '\0';
     mybot_presenter_set_vp_registered(&runtime->presenter, false);
+    /* Render from the current state snapshot before the lifecycle publishes its
+     * next device state, so the old conversation overlay cannot win a race. */
+    mybot_presenter_render_state(&runtime->presenter, &runtime->state_model);
     mybot_media_pipeline_set_rtc_connected(&runtime->media, false);
     if (mybot_agora_rtc_leave() < 0) {
         AOSL_LOG_ERR("failed to leave RTC conversation");
@@ -667,8 +670,8 @@ static void on_wifi_event(mybot_wifi_event_t event, void *user_data) {
     }
 
     bool network_published = false;
-    if (state == MYBOT_STATE_READY || state == MYBOT_STATE_IN_CONVERSATION ||
-        state == MYBOT_STATE_WIFI_DISCONNECTED) {
+    if (state == MYBOT_STATE_READY || state == MYBOT_STATE_PAIRING ||
+        state == MYBOT_STATE_IN_CONVERSATION || state == MYBOT_STATE_WIFI_DISCONNECTED) {
         if (event == MYBOT_WIFI_EVENT_STA_CONNECTED) {
             mybot_device_lifecycle_set_network_available(&runtime->lifecycle, true);
             network_published = true;
