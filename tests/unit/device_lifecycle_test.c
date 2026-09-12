@@ -720,6 +720,10 @@ int main(void) {
     begin_pairing();
     tick_many(30);
     assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_UNPROVISIONED);
+    int pair_calls_before_unbound_recovery = s_pair_call_count;
+    mybot_device_lifecycle_tick(&s_lifecycle);
+    assert(s_pair_call_count == pair_calls_before_unbound_recovery + 1);
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
 
     strcpy(s_binding_status, "mystery");
     begin_pairing();

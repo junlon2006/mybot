@@ -45,8 +45,10 @@ target-architecture package (the bundled shared library is x86_64 Linux only).
 
 The thread-safe application state model stores runtime phase, connectivity, and the device-lifecycle
 projection in one atomic snapshot. `mybot_get_state()` derives the public state from that snapshot:
-`MYBOT_STATE_WIFI_DISCONNECTED` takes precedence while offline, otherwise an accepted conversation
-reports `MYBOT_STATE_IN_CONVERSATION` until normal teardown returns to `MYBOT_STATE_READY`.
+`MYBOT_STATE_WIFI_DISCONNECTED` takes precedence while offline; online unprovisioned, pairing, and
+awaiting-claim phases report `MYBOT_STATE_PAIRING`, while an authenticated runtime reports
+`MYBOT_STATE_READY`. An accepted conversation reports `MYBOT_STATE_IN_CONVERSATION` until normal
+teardown returns to `MYBOT_STATE_READY`.
 
 ## Threads and stacks
 

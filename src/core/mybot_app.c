@@ -667,8 +667,8 @@ static void on_wifi_event(mybot_wifi_event_t event, void *user_data) {
     }
 
     bool network_published = false;
-    if (state == MYBOT_STATE_READY || state == MYBOT_STATE_IN_CONVERSATION ||
-        state == MYBOT_STATE_WIFI_DISCONNECTED) {
+    if (state == MYBOT_STATE_READY || state == MYBOT_STATE_PAIRING ||
+        state == MYBOT_STATE_IN_CONVERSATION || state == MYBOT_STATE_WIFI_DISCONNECTED) {
         if (event == MYBOT_WIFI_EVENT_STA_CONNECTED) {
             mybot_device_lifecycle_set_network_available(&runtime->lifecycle, true);
             network_published = true;

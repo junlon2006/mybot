@@ -126,8 +126,9 @@ BearSSL 或芯片厂商 TLS socket API；SDK 核心
 对于单个硬件切换键，处理按键时查询线程安全的 `mybot_get_state()`：仅在
 `MYBOT_STATE_READY` 时发出 `MYBOT_KEY_EVENT_CONVERSATION_START`，仅在
 `MYBOT_STATE_IN_CONVERSATION` 时发出 `MYBOT_KEY_EVENT_CONVERSATION_STOP`。配网、启动、
-断网、失败和停止状态均忽略切换键。不要根据 LCD 推断会话状态，也不要在平台侧维护第二份
-状态；运行期断网会报告 `MYBOT_STATE_WIFI_DISCONNECTED`，SDK 会在本地结束会话。
+配对、断网、失败和停止状态均忽略切换键。`MYBOT_STATE_PAIRING` 覆盖设备服务的
+`unprovisioned`、`pairing` 和 `awaiting_claim` 阶段。不要根据 LCD 推断会话状态，也不要在
+平台侧维护第二份状态；运行期断网会报告 `MYBOT_STATE_WIFI_DISCONNECTED`，SDK 会在本地结束会话。
 
 ### LCD（可选）
 
@@ -240,11 +241,12 @@ mybot_stop();
 RTSA 生命周期通过 `agora_rtc_init()` / `agora_rtc_fini()` 管理。宿主若直接使用 AOSL，
 必须自行配对 `aosl_ctor()` 与 `aosl_dtor()`，并在所有 AOSL 用户停止前保持该引用。
 
-`mybot_get_state()` 是线程安全的应用层状态查询接口。设备服务接受会话后返回
-`MYBOT_STATE_IN_CONVERSATION`，正常拆除后回到 `MYBOT_STATE_READY`。运行期网络丢失时，
-`MYBOT_STATE_WIFI_DISCONNECTED` 优先，重连后回到 `READY`。设备服务生命周期状态
-（`unprovisioned`、`pairing`、`awaiting_claim`、`runtime`、`in_conversation`）属于 SDK
-内部状态机，平台不应自行重建。
+`mybot_get_state()` 是线程安全的应用层状态查询接口。设备服务处于未配网、申请配对码或等待
+认领时返回 `MYBOT_STATE_PAIRING`；只有认证后的 `runtime` 阶段返回 `MYBOT_STATE_READY`。
+设备服务接受会话后返回 `MYBOT_STATE_IN_CONVERSATION`，正常拆除后回到 `MYBOT_STATE_READY`。
+运行期网络丢失时，`MYBOT_STATE_WIFI_DISCONNECTED` 优先，重连后恢复为对应的在线状态。
+设备服务生命周期状态（`unprovisioned`、`pairing`、`awaiting_claim`、`runtime`、
+`in_conversation`）属于 SDK 内部状态机，平台不应自行重建。
 
 ### RTM 账号映射
 
@@ -260,6 +262,8 @@ RTM UID 必须非空、长度小于 64 字节，并且只能包含 Agora 接受�
 标点字符。`mybot_agora_rtc_rtm_uid_is_valid()` 暴露了登录前使用的同一校验规则。RTM 登录是
 异步的：只有 `MYBOT_RTM_EVENT_LOGIN` 回调的错误码为 0 后才允许发送消息。RTM 负载上限为
 31 KiB，custom type 上限为 32 字节。
+设备服务客户端会拒绝超出目标缓冲区的响应字符串；RTC token 缓冲区为 512 字节内容预留了
+额外的结尾 NUL 字节。
 
 会话启动时 SDK 会先请求 RTM 登录，并最多等待 5 秒直到收到成功的
 `MYBOT_RTM_EVENT_LOGIN` 回调；随后订阅与 RTC channel 同名的 RTM channel，并最多等待 5 秒
@@ -293,8 +297,8 @@ libc、编译器与浮点 ABI；若使用共享目标包，还需部署该库并
 - 短 I/O 有进展，stop 能在设备丢失时解除阻塞。
 - `destroy` 返回后没有按键或唤醒词回调运行；LCD 不保留借用的内容。
 - 部分启动失败与重复 start/stop 释放全部资源。
-- 正常会话期间 `mybot_get_state()` 依次报告 `READY -> IN_CONVERSATION -> READY`；通话中断网
-  时报告 `WIFI_DISCONNECTED`，重连后回到 `READY`，停止和重新配对过程不得死锁。
+- 正常 runtime 会话期间 `mybot_get_state()` 依次报告 `READY -> IN_CONVERSATION -> READY`；通话中断网
+  时报告 `WIFI_DISCONNECTED`，重连后恢复为对应的在线状态，停止和重新配对过程不得死锁。
 - 真实设备完成配网、配对、RTC 加入、双向音频、挂断与重启。
 - 会话结束时，采集、播放和 AEC reference 缓冲会在各自消费者 worker 中排空，完成后才允许新会话。
 - AEC reference 仅在播放设备接受对应样本后提交；提示音 PCM 永远不会进入 reference 流。

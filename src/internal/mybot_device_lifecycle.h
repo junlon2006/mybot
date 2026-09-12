@@ -22,7 +22,7 @@ typedef struct {
     char rtc_channel[128];
     char rtc_uid[64];       /* string UID assigned by server */
     char rtc_agent_uid[64]; /* string RTM peer UID assigned by server */
-    char rtc_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
+    char rtc_token[MYBOT_DEVICE_CLIENT_MAX_RTC_TOKEN];
 } mybot_conversation_params_t;
 
 /* Callbacks invoked by the state machine onto the app layer */

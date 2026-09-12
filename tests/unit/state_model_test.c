@@ -4,6 +4,10 @@
 #include <assert.h>
 
 int main(void) {
+    /* Preserve the established public values while extending the state set. */
+    assert(MYBOT_STATE_IN_CONVERSATION == 7);
+    assert(MYBOT_STATE_PAIRING == 8);
+
     mybot_state_model_t model;
     mybot_state_model_reset(&model);
     assert(mybot_state_model_get_view(&model).app_state == MYBOT_STATE_STOPPED);
@@ -33,8 +37,14 @@ int main(void) {
     assert(mybot_state_model_get_view(&model).app_state == MYBOT_STATE_READY);
     assert(mybot_state_model_get_view(&model).device_state == MYBOT_DEVICE_STATE_RUNTIME);
 
+    /* READY is reserved for an authenticated runtime device.  Every pairing
+     * phase must remain unavailable for conversation actions. */
+    assert(mybot_state_model_set_device_state(&model, MYBOT_DEVICE_STATE_UNPROVISIONED));
+    assert(mybot_state_model_get_view(&model).app_state == MYBOT_STATE_PAIRING);
+    assert(mybot_state_model_set_device_state(&model, MYBOT_DEVICE_STATE_PAIRING));
+    assert(mybot_state_model_get_view(&model).app_state == MYBOT_STATE_PAIRING);
     assert(mybot_state_model_set_device_state(&model, MYBOT_DEVICE_STATE_AWAITING_CLAIM));
-    assert(mybot_state_model_get_view(&model).app_state == MYBOT_STATE_READY);
+    assert(mybot_state_model_get_view(&model).app_state == MYBOT_STATE_PAIRING);
 
     assert(mybot_state_model_fail(&model));
     assert(mybot_state_model_get_view(&model).app_state == MYBOT_STATE_FAILED);

@@ -66,6 +66,23 @@ int main(void) {
     mybot_presenter_render_state(&presenter, &state_model);
     assert(s_last_content.screen == MYBOT_LCD_SCREEN_READY);
 
+    /* Pairing phases are exposed as a non-ready public state and still render
+     * their semantic pairing screen.  Awaiting-claim keeps the pair-code
+     * content already rendered by the lifecycle callback. */
+    assert(mybot_state_model_set_device_state(&state_model, MYBOT_DEVICE_STATE_UNPROVISIONED));
+    mybot_presenter_render_state(&presenter, &state_model);
+    assert(s_last_content.screen == MYBOT_LCD_SCREEN_PAIRING);
+    assert(mybot_state_model_set_device_state(&state_model, MYBOT_DEVICE_STATE_PAIRING));
+    mybot_presenter_render_state(&presenter, &state_model);
+    assert(s_last_content.screen == MYBOT_LCD_SCREEN_PAIRING);
+    int renders_before_awaiting_claim = s_render_count;
+    assert(mybot_state_model_set_device_state(&state_model, MYBOT_DEVICE_STATE_AWAITING_CLAIM));
+    mybot_presenter_render_state(&presenter, &state_model);
+    assert(s_render_count == renders_before_awaiting_claim);
+    assert(mybot_state_model_set_device_state(&state_model, MYBOT_DEVICE_STATE_RUNTIME));
+    mybot_presenter_render_state(&presenter, &state_model);
+    assert(s_last_content.screen == MYBOT_LCD_SCREEN_READY);
+
     assert(mybot_state_model_set_device_state(&state_model, MYBOT_DEVICE_STATE_IN_CONVERSATION));
     mybot_presenter_render_state(&presenter, &state_model);
     assert(s_last_content.screen == MYBOT_LCD_SCREEN_IN_CONVERSATION);

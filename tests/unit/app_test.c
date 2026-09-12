@@ -819,6 +819,9 @@ int mybot_device_lifecycle_init(mybot_device_lifecycle_t *lifecycle, mybot_kv_st
     s_device_network_available = true;
     s_device_init_calls++;
     mock_unlock();
+    if (callbacks->on_state_changed) {
+        callbacks->on_state_changed(MYBOT_DEVICE_STATE_RUNTIME, callbacks->user_data);
+    }
     return 0;
 }
 

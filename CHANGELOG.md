@@ -14,6 +14,13 @@ This project follows Semantic Versioning.
   an MPQ shutdown wait fails.
 - Commit AEC reference PCM only after the playback device accepts the corresponding samples,
   including short writes; announcement PCM is never used as an AEC reference.
+- Expose online `unprovisioned`, `pairing`, and `awaiting_claim` device phases as the public
+  `MYBOT_STATE_PAIRING` state so `MYBOT_STATE_READY` is reserved for authenticated runtime devices.
+- Restart pairing after an `unbound` response instead of leaving the device without a pending
+  pair-code request.
+- Reject oversized or non-string service response fields instead of silently truncating them, and
+  reserve space for the full 512-byte RTC token plus its terminating NUL without changing the
+  persisted device-auth layout.
 
 ## [1.1.0] - 2026-09-12
 
@@ -51,6 +58,7 @@ This project follows Semantic Versioning.
 
 - Extend `mybot_lcd_content_t` with the `indicators` bitmask. Platform LCD implementations must be
   rebuilt against the 1.1.0 header to render `MYBOT_LCD_INDICATOR_VP_REGISTERED`.
+- Add `MYBOT_STATE_PAIRING = 8`; existing `mybot_state_t` values retain their numeric values.
 
 ### Known limitations
 
