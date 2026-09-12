@@ -33,9 +33,9 @@ typedef struct {
  * The public mybot/platform/mybot_announce.h only exposes the platform contract
  * (ops table + mybot_platform_register()); the SDK core drives the registered
  * implementation through the functions below. When a pair code is obtained the core
- * queues the fixed prompt followed by one sound per digit and streams those
- * sounds into the playback ring buffer, so the prompt plays once through the
- * normal speaker path without an active RTC call.
+ * queues the fixed prompt followed by one sound per digit. The playback worker
+ * streams those sounds directly to the normal speaker path without mixing them
+ * into the RTC playback ring.
  */
 
 /** Initialize the registered implementation. No-op when none is registered. */

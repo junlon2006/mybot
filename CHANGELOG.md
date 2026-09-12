@@ -4,6 +4,17 @@ This project follows Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep the playback ring buffer strictly SPSC by feeding announcements directly into the playback
+  worker's pending frame; non-frame-aligned prompt tails are zero-padded and never joined to RTC
+  audio.
+- Flush capture, playback, and AEC reference buffers at conversation boundaries through their
+  owning consumer workers, reject uplink sends after the pipeline stops, and retain resources when
+  an MPQ shutdown wait fails.
+- Commit AEC reference PCM only after the playback device accepts the corresponding samples,
+  including short writes; announcement PCM is never used as an AEC reference.
+
 ## [1.1.0] - 2026-09-12
 
 ### Added

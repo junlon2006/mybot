@@ -38,6 +38,12 @@ typedef enum {
     MYBOT_PROMPT_PAIR_CODE = 0,
 } mybot_prompt_type_t;
 
+typedef enum {
+    MYBOT_PB_SOURCE_NONE = 0,
+    MYBOT_PB_SOURCE_RTC,
+    MYBOT_PB_SOURCE_ANNOUNCE,
+} mybot_pb_source_t;
+
 typedef struct {
     aosl_atomic_t running;
     aosl_atomic_t rtc_connected;
@@ -70,8 +76,9 @@ typedef struct {
     int16_t pb_pending[MYBOT_MEDIA_FRAME_SAMPLES * MYBOT_MEDIA_CHANNELS];
     int pb_pending_offset;
     int pb_pending_frames;
-    bool pb_pending_is_announce;
+    mybot_pb_source_t pb_pending_source;
     int16_t announce_frame[MYBOT_MEDIA_FRAME_SAMPLES];
+    bool stop_complete;
 
 #if MYBOT_CLOUD_AEC
     mybot_ringbuf_t ref_ringbuf;
@@ -86,10 +93,14 @@ typedef struct {
 
 int mybot_media_pipeline_start(mybot_media_pipeline_t *pipeline,
                                const mybot_media_pipeline_callbacks_t *callbacks);
-void mybot_media_pipeline_stop(mybot_media_pipeline_t *pipeline);
-void mybot_media_pipeline_destroy(mybot_media_pipeline_t *pipeline);
+/** Stop workers and device I/O; returns -1 while any worker remains live. */
+int mybot_media_pipeline_stop(mybot_media_pipeline_t *pipeline);
+/** Destroy ring buffers after a successful stop. */
+int mybot_media_pipeline_destroy(mybot_media_pipeline_t *pipeline);
 
 void mybot_media_pipeline_set_rtc_connected(mybot_media_pipeline_t *pipeline, bool connected);
+/** Flush all session-owned PCM through the consumer workers. */
+int mybot_media_pipeline_flush_session(mybot_media_pipeline_t *pipeline);
 #if MYBOT_WAKE_WORDS
 void mybot_media_pipeline_set_wake_words_enabled(mybot_media_pipeline_t *pipeline, bool enabled);
 #endif

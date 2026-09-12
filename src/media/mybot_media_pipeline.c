@@ -13,11 +13,23 @@
 #define MEDIA_RINGBUF_SIZE                                                                         \
     (MYBOT_MEDIA_SAMPLE_RATE * MEDIA_RINGBUF_DURATION_MS / 1000 * MYBOT_MEDIA_CHANNELS *           \
      (MYBOT_MEDIA_BITS_PER_SAMPLE / 8))
-#define MEDIA_ANNOUNCE_BUFFER_MS 500
-#define MEDIA_ANNOUNCE_TARGET_BYTES                                                                \
-    (MYBOT_MEDIA_SAMPLE_RATE * MEDIA_ANNOUNCE_BUFFER_MS / 1000 * MYBOT_MEDIA_CHANNELS *            \
-     (MYBOT_MEDIA_BITS_PER_SAMPLE / 8))
 #define MEDIA_MPQ_STACK_SIZE 16384
+
+static void drain_ringbuf(mybot_ringbuf_t ringbuf, char *scratch, int scratch_size) {
+    if (!ringbuf || !scratch || scratch_size <= 0) {
+        return;
+    }
+    for (;;) {
+        int available = mybot_ringbuf_get_data_size(ringbuf);
+        if (available <= 0) {
+            return;
+        }
+        int chunk = available < scratch_size ? available : scratch_size;
+        if (mybot_ringbuf_read(scratch, chunk, ringbuf) != chunk) {
+            return;
+        }
+    }
+}
 
 static void capture_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc, uintptr_t argv[]) {
     (void)id;
@@ -100,67 +112,82 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
     if (aosl_atomic_cmpxchg(&pipeline->announce_clear_pb, true, false)) {
         /* Drain as the SPSC consumer instead of resetting head/tail while the
          * RTC callback may still be publishing audio. */
-        while (mybot_ringbuf_get_data_size(pipeline->pb_ringbuf) >= MYBOT_MEDIA_FRAME_BYTES) {
-            if (mybot_ringbuf_read((char *)pipeline->pb_pending, MYBOT_MEDIA_FRAME_BYTES,
-                                   pipeline->pb_ringbuf) != MYBOT_MEDIA_FRAME_BYTES) {
-                break;
-            }
-        }
+        drain_ringbuf(pipeline->pb_ringbuf, (char *)pipeline->pb_pending,
+                      sizeof(pipeline->pb_pending));
         pipeline->pb_pending_offset = 0;
         pipeline->pb_pending_frames = 0;
-        pipeline->pb_pending_is_announce = false;
+        pipeline->pb_pending_source = MYBOT_PB_SOURCE_NONE;
+    }
+
+    bool announce_active = mybot_announce_is_active(&pipeline->announce);
+    if (announce_active) {
+        /* RTC audio received while an announcement is active is intentionally discarded. */
+        drain_ringbuf(pipeline->pb_ringbuf, (char *)pipeline->announce_frame,
+                      sizeof(pipeline->announce_frame));
     }
 
     /* A new announcement always wins over any already-buffered RTC audio. */
-    if (mybot_announce_is_active(&pipeline->announce) && pipeline->pb_pending_frames > 0 &&
-        !pipeline->pb_pending_is_announce) {
+    if (announce_active && pipeline->pb_pending_frames > 0 &&
+        pipeline->pb_pending_source != MYBOT_PB_SOURCE_ANNOUNCE) {
         pipeline->pb_pending_offset = 0;
         pipeline->pb_pending_frames = 0;
-        pipeline->pb_pending_is_announce = false;
+        pipeline->pb_pending_source = MYBOT_PB_SOURCE_NONE;
     }
 
     const mybot_audio_playback_ops_t *ops = pipeline->audio.playback_ops;
-    while (mybot_announce_is_active(&pipeline->announce) &&
-           mybot_ringbuf_get_data_size(pipeline->pb_ringbuf) < MEDIA_ANNOUNCE_TARGET_BYTES &&
-           mybot_ringbuf_get_free_size(pipeline->pb_ringbuf) >= MYBOT_MEDIA_FRAME_BYTES) {
-        int frames = mybot_announce_read_pcm(&pipeline->announce, pipeline->announce_frame,
-                                             MYBOT_MEDIA_FRAME_SAMPLES);
-        if (frames <= 0) {
-            break;
-        }
-        if (mybot_ringbuf_write(pipeline->pb_ringbuf, (const char *)pipeline->announce_frame,
-                                frames * MYBOT_MEDIA_CHANNELS * (MYBOT_MEDIA_BITS_PER_SAMPLE / 8)) <
-            0) {
-            AOSL_LOG_WRN("pb ringbuf full while feeding announcement");
-        }
-    }
-
     if (pipeline->pb_pending_frames == 0) {
-        if (mybot_ringbuf_get_data_size(pipeline->pb_ringbuf) < MYBOT_MEDIA_FRAME_BYTES) {
-            return;
+        int frames = 0;
+        bool announce_source = announce_active;
+        if (announce_source) {
+            memset(pipeline->pb_pending, 0, sizeof(pipeline->pb_pending));
+            while (frames < MYBOT_MEDIA_FRAME_SAMPLES) {
+                int read_frames =
+                    mybot_announce_read_pcm(&pipeline->announce, pipeline->announce_frame,
+                                            MYBOT_MEDIA_FRAME_SAMPLES - frames);
+                if (read_frames <= 0) {
+                    break;
+                }
+                if (read_frames > MYBOT_MEDIA_FRAME_SAMPLES - frames) {
+                    AOSL_LOG_ERR("announcement returned invalid frame count: %d", read_frames);
+                    frames = 0;
+                    break;
+                }
+                memcpy(pipeline->pb_pending + frames, pipeline->announce_frame,
+                       (size_t)read_frames * sizeof(int16_t));
+                frames += read_frames;
+            }
+        } else {
+            if (mybot_ringbuf_get_data_size(pipeline->pb_ringbuf) < MYBOT_MEDIA_FRAME_BYTES) {
+                return;
+            }
+            if (mybot_ringbuf_read((char *)pipeline->pb_pending, MYBOT_MEDIA_FRAME_BYTES,
+                                   pipeline->pb_ringbuf) != MYBOT_MEDIA_FRAME_BYTES) {
+                return;
+            }
+            frames = MYBOT_MEDIA_FRAME_SAMPLES;
         }
-        if (mybot_ringbuf_read((char *)pipeline->pb_pending, MYBOT_MEDIA_FRAME_BYTES,
-                               pipeline->pb_ringbuf) != MYBOT_MEDIA_FRAME_BYTES) {
+        if (frames <= 0) {
             return;
         }
         pipeline->pb_pending_offset = 0;
         pipeline->pb_pending_frames = MYBOT_MEDIA_FRAME_SAMPLES;
-        pipeline->pb_pending_is_announce = mybot_announce_is_active(&pipeline->announce);
+        pipeline->pb_pending_source =
+            announce_source ? MYBOT_PB_SOURCE_ANNOUNCE : MYBOT_PB_SOURCE_RTC;
 
         if (!mybot_audio_device_volume_is_active(&pipeline->audio)) {
             mybot_audio_apply_media_volume(&pipeline->audio, pipeline->pb_pending,
                                            MYBOT_MEDIA_FRAME_SAMPLES * MYBOT_MEDIA_CHANNELS);
         }
-
-#if MYBOT_CLOUD_AEC
-        if (aosl_atomic_read(&pipeline->rtc_connected) && !pipeline->pb_pending_is_announce) {
-            mybot_ringbuf_write(pipeline->ref_ringbuf, (const char *)pipeline->pb_pending,
-                                MYBOT_MEDIA_FRAME_BYTES);
-        }
-#endif
     }
 
     int frame_bytes = MYBOT_MEDIA_CHANNELS * (MYBOT_MEDIA_BITS_PER_SAMPLE / 8);
+#if MYBOT_CLOUD_AEC
+    if (pipeline->pb_pending_source == MYBOT_PB_SOURCE_RTC &&
+        mybot_ringbuf_get_free_size(pipeline->ref_ringbuf) <
+            pipeline->pb_pending_frames * frame_bytes) {
+        return;
+    }
+#endif
     int written =
         ops->write(pipeline->pb_ctx,
                    (const char *)pipeline->pb_pending + pipeline->pb_pending_offset * frame_bytes,
@@ -170,7 +197,7 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
                      pipeline->pb_pending_frames);
         pipeline->pb_pending_offset = 0;
         pipeline->pb_pending_frames = 0;
-        pipeline->pb_pending_is_announce = false;
+        pipeline->pb_pending_source = MYBOT_PB_SOURCE_NONE;
         return;
     }
     if (written == 0) {
@@ -178,11 +205,59 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
     }
 
     pipeline->pb_pending_offset += written;
+#if MYBOT_CLOUD_AEC
+    if (pipeline->pb_pending_source == MYBOT_PB_SOURCE_RTC) {
+        int ref_bytes = written * frame_bytes;
+        const char *ref_data = (const char *)pipeline->pb_pending +
+                               (pipeline->pb_pending_offset - written) * frame_bytes;
+        if (mybot_ringbuf_write(pipeline->ref_ringbuf, ref_data, ref_bytes) != ref_bytes) {
+            AOSL_LOG_ERR("AEC reference enqueue failed after playback write; stopping RTC media");
+            aosl_atomic_set(&pipeline->rtc_connected, false);
+        }
+    }
+#endif
     pipeline->pb_pending_frames -= written;
     if (pipeline->pb_pending_frames == 0) {
         pipeline->pb_pending_offset = 0;
-        pipeline->pb_pending_is_announce = false;
+        pipeline->pb_pending_source = MYBOT_PB_SOURCE_NONE;
     }
+}
+
+static void flush_playback_cb(const aosl_ts_t *ts, aosl_refobj_t ref, uintptr_t argc,
+                              uintptr_t argv[]) {
+    (void)ts;
+    (void)ref;
+    (void)argc;
+    mybot_media_pipeline_t *pipeline = (mybot_media_pipeline_t *)argv[0];
+    char discard[MYBOT_MEDIA_FRAME_BYTES];
+    drain_ringbuf(pipeline->pb_ringbuf, discard, sizeof(discard));
+    pipeline->pb_pending_offset = 0;
+    pipeline->pb_pending_frames = 0;
+    pipeline->pb_pending_source = MYBOT_PB_SOURCE_NONE;
+    aosl_atomic_set(&pipeline->announce_clear_pb, false);
+}
+
+static void flush_capture_barrier_cb(const aosl_ts_t *ts, aosl_refobj_t ref, uintptr_t argc,
+                                     uintptr_t argv[]) {
+    (void)ts;
+    (void)ref;
+    (void)argc;
+    (void)argv;
+    /* The callback is a barrier: once it runs, capture_timer() has completed
+     * every write that was already in flight after rtc_connected was cleared. */
+}
+
+static void flush_send_cb(const aosl_ts_t *ts, aosl_refobj_t ref, uintptr_t argc,
+                          uintptr_t argv[]) {
+    (void)ts;
+    (void)ref;
+    (void)argc;
+    mybot_media_pipeline_t *pipeline = (mybot_media_pipeline_t *)argv[0];
+    char discard[MYBOT_MEDIA_FRAME_BYTES];
+    drain_ringbuf(pipeline->cap_ringbuf, discard, sizeof(discard));
+#if MYBOT_CLOUD_AEC
+    drain_ringbuf(pipeline->ref_ringbuf, discard, sizeof(discard));
+#endif
 }
 
 static int playback_worker_init(void *arg) {
@@ -208,7 +283,8 @@ static void send_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc, ui
     }
 
     mybot_media_pipeline_t *pipeline = (mybot_media_pipeline_t *)argv[0];
-    if (!aosl_atomic_read(&pipeline->rtc_connected) || !pipeline->cbs.send_audio ||
+    if (!aosl_atomic_read(&pipeline->running) || !aosl_atomic_read(&pipeline->rtc_connected) ||
+        !pipeline->cbs.send_audio ||
         mybot_ringbuf_get_data_size(pipeline->cap_ringbuf) < MYBOT_MEDIA_FRAME_BYTES) {
         return;
     }
@@ -339,16 +415,23 @@ int mybot_media_pipeline_start(mybot_media_pipeline_t *pipeline,
     return 0;
 
 fail:
-    mybot_media_pipeline_stop(pipeline);
-    mybot_media_pipeline_destroy(pipeline);
+    if (mybot_media_pipeline_stop(pipeline) == 0) {
+        (void)mybot_media_pipeline_destroy(pipeline);
+    } else {
+        AOSL_LOG_ERR("media pipeline startup cleanup incomplete; retaining resources");
+    }
     return -1;
 }
 
-void mybot_media_pipeline_stop(mybot_media_pipeline_t *pipeline) {
+int mybot_media_pipeline_stop(mybot_media_pipeline_t *pipeline) {
     if (!pipeline) {
-        return;
+        return -1;
+    }
+    if (pipeline->stop_complete) {
+        return 0;
     }
     aosl_atomic_set(&pipeline->running, false);
+    aosl_atomic_set(&pipeline->rtc_connected, false);
 
     const mybot_audio_capture_ops_t *cap_ops = pipeline->audio.capture_ops;
     const mybot_audio_playback_ops_t *pb_ops = pipeline->audio.playback_ops;
@@ -365,15 +448,24 @@ void mybot_media_pipeline_stop(mybot_media_pipeline_t *pipeline) {
     }
 
     if (!aosl_mpq_invalid(pipeline->send_mpq)) {
-        aosl_mpq_destroy_wait(pipeline->send_mpq);
+        if (aosl_mpq_destroy_wait(pipeline->send_mpq) < 0) {
+            AOSL_LOG_ERR("failed to stop send worker; resources retained");
+            return -1;
+        }
         pipeline->send_mpq = AOSL_MPQ_INVALID;
     }
     if (!aosl_mpq_invalid(pipeline->cap_mpq)) {
-        aosl_mpq_destroy_wait(pipeline->cap_mpq);
+        if (aosl_mpq_destroy_wait(pipeline->cap_mpq) < 0) {
+            AOSL_LOG_ERR("failed to stop capture worker; resources retained");
+            return -1;
+        }
         pipeline->cap_mpq = AOSL_MPQ_INVALID;
     }
     if (!aosl_mpq_invalid(pipeline->pb_mpq)) {
-        aosl_mpq_destroy_wait(pipeline->pb_mpq);
+        if (aosl_mpq_destroy_wait(pipeline->pb_mpq) < 0) {
+            AOSL_LOG_ERR("failed to stop playback worker; resources retained");
+            return -1;
+        }
         pipeline->pb_mpq = AOSL_MPQ_INVALID;
     }
 
@@ -391,11 +483,17 @@ void mybot_media_pipeline_stop(mybot_media_pipeline_t *pipeline) {
         pipeline->pb_ctx = NULL;
     }
     mybot_audio_device_volume_deinit(&pipeline->audio);
+    pipeline->stop_complete = true;
+    return 0;
 }
 
-void mybot_media_pipeline_destroy(mybot_media_pipeline_t *pipeline) {
+int mybot_media_pipeline_destroy(mybot_media_pipeline_t *pipeline) {
     if (!pipeline) {
-        return;
+        return -1;
+    }
+    if (!pipeline->stop_complete) {
+        AOSL_LOG_ERR("cannot destroy media pipeline before workers stop");
+        return -1;
     }
     if (pipeline->cap_ringbuf) {
         mybot_ringbuf_destroy(pipeline->cap_ringbuf);
@@ -411,12 +509,42 @@ void mybot_media_pipeline_destroy(mybot_media_pipeline_t *pipeline) {
         pipeline->ref_ringbuf = NULL;
     }
 #endif
+    return 0;
 }
 
 void mybot_media_pipeline_set_rtc_connected(mybot_media_pipeline_t *pipeline, bool connected) {
     if (pipeline) {
         aosl_atomic_set(&pipeline->rtc_connected, connected);
+        if (!connected) {
+            aosl_atomic_set(&pipeline->announce_clear_pb, true);
+        }
     }
+}
+
+int mybot_media_pipeline_flush_session(mybot_media_pipeline_t *pipeline) {
+    if (!pipeline) {
+        return -1;
+    }
+    int rc = 0;
+    if (!aosl_mpq_invalid(pipeline->cap_mpq)) {
+        if (aosl_mpq_call(pipeline->cap_mpq, AOSL_REF_INVALID, "flush_capture",
+                          flush_capture_barrier_cb, 1, (uintptr_t)pipeline) < 0) {
+            rc = -1;
+        }
+    }
+    if (!aosl_mpq_invalid(pipeline->pb_mpq)) {
+        if (aosl_mpq_call(pipeline->pb_mpq, AOSL_REF_INVALID, "flush_playback", flush_playback_cb,
+                          1, (uintptr_t)pipeline) < 0) {
+            rc = -1;
+        }
+    }
+    if (!aosl_mpq_invalid(pipeline->send_mpq)) {
+        if (aosl_mpq_call(pipeline->send_mpq, AOSL_REF_INVALID, "flush_send", flush_send_cb, 1,
+                          (uintptr_t)pipeline) < 0) {
+            rc = -1;
+        }
+    }
+    return rc;
 }
 
 #if MYBOT_WAKE_WORDS
@@ -430,6 +558,8 @@ void mybot_media_pipeline_set_wake_words_enabled(mybot_media_pipeline_t *pipelin
 void mybot_media_pipeline_push_remote_audio(mybot_media_pipeline_t *pipeline, const void *data,
                                             size_t len) {
     if (!pipeline || !data || len == 0 || !aosl_atomic_read(&pipeline->running) ||
+        !aosl_atomic_read(&pipeline->rtc_connected) ||
+        aosl_atomic_read(&pipeline->announce_clear_pb) ||
         mybot_announce_is_active(&pipeline->announce)) {
         return;
     }

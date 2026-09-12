@@ -170,7 +170,9 @@ pairing code xxx in the console"). All PCM exchanged with the SDK is raw 16 kHz 
 no audio decoder, so the platform must decode/resample its own assets to that format.
 
 When a pair code is obtained, the SDK queues the fixed prompt sound followed by one sound per
-digit and plays the queue **once** through the normal playback path. The announcement stops when
+digit and plays the queue **once** through the normal playback path. Prompt PCM is selected by the
+playback worker and kept separate from the RTC playback ring; a final partial prompt frame is
+zero-padded. RTC downlink data is discarded while the announcement is active. The announcement stops when
 the device leaves `awaiting_claim` (claimed, re-pairing, or offline). A missing prompt sound
 skips the whole announcement; a missing digit sound skips just that digit — pairing never blocks
 on the audio.
@@ -323,6 +325,10 @@ also deploy the library and configure the firmware or OS runtime loader to find 
 - Short I/O makes progress and stop unblocks device loss.
 - No key or wake-word callback runs after destroy returns; LCD does not retain borrowed content.
 - Partial startup failure and repeated start/stop release all resources.
+- Conversation teardown flushes capture, playback, and AEC reference buffers before a new session;
+  the flush is performed by the corresponding ring-buffer consumer worker.
+- AEC reference samples are committed only after playback accepts the matching samples; prompt PCM
+  is never included in the reference stream.
 - `mybot_get_state()` reports `READY -> IN_CONVERSATION -> READY` for a normal conversation;
   a conversation interrupted by Wi-Fi loss reports `WIFI_DISCONNECTED` and returns to `READY` after
   reconnect, without deadlock during stop or re-pair.
