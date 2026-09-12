@@ -47,19 +47,21 @@ x86_64 Linux 参考构建（GCC 13，默认优化），**仅供参考**——请
 
 | MPQ 线程 | 职责 | 栈 |
 | --- | --- | --- |
-| `control_mpq` | 应用状态、设备生命周期、阻塞式 HTTP / RTC 控制、UI / 音量和资源转换 | 16 KB |
+| `control_mpq` | 应用状态、设备生命周期、阻塞式 HTTP 控制、UI / 音量和资源转换 | 16 KB |
+| `rtc_mpq` | Agora RTSA 生命周期、串行状态和 vendor 回调分发 | 8 KB |
 | `mybot_mpq` | 按 ptime 节奏上行发送音频 | 16 KB |
 | `cap_mpq` | 麦克风采集 | 16 KB |
 | `pb_mpq` | 播放与 AEC 参考 | 16 KB |
 | `key_stdin_mpq`（仅 Linux 参考） | 标准输入按键事件 | 4 KB |
 
-核心栈预算合计 4 × 16 KB = 64 KB。栈大小为编译期常量：
+核心栈预算合计 4 × 16 KB + 8 KB = 72 KB。栈大小为编译期常量：
 控制线程使用 `src/core/mybot_app.c` 中的
 `CONTROL_MPQ_STACK_SIZE`，音频线程使用 `src/media/mybot_media_pipeline.c` 中的
 `MEDIA_MPQ_STACK_SIZE`；请在目标上实测后再调整。实时音频定时器位于独立 MPQ，PCM 保持
 数据面直达而不经过 `control_mpq`，因此阻塞式 HTTP 或控制工作不会拖垮音频通路。控制回调
 （包括唤醒词回调）只投递短事件或发布原子 mailbox。Agora RTSA SDK 内部另有厂商管理的
-线程。
+线程。RTSA 回调会复制借用的数据并投递到 `rtc_mpq`；应用回调在该 worker 中运行，不得重入
+RTC 接口。
 
 ## 时序与实时性
 

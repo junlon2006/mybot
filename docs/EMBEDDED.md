@@ -52,19 +52,22 @@ reports `MYBOT_STATE_IN_CONVERSATION` until normal teardown returns to `MYBOT_ST
 
 | MPQ thread | Responsibility | Stack |
 | --- | --- | --- |
-| `control_mpq` | App state, device lifecycle, blocking HTTP/RTC control, UI/volume, resource transitions | 16 KB |
+| `control_mpq` | App state, device lifecycle, blocking HTTP control, UI/volume, resource transitions | 16 KB |
+| `rtc_mpq` | Agora RTSA lifecycle, serialized state, and vendor callback dispatch | 8 KB |
 | `mybot_mpq` | Uplink audio send at the ptime cadence | 16 KB |
 | `cap_mpq` | Microphone capture | 16 KB |
 | `pb_mpq` | Playback and AEC reference | 16 KB |
 | `key_stdin_mpq` (Linux reference only) | Stdin key events | 4 KB |
 
-Core stack budget is therefore 4 × 16 KB = 64 KB. Stack sizes are compile-time
+Core stack budget is therefore 4 × 16 KB + 8 KB = 72 KB. Stack sizes are compile-time
 constants: the control worker uses `CONTROL_MPQ_STACK_SIZE` in
 `src/core/mybot_app.c`, while audio workers use `MEDIA_MPQ_STACK_SIZE` in
 `src/media/mybot_media_pipeline.c`; profile on the target before tuning. The real-time
 audio timers live on separate MPQs, and PCM stays on the direct data path rather than passing
 through `control_mpq`, so blocking HTTP or control work cannot stall audio. Control callbacks,
 including wake-word callbacks, only enqueue short events or publish atomic mailboxes.
+RTSA callbacks copy borrowed payloads and enqueue them on `rtc_mpq`; application callbacks run on
+that worker and must not re-enter the RTC API.
 The Agora RTSA SDK owns
 additional internal threads whose stacks are vendor-managed.
 
