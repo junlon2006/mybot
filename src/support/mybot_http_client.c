@@ -541,27 +541,16 @@ fail:
  * Parse an HTTP status line such as "HTTP/1.1 200 OK\r\n".
  */
 static int parse_status_line(const char *line) {
-    /* Expect "HTTP/1.x <CODE> <reason>", e.g. "HTTP/1.1 200 OK". */
-    if (strncmp(line, "HTTP/", 5) != 0) {
-        return 0;
+    /* RFC 9112 status-line: HTTP-version SP 3DIGIT SP reason-phrase. */
+    if (!line || strncmp(line, "HTTP/1.", 7) != 0 || (line[7] != '0' && line[7] != '1') ||
+        line[8] != ' ') {
+        return -1;
     }
-    line += 5; /* Skip "HTTP/". */
-
-    /* Skip the version ("1.0", "1.1", ...). */
-    while (*line == '.' || (*line >= '0' && *line <= '9')) {
-        line++;
+    if (line[9] < '0' || line[9] > '9' || line[10] < '0' || line[10] > '9' || line[11] < '0' ||
+        line[11] > '9' || line[12] != ' ') {
+        return -1;
     }
-
-    /* Skip whitespace before the status code. */
-    while (*line == ' ') {
-        line++;
-    }
-
-    int code = 0;
-    while (*line >= '0' && *line <= '9') {
-        code = code * 10 + (*line++ - '0');
-    }
-    return code;
+    return (line[9] - '0') * 100 + (line[10] - '0') * 10 + (line[11] - '0');
 }
 
 /*
@@ -701,10 +690,13 @@ static int parse_response(const char *raw, size_t raw_len, int stream_closed,
 
     /* Parse the status line. */
     const char *nl = (const char *)memchr(p, '\n', (size_t)(end - p));
-    if (!nl) {
+    if (!nl || (size_t)(nl - p) < 13U) {
         return -1;
     }
     resp->status_code = parse_status_line(p);
+    if (resp->status_code < 0) {
+        return -1;
+    }
     p = nl + 1;
 
     /* Skip a CR that begins an immediate empty header line. */
@@ -752,14 +744,22 @@ static int parse_response(const char *raw, size_t raw_len, int stream_closed,
         /* Parse Transfer-Encoding, which takes precedence over Content-Length. */
         if (hdr_len > 18 && ascii_case_equal_n(p, "Transfer-Encoding:", 18)) {
             const char *val = p + 18;
-            while (val < nl && *val == ' ') {
-                val++;
-            }
-            /* "chunked" may appear in a comma-separated list, e.g. "gzip, chunked". */
-            for (const char *v = val; v + 7 <= nl; v++) {
-                if (ascii_case_equal_n(v, "chunked", 7)) {
+            while (val < nl) {
+                while (val < nl && (*val == ' ' || *val == '\t' || *val == ',')) {
+                    val++;
+                }
+                const char *token = val;
+                while (val < nl && *val != ',' && *val != ';' && *val != ' ' && *val != '\t' &&
+                       *val != '\r' && *val != '\n') {
+                    val++;
+                }
+                size_t token_len = (size_t)(val - token);
+                if (token_len == 7 && ascii_case_equal_n(token, "chunked", 7)) {
                     chunked = 1;
                     break;
+                }
+                while (val < nl && *val != ',') {
+                    val++;
                 }
             }
         }

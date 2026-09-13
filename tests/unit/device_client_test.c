@@ -347,10 +347,17 @@ static void test_conversation_failures(void) {
                     "\"rtc\":{\"channel\":\"channel\"}}}");
     assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
                                                   &conversation) < 0);
+    /* app_id and agent_uid are required identity fields. */
     reset_http_mock("{\"data\":{\"conversation_id\":\"c-1\","
                     "\"rtc\":{\"channel\":\"channel\",\"uid\":\"uid\"}}}");
     assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+                                                  &conversation) < 0);
+    reset_http_mock("{\"data\":{\"conversation_id\":\"c-1\",\"agent_uid\":\"agent\","
+                    "\"rtc\":{\"app_id\":\"app\",\"channel\":\"channel\","
+                    "\"uid\":\"uid\"}}}");
+    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
                                                   &conversation) == 0);
+    assert(strcmp(conversation.rtc_app_id, "app") == 0);
     assert(strcmp(conversation.rtc_channel, "channel") == 0);
     assert(strcmp(conversation.rtc_uid, "uid") == 0);
     assert(conversation.rtc_token[0] == '\0');
@@ -365,8 +372,9 @@ static void test_conversation_failures(void) {
     memset(token, 't', sizeof(token) - 1);
     token[sizeof(token) - 1] = '\0';
     assert(snprintf(token_response, sizeof(token_response),
-                    "{\"data\":{\"conversation_id\":\"c-1\",\"rtc\":{"
-                    "\"channel\":\"channel\",\"uid\":\"uid\",\"token\":\"%s\"}}}",
+                    "{\"data\":{\"conversation_id\":\"c-1\",\"agent_uid\":\"agent\","
+                    "\"rtc\":{\"app_id\":\"app\",\"channel\":\"channel\","
+                    "\"uid\":\"uid\",\"token\":\"%s\"}}}",
                     token) > 0);
     reset_http_mock(token_response);
     assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
@@ -375,8 +383,9 @@ static void test_conversation_failures(void) {
     memset(oversized_token, 't', sizeof(oversized_token) - 1);
     oversized_token[sizeof(oversized_token) - 1] = '\0';
     assert(snprintf(token_response, sizeof(token_response),
-                    "{\"data\":{\"conversation_id\":\"c-1\",\"rtc\":{"
-                    "\"channel\":\"channel\",\"uid\":\"uid\",\"token\":\"%s\"}}}",
+                    "{\"data\":{\"conversation_id\":\"c-1\",\"agent_uid\":\"agent\","
+                    "\"rtc\":{\"app_id\":\"app\",\"channel\":\"channel\","
+                    "\"uid\":\"uid\",\"token\":\"%s\"}}}",
                     oversized_token) > 0);
     reset_http_mock(token_response);
     assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
@@ -401,7 +410,8 @@ static void test_conversation_failures(void) {
                                                   &conversation) < 0);
 
     reset_http_mock("{\"data\":{\"conversation_id\":\"c-1\",\"agent_uid\":12345,"
-                    "\"rtc\":{\"channel\":\"channel\",\"uid\":67890}}}");
+                    "\"rtc\":{\"app_id\":\"app\",\"channel\":\"channel\","
+                    "\"uid\":67890}}}");
     assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
                                                   &conversation) == 0);
     assert(strcmp(conversation.rtc_uid, "67890") == 0);

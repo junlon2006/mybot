@@ -182,9 +182,9 @@ static void test_url_and_header_validation(void) {
 static void test_response_boundaries(void) {
     mybot_http_client_response_t resp;
 
-    assert(parse_status_line("HTTP/2 404") == 404);
-    assert(parse_status_line("HTTP/1.1    204") == 204);
-    assert(parse_status_line("NOTHTTP/1.1 200") == 0);
+    assert(parse_status_line("HTTP/2 404") < 0);
+    assert(parse_status_line("HTTP/1.1 204 No") == 204);
+    assert(parse_status_line("NOTHTTP/1.1 200") < 0);
     assert(deadline_remaining_ms(0) == 0);
     assert(deadline_remaining_ms(UINT64_MAX) == INT_MAX);
 

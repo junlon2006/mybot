@@ -81,7 +81,7 @@ bool mybot_agora_rtc_rtm_uid_is_valid(const char *rtm_uid);
 /** Log in to RTM using the server-issued local RTC UID and RTM token. */
 int mybot_agora_rtc_login_rtm(const char *rtm_uid, const char *rtm_token);
 
-/** Log out of RTM if a login has been requested or completed. */
+/** Log out of an explicitly requested RTM session. Join-owned sessions are logged out by leave. */
 int mybot_agora_rtc_logout_rtm(void);
 
 /** Send one point-to-point RTM message after the login event succeeds. */
@@ -100,8 +100,10 @@ int mybot_agora_rtc_join(const char *channel, const char *token, const char *use
 /** Leave and destroy the active connection while keeping RTSA initialized. */
 int mybot_agora_rtc_leave(void);
 
-/** Finalize the process-wide RTSA service. Call after RTC control and media workers stop. */
-void mybot_agora_rtc_fini(void);
+/** Finalize the process-wide RTSA service. Call after RTC control and media workers stop.
+ * Returns zero when all vendor resources were released; a negative result leaves the
+ * service available for a later retry. */
+int mybot_agora_rtc_fini(void);
 
 /** Send one PCM payload on the active connection. */
 int mybot_agora_rtc_send_audio(const void *data, size_t len);

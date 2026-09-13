@@ -137,7 +137,8 @@ int main(void) {
     aosl_atomic_set(&s_playback_writes, 0);
     aosl_atomic_set(&s_last_sample, 0);
 
-    mybot_media_pipeline_t pipeline = {0};
+    mybot_media_pipeline_t pipeline;
+    mybot_media_pipeline_init(&pipeline);
     mybot_media_pipeline_callbacks_t callbacks = {.send_audio = send_audio};
     assert(mybot_platform_registry_get()->audio_capture == &s_capture_ops);
     assert(mybot_platform_registry_get()->audio_playback == &s_playback_ops);

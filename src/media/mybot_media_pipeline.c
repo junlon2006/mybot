@@ -7,6 +7,7 @@
 #include <api/aosl_log.h>
 
 #include <string.h>
+#include <limits.h>
 
 #define MEDIA_FRAME_DURATION_MS MYBOT_AUDIO_PTIME_MS
 #define MEDIA_RINGBUF_DURATION_MS 2000
@@ -336,9 +337,18 @@ static void init_handles(mybot_media_pipeline_t *pipeline) {
     pipeline->send_timer = AOSL_MPQ_TIMER_INVALID;
 }
 
+void mybot_media_pipeline_init(mybot_media_pipeline_t *pipeline) {
+    if (!pipeline) {
+        return;
+    }
+    memset(pipeline, 0, sizeof(*pipeline));
+    init_handles(pipeline);
+    pipeline->initialized = true;
+}
+
 int mybot_media_pipeline_start(mybot_media_pipeline_t *pipeline,
                                const mybot_media_pipeline_callbacks_t *callbacks) {
-    if (!pipeline || !callbacks || !callbacks->send_audio) {
+    if (!pipeline || !pipeline->initialized || !callbacks || !callbacks->send_audio) {
         return -1;
     }
 
@@ -350,9 +360,8 @@ int mybot_media_pipeline_start(mybot_media_pipeline_t *pipeline,
         return -1;
     }
 
-    memset(pipeline, 0, sizeof(*pipeline));
     pipeline->cbs = *callbacks;
-    init_handles(pipeline);
+    pipeline->stop_complete = false;
     mybot_audio_context_init(&pipeline->audio);
     aosl_atomic_set(&pipeline->running, true);
 
@@ -517,6 +526,7 @@ int mybot_media_pipeline_destroy(mybot_media_pipeline_t *pipeline) {
         pipeline->ref_ringbuf = NULL;
     }
 #endif
+    pipeline->initialized = false;
     return 0;
 }
 
@@ -555,6 +565,14 @@ int mybot_media_pipeline_flush_session(mybot_media_pipeline_t *pipeline) {
     return rc;
 }
 
+int mybot_media_pipeline_end_session(mybot_media_pipeline_t *pipeline) {
+    if (!pipeline) {
+        return -1;
+    }
+    mybot_media_pipeline_set_rtc_connected(pipeline, false);
+    return mybot_media_pipeline_flush_session(pipeline);
+}
+
 #if MYBOT_WAKE_WORDS
 void mybot_media_pipeline_set_wake_words_enabled(mybot_media_pipeline_t *pipeline, bool enabled) {
     if (pipeline) {
@@ -569,6 +587,13 @@ void mybot_media_pipeline_push_remote_audio(mybot_media_pipeline_t *pipeline, co
         !aosl_atomic_read(&pipeline->rtc_connected) ||
         aosl_atomic_read(&pipeline->announce_clear_pb) ||
         mybot_announce_is_active(&pipeline->announce)) {
+        return;
+    }
+    /* The ring buffer API uses a signed int length.  Reject values that would
+     * wrap when crossing that boundary instead of truncating a hostile or
+     * malformed RTC callback. */
+    if (len > (size_t)INT_MAX) {
+        AOSL_LOG_WRN("remote audio frame too large, dropped");
         return;
     }
     if (mybot_ringbuf_write(pipeline->pb_ringbuf, (const char *)data, (int)len) < 0) {

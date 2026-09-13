@@ -1064,12 +1064,12 @@ int mybot_agora_rtc_leave(void) {
     return 0;
 }
 
-void mybot_agora_rtc_fini(void) {
+int mybot_agora_rtc_fini(void) {
     observe_control_thread(0);
     mock_lock();
     if (!s_rtc_initialized) {
         mock_unlock();
-        return;
+        return 0;
     }
     assert(!s_rtc_joined);
     s_rtc_initialized = false;
@@ -1077,6 +1077,7 @@ void mybot_agora_rtc_fini(void) {
     mock_unlock();
     /* Release the mock SDK's independent AOSL ownership. */
     aosl_dtor();
+    return 0;
 }
 
 static void *start_thread(void *arg) {

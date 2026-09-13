@@ -850,13 +850,15 @@ int main(void) {
     assert(s_stop_call_count == no_callback_stops + 1);
     assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_RUNTIME);
 
-    /* A local RTC end uses the protocol error reason. An HTTP transport failure
-     * is still a completed stop and must not leave the lifecycle wedged. */
+    /* A local RTC end uses the protocol error reason. Transient stop failures
+     * are retried with bounded backoff, then local cleanup keeps the lifecycle
+     * usable even when the service remains unavailable. */
     provision_runtime(&callbacks);
     start_conversation();
     s_stop_result = -1;
     mybot_device_lifecycle_notify_conversation_ended(&s_lifecycle);
     mybot_device_lifecycle_tick(&s_lifecycle);
+    tick_many(35);
     assert(strcmp(s_last_stop_reason, MYBOT_CONVERSATION_STOP_REASON_ERROR) == 0);
     assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_RUNTIME);
 
