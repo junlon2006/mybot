@@ -324,6 +324,10 @@ static void rtc_on_rtm_subscribe_data(const char *channel, const char *rtm_uid, 
                      len);
         return;
     }
+    if (runtime->rtc_agent_uid[0] == '\0' || strcmp(rtm_uid, runtime->rtc_agent_uid) != 0) {
+        AOSL_LOG_WRN("[RTM] application channel data ignored: unexpected sender UID=%s", rtm_uid);
+        return;
+    }
     if (rtm_data_is_vp_register_success(data, len)) {
         queue_vp_register_success(runtime, channel, rtm_uid, custom_type, len);
         return;
@@ -688,12 +692,67 @@ static void on_wifi_event(mybot_wifi_event_t event, void *user_data) {
     }
 }
 
+static bool server_url_is_valid(const char *url) {
+    if (!url) {
+        return false;
+    }
+    const char *p = NULL;
+#if MYBOT_ENABLE_HTTPS
+    if (strncmp(url, "https://", 8) == 0) {
+        p = url + 8;
+    }
+#endif
+#if MYBOT_ALLOW_INSECURE_HTTP
+    if (!p && strncmp(url, "http://", 7) == 0) {
+        p = url + 7;
+    }
+#endif
+    if (!p || !p[0]) {
+        return false;
+    }
+    const char *host = p;
+    while (*p && *p != ':' && *p != '/') {
+        unsigned char c = (unsigned char)*p;
+        if (c <= 0x20 || c > 0x7e || c == '@' || c == '?' || c == '#') {
+            return false;
+        }
+        ++p;
+    }
+    if (p == host) {
+        return false;
+    }
+    if (*p == ':') {
+        ++p;
+        if (!(*p >= '0' && *p <= '9')) {
+            return false;
+        }
+        unsigned long port = 0;
+        while (*p >= '0' && *p <= '9') {
+            port = port * 10U + (unsigned long)(*p - '0');
+            if (port > 65535U) {
+                return false;
+            }
+            ++p;
+        }
+        if (port == 0) {
+            return false;
+        }
+    }
+    for (; *p; ++p) {
+        unsigned char c = (unsigned char)*p;
+        if (c <= 0x20 || c > 0x7e || c == '\\' || c == '#') {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool config_is_valid(const mybot_config_t *cfg) {
     return cfg && memchr(cfg->server_base, '\0', sizeof(cfg->server_base)) &&
            memchr(cfg->device_id, '\0', sizeof(cfg->device_id)) &&
            memchr(cfg->firmware_ver, '\0', sizeof(cfg->firmware_ver)) &&
            memchr(cfg->hw_model, '\0', sizeof(cfg->hw_model)) && cfg->server_base[0] &&
-           cfg->device_id[0];
+           cfg->device_id[0] && server_url_is_valid(cfg->server_base);
 }
 
 static bool platform_requirements_are_met(const mybot_config_t *cfg) {

@@ -21,11 +21,27 @@ if(NOT build_result EQUAL 0)
 endif()
 
 execute_process(
+    COMMAND "${CMAKE_COMMAND}" --build "${MYBOT_BINARY_DIR}" --target mybot_cmake_host_cpp_check
+    RESULT_VARIABLE cpp_build_result
+)
+if(NOT cpp_build_result EQUAL 0)
+    message(FATAL_ERROR "CMake host C++ fixture build failed: ${cpp_build_result}")
+endif()
+
+execute_process(
     COMMAND "${MYBOT_BINARY_DIR}/mybot_cmake_host_check"
     RESULT_VARIABLE run_result
 )
 if(NOT run_result EQUAL 0)
     message(FATAL_ERROR "CMake host fixture failed: ${run_result}")
+endif()
+
+execute_process(
+    COMMAND "${MYBOT_BINARY_DIR}/mybot_cmake_host_cpp_check"
+    RESULT_VARIABLE cpp_run_result
+)
+if(NOT cpp_run_result EQUAL 0)
+    message(FATAL_ERROR "CMake host C++ fixture failed: ${cpp_run_result}")
 endif()
 
 # The bundled RTSA package is built with a 60 ms timer cadence. A different
@@ -41,8 +57,15 @@ execute_process(
             -DMYBOT_ENABLE_HTTPS=OFF
             -DMYBOT_ALLOW_INSECURE_HTTP=ON
             -DMYBOT_AUDIO_PTIME_MS=20
-    RESULT_VARIABLE ptime_mismatch_result
+            RESULT_VARIABLE ptime_mismatch_result
+            OUTPUT_VARIABLE ptime_mismatch_output
+            ERROR_VARIABLE ptime_mismatch_error
 )
 if(ptime_mismatch_result EQUAL 0)
     message(FATAL_ERROR "CMake accepted an RTSA/ptime mismatch for the bundled SDK")
+endif()
+set(ptime_mismatch_diagnostic "${ptime_mismatch_output}${ptime_mismatch_error}")
+if(NOT ptime_mismatch_diagnostic MATCHES "MYBOT_AUDIO_PTIME_MS=.*CONFIG_MINIMAL_TIMER_INTERVAL_MS")
+    message(FATAL_ERROR
+        "CMake rejected ptime mismatch for an unexpected reason: ${ptime_mismatch_diagnostic}")
 endif()

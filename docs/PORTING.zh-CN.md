@@ -292,6 +292,7 @@ libc、编译器与浮点 ABI；若使用共享目标包，还需部署该库并
 `AGORA_SDK_DIR` 和 `AGORA_RTC_LIBRARY` 指向匹配的软件包。CMake 会读取 `.config` 或
 `include/global_config.cmake`；配置不一致或缺少元数据时直接失败。若宿主预先定义了
 `agora-rtc-sdk` 目标，`AGORA_SDK_DIR` 仍必须指向同一个软件包以进行校验。
+CMake 无法检查宿主导入目标的 ABI，宿主必须确保其头文件和库路径来自该软件包。
 
 ## 第 8 步：验收清单
 
@@ -303,7 +304,8 @@ libc、编译器与浮点 ABI；若使用共享目标包，还需部署该库并
   Linux 软件包覆盖 60 ms）。
 - 短 I/O 有进展，stop 能在设备丢失时解除阻塞。
 - `destroy` 返回后没有按键或唤醒词回调运行；LCD 不保留借用的内容。
-- 部分启动失败与重复 start/stop 释放全部资源。
+- 部分启动失败与重复 start/stop 会在 worker 可 join 后释放全部资源；若 worker join 失败，SDK
+  会保留相关资源，等待后续 stop 再次尝试。
 - 正常 runtime 会话期间 `mybot_get_state()` 依次报告 `READY -> IN_CONVERSATION -> READY`；通话中断网
   时报告 `WIFI_DISCONNECTED`，重连后恢复为对应的在线状态，停止和重新配对过程不得死锁。
 - 真实设备完成配网、配对、RTC 加入、双向音频、挂断与重启。

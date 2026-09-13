@@ -23,6 +23,7 @@ function(mybot_add_test target)
     endif()
     mybot_enable_sanitizers(${target})
     add_test(NAME ${target} COMMAND ${target})
+    set_tests_properties(${target} PROPERTIES TIMEOUT 30)
 endfunction()
 
 mybot_add_test(mybot_device_lifecycle_test
@@ -102,6 +103,19 @@ mybot_add_test(mybot_announce_test unit/announce_test.c ../src/platform/mybot_an
 target_link_libraries(mybot_announce_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 target_sources(mybot_announce_test PRIVATE ../src/platform/mybot_platform.c)
 
+mybot_add_test(mybot_media_pipeline_test
+    unit/media_pipeline_test.c
+    ../src/media/mybot_media_pipeline.c
+    ../src/media/mybot_audio.c
+    ../src/platform/mybot_announce.c
+    ../src/support/mybot_ringbuf.c
+)
+target_compile_definitions(mybot_media_pipeline_test PRIVATE
+    MYBOT_AUDIO_PTIME_MS=${MYBOT_AUDIO_PTIME_MS}
+    MYBOT_CLOUD_AEC=$<BOOL:${MYBOT_CLOUD_AEC}>
+    MYBOT_WAKE_WORDS=0)
+target_link_libraries(mybot_media_pipeline_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
+
 mybot_add_test(mybot_agora_rtc_test unit/agora_rtc_test.c ../src/rtc/mybot_agora_rtc.c)
 target_include_directories(mybot_agora_rtc_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/agora_rtsa_sdk/agora_sdk/include)
@@ -133,6 +147,7 @@ add_test(NAME mybot_cmake_host_integration
         -DMYBOT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/cmake_host
         -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/run_cmake_host.cmake
 )
+set_tests_properties(mybot_cmake_host_integration PROPERTIES TIMEOUT 60)
 
 add_test(NAME mybot_install_consumer_check
     COMMAND ${CMAKE_COMMAND}
@@ -140,6 +155,7 @@ add_test(NAME mybot_install_consumer_check
         -DMYBOT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/..
         -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/run_cmake_install.cmake
 )
+set_tests_properties(mybot_install_consumer_check PROPERTIES TIMEOUT 60)
 
 if(MYBOT_BUILD_LINUX_PLATFORM)
     mybot_add_test(mybot_kv_store_file_test

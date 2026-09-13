@@ -154,10 +154,11 @@ MYBOT_API bool mybot_is_running(void);
 MYBOT_API mybot_state_t mybot_get_state(void);
 
 /**
- * @brief Stop the application and release all resources.
+ * @brief Stop the application and release resources whose workers have exited.
  *
- * Signals every worker to stop, waits for all worker threads to exit, and
- * releases audio devices, TLS, Wi-Fi, LCD and RTC resources.
+ * Signals every worker to stop, waits for worker threads to exit, and releases
+ * audio devices, TLS, Wi-Fi, LCD and RTC resources. If a worker cannot be
+ * joined, the associated resources are retained so a later call can retry.
  *
  * Idempotent: safe to call when the application is not running, after a
  * failed mybot_start(), or repeatedly. After it returns, the application

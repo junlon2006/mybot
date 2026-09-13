@@ -1,6 +1,6 @@
 # Agora RTSA-Lite SDK 介绍 (RTM 功能)
 
-*简体中文| [English](README.RTM.en.md)*
+*简体中文 | [English](README.en.md)*
 
 声网实时码流加速（Real-time Streaming Acceleration, RTSA）SDK，依托声网自建的底层实时传输网络 Agora SD-RTN™ (Software Defined Real-time Network)，为所有支持网络功能的 Linux/RTOS 设备提供音视频码流在互联网实时传输的能力。与此同时，SDK 整合了Agora 实时消息（Real-time Messaging，RTM）SDK 部分功能，提供了稳定可靠、低延时、高并发的全球消息云服务，帮助你快速构建实时场景。
 
@@ -106,12 +106,12 @@ cd example
 
 # 移植
 
-为了能让示例项目（hello_rtm）运行在嵌入式设备端（通常是ARM Linux系统），请参考 [移植指南](./docs/PORTING.md)，hello_rtm 和 hello_rtsa 移植过程相同。
+为了能让示例项目（hello_rtm）运行在嵌入式设备端（通常是ARM Linux系统），请参考仓库根目录的[移植指南](../../docs/PORTING.zh-CN.md)，hello_rtm 和 hello_rtsa 移植过程相同。
 
 # 关于 License
 为了让你可以流畅体验我们的示例项目，并快速开始集成和测试你自己的项目，我们的 SDK 提供了一定时长的免费试用期。免费期到期之后，则无法继续使用 RTSA SDK，示例项目（hello_rtsa）也将无法运行！
 
-所以，在免费期到期或正式上线之前，请务必联系声网销售(iot@agora.io)，购买商用的License，并且在项目中集成 License 的激活机制。详细流程请参考 [License集成指南]()
+所以，在免费期到期或正式上线之前，请务必联系声网销售(iot@agora.io)，购买商用的License，并且在项目中集成 License 的激活机制。详细流程请向声网销售索取。
 
 # 联系我们
 

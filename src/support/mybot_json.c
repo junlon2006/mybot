@@ -40,10 +40,10 @@ static int mybot_json_strcasecmp(const char *s1, const char *s2) {
         return (s1 == s2) ? 0 : 1;
     if (!s2)
         return 1;
-    for (; tolower(*s1) == tolower(*s2); ++s1, ++s2)
+    for (; tolower((unsigned char)*s1) == tolower((unsigned char)*s2); ++s1, ++s2)
         if (*s1 == 0)
             return 0;
-    return tolower(*(const unsigned char *)s1) - tolower(*(const unsigned char *)s2);
+    return tolower((unsigned char)*s1) - tolower((unsigned char)*s2);
 }
 
 /* Default to the AOSL HAL allocator so JSON stays consistent with the rest of
@@ -104,7 +104,7 @@ void mybot_json_delete(mybot_json_t *c) {
 
 static const char *parse_number_u64(mybot_json_t *item, const char *num) {
     // double n=0,sign=1,scale=0;int subscale=0,signsubscale=1;
-    long long n = 0;
+    unsigned long long n = 0;
     double f = 0;
     int sign = 1, scale = 0;
     int subscale = 0, signsubscale = 1;
@@ -117,16 +117,23 @@ static const char *parse_number_u64(mybot_json_t *item, const char *num) {
 
     if (*num == '0') {
         num++; /* is zero */
-    }
-
-    if (*num >= '1' && *num <= '9') {
+    } else if (*num >= '1' && *num <= '9') {
         do {
-            n = (n * 10) + (*num - '0');
+            unsigned int digit = (unsigned int)(*num - '0');
+            if (n > (ULLONG_MAX - digit) / 10U) {
+                return 0;
+            }
+            n = (n * 10U) + digit;
             num++;
         } while (*num >= '0' && *num <= '9'); /* Number? */
+    } else {
+        return 0;
     }
 
-    if (*num == '.' && num[1] >= '0' && num[1] <= '9') {
+    if (*num == '.') {
+        if (num[1] < '0' || num[1] > '9') {
+            return 0;
+        }
         is_float = 1;
         f = n * 1.0;
         num++;
@@ -146,16 +153,30 @@ static const char *parse_number_u64(mybot_json_t *item, const char *num) {
             signsubscale = -1;
             num++; /* With sign? */
         }
+        const char *exponent_start = num;
         while (*num >= '0' && *num <= '9') {
-            subscale = (subscale * 10) + (*num - '0'); /* Number? */
+            unsigned int digit = (unsigned int)(*num - '0');
+            if (subscale > (INT_MAX - (int)digit) / 10) {
+                return 0;
+            }
+            subscale = (subscale * 10) + (int)digit; /* Number? */
             num++;
+        }
+        if (num == exponent_start) {
+            return 0;
         }
     }
 
     if (!is_float) {
-        n = sign * n;
-        item->valuedouble = (double)n;
-        item->valueint = n;
+        if (n > (unsigned long long)LLONG_MAX + (sign < 0 ? 1ULL : 0ULL)) {
+            return 0;
+        }
+        if (sign < 0) {
+            item->valueint = n == (unsigned long long)LLONG_MAX + 1ULL ? LLONG_MIN : -(long long)n;
+        } else {
+            item->valueint = (long long)n;
+        }
+        item->valuedouble = (double)item->valueint;
     } else {
         f = sign * f *
             pow(10.0,
@@ -441,13 +462,17 @@ static const char *skip(const char *in) {
     return in;
 }
 
-/* Parse one JSON value and ignore any trailing bytes after it. */
+/* Parse one complete JSON value, allowing only trailing whitespace. */
 mybot_json_t *mybot_json_parse(const char *value) {
+    if (!value) {
+        return NULL;
+    }
     mybot_json_t *c = mybot_json_new_item();
     if (!c)
         return 0; /* memory fail */
 
-    if (!parse_value(c, skip(value))) {
+    const char *end = parse_value(c, skip(value));
+    if (!end || *skip(end) != '\0') {
         mybot_json_delete(c);
         return 0;
     }

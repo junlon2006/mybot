@@ -72,7 +72,7 @@ JOIN. You will then be able to see and hear the live audio and video stream.
 # Porting
 
 To run the sample project (`hello_rtsa`) on embedded devices, typically ARM Linux systems, refer to
-the [Porting Guide](./docs/PORTING.md).
+the repository's [Porting Guide](../../docs/PORTING.md).
 
 # Integration
 

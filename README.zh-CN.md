@@ -167,7 +167,9 @@ target_link_libraries(device_firmware PRIVATE mybot::sdk)
 最小应用生命周期：
 
 ```c
-platform_register_all();
+/* 由宿主实现：填写并注册一个完整的平台描述符。 */
+my_mcu_platform_register();
+mybot_config_t config = {0};
 mybot_start(&config);
 while (mybot_is_running()) {
     platform_sleep_ms(100);
@@ -177,9 +179,10 @@ mybot_stop();
 
 `mybot_start()` 非阻塞：先启动配网，收到网络可用事件后才异步初始化存储、
 按键、音频和设备服务；RTC 仅在会话开始时按需初始化。`mybot_start()` 与 `mybot_stop()`
-是线程安全的，并通过应用生命周期 gate 与控制 owner 串行执行。`mybot_stop()` 会等待全部
-工作线程退出，因此不应从平台或 SDK 回调内部调用。应用在 `mybot_start()` 内获取一份 AOSL
-引用，并在 `mybot_stop()` 末尾释放。RTSA 生命周期通过 `agora_rtc_init()` /
+是线程安全的，并通过应用生命周期 gate 与控制 owner 串行执行。`mybot_stop()` 会等待工作
+线程退出，因此不应从平台或 SDK 回调内部调用；若某个 worker 无法 join，SDK 会保留相关资源
+供后续 stop 尝试，调用方应在运行状态确认停止前视为关闭未完成。应用在 `mybot_start()` 内获取一份
+AOSL 引用，并在 `mybot_stop()` 末尾释放。RTSA 生命周期通过 `agora_rtc_init()` /
 `agora_rtc_fini()` 初始化和结束；宿主若直接使用 AOSL，必须自行配对 `aosl_ctor()` /
 `aosl_dtor()`。
 
@@ -225,6 +228,7 @@ cmake -S . -B build-wake \
 CMake 会读取软件包的 `.config` 或 `include/global_config.cmake` 并拒绝不匹配的配置；缺少这些
 构建元数据的软件包也会被拒绝。若宿主工程预先定义了 Agora 导入目标，仍需将
 `AGORA_SDK_DIR` 设置为同一个软件包，以便校验有明确依据。
+CMake 无法检查宿主预定义导入目标的 ABI；宿主必须确保该目标的头文件与库路径确实来自同一软件包。
 
 构建 20 ms 版本时，请指向匹配的 RTSA 软件包，例如：
 
@@ -318,9 +322,10 @@ flowchart TB
   `MYBOT_STATE_PAIRING` 不允许开始会话。LCD 仅用于显示，不是生命周期状态来源。会话与配对
   动作由平台按键 / 唤醒词事件触发，由 SDK 核心内部处理。Wi-Fi 与设备生命周期事件共同更新
   一个原子状态模型快照；`mybot_get_state()` 与 LCD presenter 都从同一份快照派生各自视图。
-- **SDK 核心**（[src/](src/)）：单一控制 owner 串行负责应用状态、设备生命周期、RTC 控制、
-  UI / 音量动作以及资源启停；控制回调只向 owner 投递短事件或原子 mailbox。
-  核心还包含设备服务 HTTP 客户端、Agora RTSA 会话封装、音频环形缓冲与可选本地唤醒词。
+- **SDK 核心**（[src/](src/)）：单一控制 owner 串行负责应用状态、设备生命周期、UI / 音量
+  动作以及资源启停。RTC 命令同步转发到专用 `rtc_mpq`，由该线程串行执行 RTSA 生命周期、
+  厂商调用和回调；控制回调只向各自 owner 投递短控制事件或原子 mailbox。核心还包含设备
+  服务 HTTP 客户端、Agora RTSA 会话封装、音频环形缓冲与可选本地唤醒词。
   核心代码不直接触碰任何 OS 或外设 API。
 - **基础服务层**：AOSL 提供线程 / MPQ / 定时器 / 日志等可移植能力；平台 `ops` 契约
   定义 SDK 所需的设备能力接口，两者都可由具体平台实现。
@@ -330,7 +335,8 @@ flowchart TB
 
 ### 线程模型
 
-`mybot_start()` 在 AOSL 上创建 4 个核心工作线程（MPQ），职责严格隔离：
+`mybot_start()` 在 AOSL 上创建 4 个核心工作线程（MPQ），职责严格隔离。会话开始时按需创建
+第 5 个 `rtc_mpq` 工作线程，所有 RTSA 生命周期调用与厂商回调均在该线程串行执行：
 
 | 线程 (MPQ) | 驱动 | 职责 |
 | --- | --- | --- |
@@ -338,6 +344,7 @@ flowchart TB
 | `mybot_mpq` | ptime 定时器 | 按音频包长节奏发送上行音频（Agora RTSA） |
 | `cap_mpq` | ptime 定时器 | 麦克风采集 → 采集环形缓冲 →（可选）唤醒词 |
 | `pb_mpq` | ptime 定时器 | 播放环形缓冲 → 扬声器，同时生成 AEC 参考声道 |
+| `rtc_mpq` | RTC/RTM 回调与同步 RTC 命令 | 串行执行 RTSA 生命周期、厂商调用和应用回调；按需创建 |
 
 回调只执行有界工作：投递短控制事件或发布原子 mailbox。PCM 采集、RTC 上下行与播放保持
 数据面直达，不经过 `control_mpq`。实时音频定时器（cap / pb / send）相互独立，阻塞的

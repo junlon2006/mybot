@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(mybot_cmake_host_check LANGUAGES C)
+project(mybot_cmake_host_check LANGUAGES C CXX)
 
 if(NOT MYBOT_SOURCE_DIR)
     message(FATAL_ERROR "MYBOT_SOURCE_DIR must point to the mybot source tree")
@@ -9,6 +9,10 @@ set(MYBOT_BUILD_LINUX_PLATFORM OFF CACHE BOOL "" FORCE)
 set(MYBOT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(MYBOT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(MYBOT_ENABLE_ASAN OFF CACHE BOOL "" FORCE)
+set(AGORA_SDK_DIR "${MYBOT_SOURCE_DIR}/third_party/agora_rtsa_sdk/agora_sdk" CACHE PATH "" FORCE)
+set(AGORA_RTC_LIBRARY
+    "${MYBOT_SOURCE_DIR}/third_party/agora_rtsa_sdk/agora_sdk/lib/x86_64/libagora-rtc-sdk.so"
+    CACHE FILEPATH "" FORCE)
 
 # A real host integration supplies the target-architecture Agora package.
 # Predeclare the target to verify that mybot does not require its bundled
@@ -23,3 +27,6 @@ add_subdirectory("${MYBOT_SOURCE_DIR}" mybot)
 
 add_executable(mybot_cmake_host_check main.c)
 target_link_libraries(mybot_cmake_host_check PRIVATE mybot::sdk)
+
+add_executable(mybot_cmake_host_cpp_check main.cpp)
+target_link_libraries(mybot_cmake_host_cpp_check PRIVATE mybot::sdk)

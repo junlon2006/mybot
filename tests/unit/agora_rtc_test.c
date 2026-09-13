@@ -42,6 +42,10 @@ static bool s_auto_rtm_login_event;
 static rtm_err_code_e s_auto_rtm_login_error;
 static bool s_auto_rtm_subscribe_event;
 static rtm_err_code_e s_auto_rtm_subscribe_error;
+static pthread_t s_rtm_login_thread;
+static bool s_rtm_login_thread_valid;
+static pthread_t s_rtm_subscribe_thread;
+static bool s_rtm_subscribe_thread_valid;
 static int s_init_calls;
 static int s_fini_calls;
 static int s_create_calls;
@@ -235,10 +239,18 @@ static void *rtm_login_event_thread(void *arg) {
     return NULL;
 }
 
+static void join_rtm_login_thread(void) {
+    if (s_rtm_login_thread_valid) {
+        assert(pthread_join(s_rtm_login_thread, NULL) == 0);
+        s_rtm_login_thread_valid = false;
+    }
+}
+
 int agora_rtm_login(const char *rtm_uid, const char *rtm_token,
                     const agora_rtm_handler_t *handler) {
     assert(rtm_uid != NULL);
     assert(rtm_uid[0] != '\0');
+    join_rtm_login_thread();
     s_rtm_login_calls++;
     snprintf(s_rtm_uid, sizeof(s_rtm_uid), "%s", rtm_uid);
     snprintf(s_rtm_token, sizeof(s_rtm_token), "%s", rtm_token ? rtm_token : "");
@@ -248,9 +260,8 @@ int agora_rtm_login(const char *rtm_uid, const char *rtm_token,
         memset(&s_rtm_handler, 0, sizeof(s_rtm_handler));
     }
     if (s_rtm_login_result >= 0 && s_auto_rtm_login_event) {
-        pthread_t callback_thread;
-        assert(pthread_create(&callback_thread, NULL, rtm_login_event_thread, NULL) == 0);
-        assert(pthread_detach(callback_thread) == 0);
+        assert(pthread_create(&s_rtm_login_thread, NULL, rtm_login_event_thread, NULL) == 0);
+        s_rtm_login_thread_valid = true;
     }
     return s_rtm_login_result;
 }
@@ -281,15 +292,23 @@ static void *rtm_subscribe_event_thread(void *arg) {
     return NULL;
 }
 
+static void join_rtm_subscribe_thread(void) {
+    if (s_rtm_subscribe_thread_valid) {
+        assert(pthread_join(s_rtm_subscribe_thread, NULL) == 0);
+        s_rtm_subscribe_thread_valid = false;
+    }
+}
+
 int agora_rtm_subscribe(const char *channel_name) {
     assert(channel_name != NULL);
     assert(channel_name[0] != '\0');
+    join_rtm_subscribe_thread();
     s_rtm_subscribe_calls++;
     snprintf(s_rtm_channel, sizeof(s_rtm_channel), "%s", channel_name);
     if (s_rtm_subscribe_result >= 0 && s_auto_rtm_subscribe_event) {
-        pthread_t callback_thread;
-        assert(pthread_create(&callback_thread, NULL, rtm_subscribe_event_thread, NULL) == 0);
-        assert(pthread_detach(callback_thread) == 0);
+        assert(pthread_create(&s_rtm_subscribe_thread, NULL, rtm_subscribe_event_thread, NULL) ==
+               0);
+        s_rtm_subscribe_thread_valid = true;
     }
     return s_rtm_subscribe_result;
 }
@@ -568,10 +587,11 @@ int main(void) {
     s_rtm_logout_result = -1;
     assert(mybot_agora_rtc_logout_rtm() < 0);
     assert(s_rtm_logout_calls == logout_calls_after_kickoff + 1);
-    assert(mybot_agora_rtc_is_rtm_logged_in());
+    assert(!mybot_agora_rtc_is_rtm_logged_in());
     s_rtm_logout_result = 0;
     assert(mybot_agora_rtc_logout_rtm() == 0);
-    assert(s_rtm_logout_calls == logout_calls_after_kickoff + 2);
+    /* Failed logout clears local state, so a retry does not call the vendor. */
+    assert(s_rtm_logout_calls == logout_calls_after_kickoff + 1);
     int rtm_events_after_logout = s_rtm_event_calls;
     s_rtm_handler.on_rtm_event("device-uid 01", RTM_EVENT_TYPE_LOGIN, ERR_RTM_OK);
     s_rtm_handler.on_rtm_data("agent-uid", rtm_payload, sizeof(rtm_payload) - 1,
@@ -917,6 +937,8 @@ int main(void) {
     mybot_agora_rtc_fini();
     assert(s_fini_calls == fini_calls_before_retry + 1);
 
+    join_rtm_login_thread();
+    join_rtm_subscribe_thread();
     aosl_dtor();
     puts("agora_rtc_test: ok");
     return 0;

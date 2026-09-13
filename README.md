@@ -196,7 +196,9 @@ full implementation order, minimal code, threading constraints, and acceptance c
 Minimal application lifecycle:
 
 ```c
-platform_register_all();
+/* Host-defined function that fills and registers one complete descriptor. */
+my_mcu_platform_register();
+mybot_config_t config = {0};
 mybot_start(&config);
 while (mybot_is_running()) {
     platform_sleep_ms(100);
@@ -208,9 +210,11 @@ mybot_stop();
 buttons, audio, and the device service asynchronously once usable network connectivity is
 reported. RTC is initialized on demand when a conversation starts.
 `mybot_start()` and `mybot_stop()` are thread-safe and serialize their work through the application
-lifecycle gate and control owner. `mybot_stop()` waits for all worker threads to exit and must not be
-called from inside a platform or SDK callback. The application acquires one reference to the
-process-wide AOSL runtime inside `mybot_start()` and releases it at the end of `mybot_stop()`.
+lifecycle gate and control owner. `mybot_stop()` waits for worker shutdown and must not be called
+from inside a platform or SDK callback. If a worker cannot be joined, the SDK retains its resources
+for a later stop attempt; callers should treat shutdown as incomplete until the runtime reports
+stopped. The application acquires one reference to the process-wide AOSL runtime inside
+`mybot_start()` and releases it at the end of `mybot_stop()`.
 The RTSA lifecycle is initialized and finalized through `agora_rtc_init()` / `agora_rtc_fini()`.
 A host that uses AOSL directly must keep its own `aosl_ctor()` / `aosl_dtor()` pair balanced.
 
@@ -258,7 +262,8 @@ for 20 or 40 ms, provide a matching external package with `AGORA_SDK_DIR` and
 `AGORA_RTC_LIBRARY`. CMake checks the package's `.config` or `include/global_config.cmake` and
 rejects a mismatch; packages without this build metadata are rejected. When a parent project
 predefines the Agora imported target, set `AGORA_SDK_DIR` to that same package so the check still
-has a verifiable source of truth.
+has a verifiable source of truth. CMake cannot inspect an imported target's ABI; the parent project
+must ensure its include and library paths refer to this same package.
 
 For a 20 ms build, add the paths to the matching RTSA package, for example:
 
@@ -358,8 +363,9 @@ Layer notes:
   atomic state-model snapshot; `mybot_get_state()` and the LCD presenter derive their views from
   that same snapshot.
 - **SDK core** ([src/](src/)): one control owner serializes application state, the device lifecycle,
-  RTC control, UI and volume actions, and resource startup and shutdown. Control callbacks only
-  publish short events or atomic mailboxes to that owner. The core also contains the
+  UI and volume actions, and resource startup and shutdown. RTC commands are forwarded synchronously
+  to the dedicated `rtc_mpq`, which serializes RTSA lifecycle, vendor calls, and callbacks. Control
+  callbacks only publish short events or atomic mailboxes to their owner. The core also contains the
   device-service HTTP client, the Agora RTSA session wrapper, audio ring buffers, and the optional
   local wake-word engine. Core code never touches any OS or peripheral API directly.
 - **Foundation layer**: AOSL provides portable threads / MPQ queues / timers / logging; the
@@ -374,7 +380,8 @@ Layer notes:
 ### Threading model
 
 `mybot_start()` creates four core worker threads (AOSL MPQ queues) with strictly separated
-responsibilities:
+responsibilities. RTC creates a fifth, on-demand `rtc_mpq` worker when a conversation starts; all
+RTSA lifecycle calls and vendor callbacks are serialized there:
 
 | Thread (MPQ) | Driven by | Responsibility |
 | --- | --- | --- |
@@ -382,6 +389,7 @@ responsibilities:
 | `mybot_mpq` | ptime timer | Sends uplink audio at the packetization cadence (Agora RTSA) |
 | `cap_mpq` | ptime timer | Mic capture → capture ring buffer → (optional) wake words |
 | `pb_mpq` | ptime timer | Playback ring buffer → speaker; also feeds the AEC reference channel |
+| `rtc_mpq` | RTC/RTM callbacks and synchronous RTC commands | Serializes RTSA lifecycle, vendor calls, and application callbacks; created on demand |
 
 Callbacks keep their work bounded: they enqueue a short control event or publish an atomic mailbox.
 PCM capture, RTC uplink/downlink, and playback stay on the direct data path and never pass through
