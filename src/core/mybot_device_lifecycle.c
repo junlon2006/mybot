@@ -519,6 +519,14 @@ int mybot_device_lifecycle_init(mybot_device_lifecycle_t *lifecycle, mybot_kv_st
     if (!lifecycle || !kv_store || !server_base || !device_id) {
         return -1;
     }
+    if (!server_base[0] || !device_id[0] ||
+        !memchr(server_base, '\0', sizeof(lifecycle->server_base)) ||
+        !memchr(device_id, '\0', sizeof(lifecycle->device_id)) ||
+        (firmware_ver && !memchr(firmware_ver, '\0', sizeof(lifecycle->firmware_ver))) ||
+        (hw_model && !memchr(hw_model, '\0', sizeof(lifecycle->hw_model)))) {
+        AOSL_LOG_ERR("lifecycle init rejected: configuration string is too long or empty");
+        return -1;
+    }
 
     memset(lifecycle, 0, sizeof(*lifecycle));
     lifecycle->kv_store = kv_store;

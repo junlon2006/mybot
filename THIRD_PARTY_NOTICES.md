@@ -31,9 +31,9 @@ Package provenance recorded for this update:
 No standalone license or NOTICE for the bundled RTSA binary was found in the package during the
 1.1.0 audit. Possession of the files is not evidence of redistribution rights. Commercial or
 production use and redistribution (source archives, binaries, container/firmware images, mirrors)
-require a separate license from Agora (声网): contact Agora's sales/business channel to obtain the
-applicable terms and written redistribution authorization before publishing any release artifact
-that contains the binary.
+require a separate license from Agora (声网). Release maintainers must retain the applicable terms
+and written redistribution authorization in the release records before publishing an artifact that
+contains the binary; the presence of this repository copy does not itself record that authorization.
 
 Files inside the Agora example tree may carry their own copyright or license headers; those terms
 also remain in force.
@@ -49,10 +49,38 @@ They retain the MIT license and Dave Gamble copyright notice in the source.
 (https://github.com/78/xiaozhi-esp32), which is distributed under the MIT License
 (c) 2025 Shenzhen Xinzhi Future Technology Co., Ltd. and Project Contributors. The pairing-code
 prompt and digit sounds are derived from that project's `main/assets/locales/<locale>/*.ogg`
-assets; retain the MIT copyright notice when redistributing them.
+assets. The full MIT notice is included below and must accompany any redistribution of these files.
 
-## Release blocker
+    MIT License
 
-Do not publish a release artifact containing the bundled Agora binary until its license and
-redistribution authorization have been verified. If authorization is unavailable, exclude the
-binary and require users to supply `AGORA_SDK_DIR` and `AGORA_RTC_LIBRARY` locally.
+    Copyright (c) 2025 Shenzhen Xinzhi Future Technology Co., Ltd.
+    Copyright (c) 2025 Project Contributors
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+The CMake install target installs this file as `share/doc/mybot/THIRD_PARTY_NOTICES.md`; it does not
+install the optional root `assets/` PCM files. A product that copies those assets must copy this
+notice with them.
+
+## Release requirement
+
+Publish a release artifact containing the bundled Agora binary only after its license and written
+redistribution authorization have been verified and retained in the release records. If that record
+is unavailable, exclude the binary and require users to supply `AGORA_SDK_DIR` and
+`AGORA_RTC_LIBRARY` locally.

@@ -342,6 +342,14 @@ int mybot_media_pipeline_start(mybot_media_pipeline_t *pipeline,
         return -1;
     }
 
+    /* Do not overwrite a live pipeline. A destroyed/stopped pipeline has no
+     * workers, device contexts, or buffers and may be initialized again. */
+    if (aosl_atomic_read(&pipeline->running) || pipeline->cap_ctx || pipeline->pb_ctx ||
+        pipeline->cap_ringbuf || pipeline->pb_ringbuf) {
+        AOSL_LOG_ERR("media pipeline is already initialized");
+        return -1;
+    }
+
     memset(pipeline, 0, sizeof(*pipeline));
     pipeline->cbs = *callbacks;
     init_handles(pipeline);

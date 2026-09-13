@@ -474,7 +474,7 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
         return -1;
     }
 
-    AOSL_LOG_NTC("POST %s request body=%s", url, body);
+    AOSL_LOG_NTC("POST %s request body length=%zu", url, strlen(body));
 
     mybot_http_client_response_t raw;
     memset(&raw, 0, sizeof(raw));
@@ -486,8 +486,8 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
     }
     mybot_json_free_string(generated_body);
 
-    AOSL_LOG_NTC("POST %s -> status=%d response body=%s", url, raw.status_code,
-                 raw.body ? raw.body : "(empty)");
+    AOSL_LOG_NTC("POST %s -> status=%d response body length=%zu", url, raw.status_code,
+                 raw.body_len);
 
     if (!http_response_ok(&raw)) {
         int status = raw.status_code;
@@ -624,7 +624,7 @@ int mybot_device_client_stop_conversation(const char *base_url, const char *devi
         return -1;
     }
 
-    AOSL_LOG_NTC("POST %s request body=%s", url, body);
+    AOSL_LOG_NTC("POST %s request body length=%zu", url, strlen(body));
 
     mybot_http_client_response_t raw;
     memset(&raw, 0, sizeof(raw));
@@ -633,8 +633,8 @@ int mybot_device_client_stop_conversation(const char *base_url, const char *devi
     mybot_json_free_string(body);
 
     if (ret == 0) {
-        AOSL_LOG_NTC("POST %s -> status=%d response body=%s", url, raw.status_code,
-                     raw.body ? raw.body : "(empty)");
+        AOSL_LOG_NTC("POST %s -> status=%d response body length=%zu", url, raw.status_code,
+                     raw.body_len);
         if (!http_response_ok(&raw)) {
             AOSL_LOG_ERR("POST %s -> HTTP error %d", url, raw.status_code);
             ret = raw.status_code > 0 ? raw.status_code : -1;

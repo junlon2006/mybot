@@ -8,7 +8,9 @@ Contributions are welcome for the 1.1 release series. Public APIs and ABI follow
 
 1. Discuss large API, platform, dependency, or protocol changes in an issue first.
 2. Keep platform code outside `src/` and integrate it through public platform ops.
-3. Never commit credentials, device tokens, customer data, or proprietary SDK packages.
+3. Never commit credentials, device tokens, customer data, or unapproved proprietary SDK packages.
+   The pinned Agora RTSA package already present under `third_party/agora_rtsa_sdk` is an explicit
+   repository dependency; changes or replacements require license and redistribution review.
 4. Format self-maintained C sources with the repository `.clang-format` and tag every file with an
    SPDX license header (`/* SPDX-License-Identifier: Apache-2.0 */`; the cJSON-derived `mybot_json`
    sources use `MIT`). After mechanical renames or bulk edits, run

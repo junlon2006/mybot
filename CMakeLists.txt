@@ -123,6 +123,22 @@ if(NOT TARGET agora-rtc-sdk)
         INTERFACE_INCLUDE_DIRECTORIES "${AGORA_SDK_DIR}/include"
     )
     unset(_agora_rtc_library_type)
+else()
+    # A parent project may provide the target, but ptime validation must still
+    # describe the exact SDK that supplies the ABI. Require inspectable
+    # imported target properties so a mismatched predeclared target cannot pass
+    # silently.
+    get_target_property(_agora_target_includes agora-rtc-sdk INTERFACE_INCLUDE_DIRECTORIES)
+    get_target_property(_agora_target_location agora-rtc-sdk IMPORTED_LOCATION)
+    if(NOT _agora_target_includes OR NOT _agora_target_location OR
+       NOT "${_agora_target_includes}" MATCHES "(^|;)${AGORA_SDK_DIR}/include(;|$)" OR
+       NOT "${_agora_target_location}" STREQUAL "${AGORA_RTC_LIBRARY}")
+        message(FATAL_ERROR
+            "Predefined agora-rtc-sdk must expose INTERFACE_INCLUDE_DIRECTORIES=${AGORA_SDK_DIR}/include "
+            "and IMPORTED_LOCATION=${AGORA_RTC_LIBRARY} so the validated RTSA package is explicit")
+    endif()
+    unset(_agora_target_includes)
+    unset(_agora_target_location)
 endif()
 
 mybot_check_rtsa_ptime("${AGORA_SDK_DIR}" "${MYBOT_AUDIO_PTIME_MS}")
@@ -257,7 +273,7 @@ configure_file(cmake/mybot_rtsa_ptime.cmake
                ${CMAKE_CURRENT_BINARY_DIR}/mybot_rtsa_ptime.cmake COPYONLY)
 write_basic_package_version_file(
     ${CMAKE_CURRENT_BINARY_DIR}/mybotConfigVersion.cmake
-    VERSION ${PROJECT_VERSION}
+    VERSION ${MYBOT_VERSION_STRING}
     COMPATIBILITY SameMajorVersion
 )
 install(FILES

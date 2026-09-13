@@ -327,7 +327,8 @@ The selected `MYBOT_AUDIO_PTIME_MS` must match the RTSA package's
 40 ms, provide a matching package through `AGORA_SDK_DIR` and `AGORA_RTC_LIBRARY`. CMake reads
 `.config` or `include/global_config.cmake` and fails configuration when the values differ or the
 metadata is absent. If the host predefines the `agora-rtc-sdk` target, `AGORA_SDK_DIR` must still
-identify that same package for validation.
+identify that same package for validation. CMake cannot inspect the imported target's ABI, so the
+host must ensure its include and library paths refer to that package.
 
 ## Step 8: Acceptance checklist
 
@@ -339,7 +340,8 @@ identify that same package for validation.
   (the bundled Linux package covers 60 ms).
 - Short I/O makes progress and stop unblocks device loss.
 - No key or wake-word callback runs after destroy returns; LCD does not retain borrowed content.
-- Partial startup failure and repeated start/stop release all resources.
+- Partial startup failure and repeated start/stop release all resources after workers can be joined;
+  if a worker join fails, the SDK retains the affected resources for a later stop attempt.
 - Conversation teardown flushes capture, playback, and AEC reference buffers before a new session;
   the flush is performed by the corresponding ring-buffer consumer worker.
 - AEC reference samples are committed only after playback accepts the matching samples; prompt PCM

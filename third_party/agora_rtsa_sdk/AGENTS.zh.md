@@ -257,7 +257,7 @@ void on_audio_data(connection_id_t conn_id, uint32_t uid, uint16_t sent_ts,
 // 需要：ch_opt.enable_audio_mixer = true
 void on_mixed_audio_data(connection_id_t conn_id, const void *data, size_t len,
                          const audio_frame_info_t *info) {
-    // 每 20ms 回调一次，数据为混合后的 PCM
+    // 按配置的 PCM 节拍回调（本仓库随附软件包为 60 ms）
 }
 
 // 接收远端用户的视频
@@ -442,7 +442,7 @@ agora_rtc_send_stream_message(conn_id, stream_id, data, length);
 | `-D` | `--domain-limit` | 启用域名限制 |
 | | `--pcm-sample-rate` | PCM 采样率 |
 | | `--pcm-channel-num` | PCM 声道数 |
-| | `--pcm-duration` | PCM 帧时长（ms），默认 20 |
+| | `--pcm-duration` | PCM 帧时长（ms）；Demo 默认 20，本仓库随附软件包为 60 |
 | | `--lan-accelerate` | 启用局域网加速 |
 | | `--audio-ai-qos` | 启用音频 AI QoS |
 

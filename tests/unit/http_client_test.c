@@ -488,7 +488,7 @@ int main(void) {
     assert(strcmp(s_tls_host, "api.example.test") == 0);
     assert(s_tls_port == 8443);
     assert(strncmp(s_tls_request, "GET /status HTTP/1.1\r\n", 22) == 0);
-    assert(strstr(s_tls_request, "Host: api.example.test\r\n") != NULL);
+    assert(strstr(s_tls_request, "Host: api.example.test:8443\r\n") != NULL);
     assert(response.status_code == 200);
     assert(strcmp(response.body, "secure") == 0);
     assert(s_tls_closed == 1);

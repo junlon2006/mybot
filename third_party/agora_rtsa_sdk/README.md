@@ -44,7 +44,7 @@ $ ./x86_64/hello_rtsa -i YOUR_APPID -c hello_demo
 
 # 移植
 
-为了能让示例项目（hello_rtsa）运行在嵌入式设备端（通常是ARM Linux系统），请参考 [移植指南](./docs/PORTING.md)
+为了能让示例项目（hello_rtsa）运行在嵌入式设备端（通常是ARM Linux系统），请参考仓库根目录的[移植指南](../../docs/PORTING.zh-CN.md)。
 
 # 集成
 在项目的集成过程中，你可能需要了解以下话题:
@@ -55,7 +55,7 @@ $ ./x86_64/hello_rtsa -i YOUR_APPID -c hello_demo
 # 关于 License
 为了让你可以流畅体验我们的示例项目，并快速开始集成和测试你自己的项目，我们的 SDK 提供了一定时长的免费试用期。免费期到期之后，则无法继续使用 RTSA SDK，示例项目（hello_rtsa）也将无法运行！
 
-所以，在免费期到期或正式上线之前，请务必联系声网销售(iot@agora.io)，购买商用的License，并且在项目中集成 License 的激活机制。详细流程请参考 [License集成指南]()
+所以，在免费期到期或正式上线之前，请务必联系声网销售(iot@agora.io)，购买商用的License，并且在项目中集成 License 的激活机制。详细流程请向声网销售索取。
 
 # 联系我们
 

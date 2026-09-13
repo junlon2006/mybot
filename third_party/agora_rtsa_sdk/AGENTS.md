@@ -263,7 +263,7 @@ void on_audio_data(connection_id_t conn_id, uint32_t uid, uint16_t sent_ts,
 // Requires: ch_opt.enable_audio_mixer = true
 void on_mixed_audio_data(connection_id_t conn_id, const void *data, size_t len,
                          const audio_frame_info_t *info) {
-    // Called every 20ms with mixed PCM data
+    // Called at the configured PCM cadence (60 ms in this bundled package)
 }
 
 // Receive video from remote users
@@ -451,7 +451,7 @@ Parameters:
 | `-D` | `--domain-limit` | Enable domain limit |
 | | `--pcm-sample-rate` | PCM sample rate |
 | | `--pcm-channel-num` | PCM channel number |
-| | `--pcm-duration` | PCM frame duration (ms), default 20 |
+| | `--pcm-duration` | PCM frame duration (ms); the demo default is 20, while this bundled package is built for 60 |
 | | `--lan-accelerate` | Enable LAN accelerate |
 | | `--audio-ai-qos` | Enable audio AI QoS |
 

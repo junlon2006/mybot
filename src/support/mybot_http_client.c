@@ -225,6 +225,61 @@ static int parse_url(const char *url, url_parts_t *parts) {
 
 static aosl_fd_t tcp_connect(const char *host, int port, uint64_t deadline);
 
+/* Return true once a response with a complete Content-Length body is in the
+ * receive buffer. This avoids waiting for a peer to close the connection
+ * after the framed body has already arrived. */
+static bool response_content_length_complete(const char *buf, size_t len) {
+    size_t header_end = 0;
+    for (size_t i = 3; i < len; ++i) {
+        if (buf[i - 3] == '\r' && buf[i - 2] == '\n' && buf[i - 1] == '\r' && buf[i] == '\n') {
+            header_end = i + 1;
+            break;
+        }
+    }
+    if (header_end == 0) {
+        return false;
+    }
+
+    size_t content_length = 0;
+    bool found = false;
+    const char *line = buf;
+    const char *headers_end = buf + header_end - 4;
+    while (line < headers_end) {
+        const char *line_end = strstr(line, "\r\n");
+        if (!line_end || line_end > headers_end) {
+            break;
+        }
+        size_t line_len = (size_t)(line_end - line);
+        if (line_len >= 15 && ascii_case_equal_n(line, "Content-Length:", 15)) {
+            const char *p = line + 15;
+            size_t value = 0;
+            bool digits = false;
+            while (p < line_end && (*p == ' ' || *p == '\t')) {
+                ++p;
+            }
+            while (p < line_end && *p >= '0' && *p <= '9') {
+                size_t digit = (size_t)(*p - '0');
+                if (value > (SIZE_MAX - digit) / 10U) {
+                    return false;
+                }
+                value = value * 10U + digit;
+                digits = true;
+                ++p;
+            }
+            while (p < line_end && (*p == ' ' || *p == '\t')) {
+                ++p;
+            }
+            if (!digits || p != line_end || (found && content_length != value)) {
+                return false;
+            }
+            content_length = value;
+            found = true;
+        }
+        line = line_end + 2;
+    }
+    return found && content_length <= len - header_end;
+}
+
 typedef struct {
     bool use_tls;
     aosl_fd_t fd;
@@ -440,6 +495,10 @@ static char *read_all(http_stream_t *stream, size_t *out_len, int *out_closed, u
         if (ret > 0) {
             len += (size_t)ret;
             buf[len] = '\0';
+
+            if (response_content_length_complete(buf, len)) {
+                break;
+            }
 
             /* Grow the buffer if needed, bounded by RECV_BUF_MAX so a
              * misbehaving server cannot cause unbounded memory growth. */
@@ -767,8 +826,19 @@ static int http_request(const char *method, const char *url, const char *content
         return -1;
     }
 
-    /* Build the HTTP request. */
+    /* Build the HTTP request. Include a non-default port in Host so virtual
+     * hosts and reverse proxies route the request correctly. */
     char req[2048];
+    char host_header[sizeof(parts.host) + 8];
+    bool include_port = (parts.use_tls && parts.port != HTTPS_DEFAULT_PORT) ||
+                        (!parts.use_tls && parts.port != HTTP_DEFAULT_PORT);
+    int host_len = include_port
+                       ? snprintf(host_header, sizeof(host_header), "%s:%d", parts.host, parts.port)
+                       : snprintf(host_header, sizeof(host_header), "%s", parts.host);
+    if (host_len < 0 || (size_t)host_len >= sizeof(host_header)) {
+        stream_close(&stream);
+        return -1;
+    }
     int req_len;
 
     if (strcmp(method, "POST") == 0 && req_body) {
@@ -781,7 +851,7 @@ static int http_request(const char *method, const char *url, const char *content
                            "%s" /* extra headers inserted here */
                            "\r\n"
                            "%s",
-                           parts.path, parts.host,
+                           parts.path, host_header,
                            content_type ? content_type : "application/octet-stream",
                            strlen(req_body), extra_headers ? extra_headers : "", req_body);
     } else {
@@ -791,7 +861,7 @@ static int http_request(const char *method, const char *url, const char *content
                            "Connection: close\r\n"
                            "%s" /* extra headers inserted here */
                            "\r\n",
-                           parts.path, parts.host, extra_headers ? extra_headers : "");
+                           parts.path, host_header, extra_headers ? extra_headers : "");
     }
 
     if (req_len < 0 || (size_t)req_len >= sizeof(req)) {
