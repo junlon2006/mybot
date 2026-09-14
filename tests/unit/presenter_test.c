@@ -93,6 +93,22 @@ int main(void) {
     assert(s_last_content.screen == MYBOT_LCD_SCREEN_IN_CONVERSATION);
     assert(s_last_content.indicators == MYBOT_LCD_INDICATOR_VP_REGISTERED);
 
+    mybot_presenter_update_server_indicator(&presenter, MYBOT_LCD_INDICATOR_THINKING, true);
+    mybot_presenter_show_screen(&presenter, MYBOT_LCD_SCREEN_IN_CONVERSATION);
+    assert(s_last_content.indicators ==
+           (MYBOT_LCD_INDICATOR_VP_REGISTERED | MYBOT_LCD_INDICATOR_THINKING));
+    mybot_presenter_update_server_indicator(&presenter, MYBOT_LCD_INDICATOR_SPEAKING, true);
+    mybot_presenter_show_screen(&presenter, MYBOT_LCD_SCREEN_IN_CONVERSATION);
+    assert(s_last_content.indicators ==
+           (MYBOT_LCD_INDICATOR_VP_REGISTERED | MYBOT_LCD_INDICATOR_SPEAKING));
+    mybot_presenter_update_server_indicator(&presenter, MYBOT_LCD_INDICATOR_SPEAKING, false);
+    mybot_presenter_show_screen(&presenter, MYBOT_LCD_SCREEN_IN_CONVERSATION);
+    assert(s_last_content.indicators == MYBOT_LCD_INDICATOR_VP_REGISTERED);
+    mybot_presenter_update_server_indicator(&presenter, MYBOT_LCD_INDICATOR_LISTENING, true);
+    mybot_presenter_clear_server_indicators(&presenter);
+    mybot_presenter_show_screen(&presenter, MYBOT_LCD_SCREEN_IN_CONVERSATION);
+    assert(s_last_content.indicators == MYBOT_LCD_INDICATOR_VP_REGISTERED);
+
     assert(mybot_state_model_set_device_state(&state_model, MYBOT_DEVICE_STATE_RUNTIME));
     mybot_presenter_render_state(&presenter, &state_model);
     assert(s_last_content.screen == MYBOT_LCD_SCREEN_READY);

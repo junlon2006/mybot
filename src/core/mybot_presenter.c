@@ -9,7 +9,7 @@ int mybot_presenter_init(mybot_presenter_t *presenter) {
     if (!presenter) {
         return -1;
     }
-    presenter->vp_registered = false;
+    presenter->indicators = MYBOT_LCD_INDICATOR_NONE;
     if (!mybot_lcd_is_registered()) {
         return 0;
     }
@@ -28,7 +28,7 @@ void mybot_presenter_deinit(mybot_presenter_t *presenter) {
         mybot_lcd_deinit(&presenter->lcd);
         presenter->active = false;
     }
-    presenter->vp_registered = false;
+    presenter->indicators = MYBOT_LCD_INDICATOR_NONE;
 }
 
 void mybot_presenter_show_screen(mybot_presenter_t *presenter, mybot_lcd_screen_t screen) {
@@ -36,14 +36,14 @@ void mybot_presenter_show_screen(mybot_presenter_t *presenter, mybot_lcd_screen_
         return;
     }
     if (screen != MYBOT_LCD_SCREEN_IN_CONVERSATION) {
-        presenter->vp_registered = false;
+        presenter->indicators = MYBOT_LCD_INDICATOR_NONE;
     }
     if (presenter->active) {
         mybot_lcd_content_t content;
         memset(&content, 0, sizeof(content));
         content.screen = screen;
-        if (screen == MYBOT_LCD_SCREEN_IN_CONVERSATION && presenter->vp_registered) {
-            content.indicators = MYBOT_LCD_INDICATOR_VP_REGISTERED;
+        if (screen == MYBOT_LCD_SCREEN_IN_CONVERSATION) {
+            content.indicators = presenter->indicators;
         }
         if (mybot_lcd_show_content(&presenter->lcd, &content) < 0) {
             AOSL_LOG_WRN("failed to render LCD screen %d", (int)screen);
@@ -55,7 +55,7 @@ void mybot_presenter_show_pair_code(mybot_presenter_t *presenter, const char *co
     if (!presenter) {
         return;
     }
-    presenter->vp_registered = false;
+    presenter->indicators = MYBOT_LCD_INDICATOR_NONE;
     if (presenter->active && mybot_lcd_show_pair_code(&presenter->lcd, code) < 0) {
         AOSL_LOG_WRN("failed to render LCD pair code");
     }
@@ -63,7 +63,33 @@ void mybot_presenter_show_pair_code(mybot_presenter_t *presenter, const char *co
 
 void mybot_presenter_set_vp_registered(mybot_presenter_t *presenter, bool registered) {
     if (presenter) {
-        presenter->vp_registered = registered;
+        if (registered) {
+            presenter->indicators |= MYBOT_LCD_INDICATOR_VP_REGISTERED;
+        } else {
+            presenter->indicators &= ~MYBOT_LCD_INDICATOR_VP_REGISTERED;
+        }
+    }
+}
+
+void mybot_presenter_update_server_indicator(mybot_presenter_t *presenter,
+                                             mybot_lcd_indicator_t indicator, bool active) {
+    if (!presenter ||
+        (indicator != MYBOT_LCD_INDICATOR_LISTENING && indicator != MYBOT_LCD_INDICATOR_THINKING &&
+         indicator != MYBOT_LCD_INDICATOR_SPEAKING)) {
+        return;
+    }
+
+    if (active) {
+        presenter->indicators =
+            (presenter->indicators & ~MYBOT_LCD_INDICATOR_SERVER_STATE_MASK) | indicator;
+    } else {
+        presenter->indicators &= ~indicator;
+    }
+}
+
+void mybot_presenter_clear_server_indicators(mybot_presenter_t *presenter) {
+    if (presenter) {
+        presenter->indicators &= ~MYBOT_LCD_INDICATOR_SERVER_STATE_MASK;
     }
 }
 
@@ -98,14 +124,14 @@ void mybot_presenter_render_state(mybot_presenter_t *presenter,
     switch (device_state) {
     case MYBOT_DEVICE_STATE_UNPROVISIONED:
     case MYBOT_DEVICE_STATE_PAIRING:
-        presenter->vp_registered = false;
+        presenter->indicators = MYBOT_LCD_INDICATOR_NONE;
         mybot_presenter_show_screen(presenter, MYBOT_LCD_SCREEN_PAIRING);
         break;
     case MYBOT_DEVICE_STATE_AWAITING_CLAIM:
-        presenter->vp_registered = false;
+        presenter->indicators = MYBOT_LCD_INDICATOR_NONE;
         break;
     case MYBOT_DEVICE_STATE_RUNTIME:
-        presenter->vp_registered = false;
+        presenter->indicators = MYBOT_LCD_INDICATOR_NONE;
         mybot_presenter_show_screen(presenter, MYBOT_LCD_SCREEN_READY);
         break;
     case MYBOT_DEVICE_STATE_IN_CONVERSATION:

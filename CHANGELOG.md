@@ -4,6 +4,11 @@ This project follows Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Forward RTM `state.listening`, `state.thinking`, and `state.speaking` events to the active
+  conversation LCD as mutually exclusive server-state indicators alongside voice-print status.
+
 ## [1.1.0] - 2026-09-12
 
 ### Added

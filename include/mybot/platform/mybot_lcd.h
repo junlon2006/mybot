@@ -23,7 +23,17 @@ typedef enum {
     MYBOT_LCD_INDICATOR_NONE = 0u,
     /** Voice-print registration completed for the active conversation. */
     MYBOT_LCD_INDICATOR_VP_REGISTERED = 1u << 0,
+    /** The server is listening for user input. */
+    MYBOT_LCD_INDICATOR_LISTENING = 1u << 1,
+    /** The server is processing user input. */
+    MYBOT_LCD_INDICATOR_THINKING = 1u << 2,
+    /** The server is speaking to the user. */
+    MYBOT_LCD_INDICATOR_SPEAKING = 1u << 3,
 } mybot_lcd_indicator_t;
+
+/** The mutually exclusive server-state indicators. */
+#define MYBOT_LCD_INDICATOR_SERVER_STATE_MASK                                                   \
+    (MYBOT_LCD_INDICATOR_LISTENING | MYBOT_LCD_INDICATOR_THINKING | MYBOT_LCD_INDICATOR_SPEAKING)
 
 /**
  * Workflow screens rendered by the SDK.
@@ -70,7 +80,8 @@ typedef struct {
     /**
      * Optional non-exclusive screen indicators. This field is currently
      * meaningful on MYBOT_LCD_SCREEN_IN_CONVERSATION; other screens should
-     * normally be rendered with MYBOT_LCD_INDICATOR_NONE.
+     * normally be rendered with MYBOT_LCD_INDICATOR_NONE. The listening,
+     * thinking and speaking bits are mutually exclusive server-state overlays.
      *
      * @note The field is appended to the 1.1.0 content structure. Build the
      *       SDK and platform LCD adapter against the same public header.
