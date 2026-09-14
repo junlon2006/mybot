@@ -15,6 +15,23 @@ static int s_capture_ctx;
 static int s_playback_ctx;
 static aosl_atomic_t s_playback_writes;
 static aosl_atomic_t s_last_sample;
+static aosl_atomic_t s_send_calls;
+static aosl_atomic_t s_last_send_len;
+static int s_capture_mode;
+static int s_playback_mode;
+
+enum {
+    CAPTURE_MODE_NONE = 0,
+    CAPTURE_MODE_FRAME,
+    CAPTURE_MODE_INVALID,
+};
+
+enum {
+    PLAYBACK_MODE_FULL = 0,
+    PLAYBACK_MODE_SHORT,
+    PLAYBACK_MODE_ZERO,
+    PLAYBACK_MODE_FAIL,
+};
 
 static int capture_init(void **ctx, int rate, int channels, int bits) {
     assert(rate == MYBOT_MEDIA_SAMPLE_RATE && channels == MYBOT_MEDIA_CHANNELS && bits == 16);
@@ -25,9 +42,20 @@ static int capture_start(void *ctx) {
     return ctx == &s_capture_ctx ? 0 : -1;
 }
 static int capture_read(void *ctx, void *buf, int frames) {
-    (void)buf;
-    (void)frames;
-    return ctx == &s_capture_ctx ? 0 : -1;
+    if (ctx != &s_capture_ctx) {
+        return -1;
+    }
+    if (s_capture_mode == CAPTURE_MODE_INVALID) {
+        return frames + 1;
+    }
+    if (s_capture_mode != CAPTURE_MODE_FRAME) {
+        return 0;
+    }
+    int16_t *pcm = buf;
+    for (int i = 0; i < frames; ++i) {
+        pcm[i] = (int16_t)(100 + i);
+    }
+    return frames;
 }
 static int capture_stop(void *ctx) {
     return ctx == &s_capture_ctx ? 0 : -1;
@@ -46,8 +74,17 @@ static int playback_start(void *ctx) {
 }
 static int playback_write(void *ctx, const void *buf, int frames) {
     assert(ctx == &s_playback_ctx && buf != NULL && frames > 0);
-    aosl_atomic_set(&s_last_sample, ((const int16_t *)buf)[0]);
     aosl_atomic_inc(&s_playback_writes);
+    if (s_playback_mode == PLAYBACK_MODE_ZERO) {
+        return 0;
+    }
+    if (s_playback_mode == PLAYBACK_MODE_FAIL) {
+        return -1;
+    }
+    aosl_atomic_set(&s_last_sample, ((const int16_t *)buf)[0]);
+    if (s_playback_mode == PLAYBACK_MODE_SHORT) {
+        return frames > 1 ? frames / 2 : 1;
+    }
     return frames;
 }
 static int playback_stop(void *ctx) {
@@ -125,21 +162,42 @@ static bool wait_for_writes(int minimum, int timeout_ms) {
     return false;
 }
 
+static bool wait_for_sends(int minimum, int timeout_ms) {
+    for (int elapsed = 0; elapsed < timeout_ms; ++elapsed) {
+        if (aosl_atomic_read(&s_send_calls) >= minimum) {
+            return true;
+        }
+        aosl_hal_msleep(1);
+    }
+    return false;
+}
+
 static int send_audio(const void *data, size_t len, void *user_data) {
-    (void)data;
-    (void)len;
+    assert(data != NULL && len > 0);
     (void)user_data;
+    aosl_atomic_set(&s_last_send_len, (intptr_t)len);
+    aosl_atomic_inc(&s_send_calls);
     return 0;
 }
 
 int main(void) {
+    mybot_media_pipeline_init(NULL);
+    assert(mybot_media_pipeline_stop(NULL) < 0);
+    assert(mybot_media_pipeline_destroy(NULL) < 0);
+
     aosl_ctor();
     aosl_atomic_set(&s_playback_writes, 0);
     aosl_atomic_set(&s_last_sample, 0);
+    aosl_atomic_set(&s_send_calls, 0);
+    aosl_atomic_set(&s_last_send_len, 0);
 
     mybot_media_pipeline_t pipeline;
     mybot_media_pipeline_init(&pipeline);
     mybot_media_pipeline_callbacks_t callbacks = {.send_audio = send_audio};
+    assert(mybot_media_pipeline_start(&pipeline, NULL) < 0);
+    mybot_media_pipeline_callbacks_t invalid_callbacks = {0};
+    assert(mybot_media_pipeline_start(&pipeline, &invalid_callbacks) < 0);
+    assert(mybot_media_pipeline_destroy(&pipeline) < 0);
     assert(mybot_platform_registry_get()->audio_capture == &s_capture_ops);
     assert(mybot_platform_registry_get()->audio_playback == &s_playback_ops);
     mybot_audio_t audio_probe;
@@ -153,9 +211,38 @@ int main(void) {
     for (int i = 0; i < MYBOT_MEDIA_FRAME_SAMPLES; ++i) {
         rtc_frame[i] = 7;
     }
+    mybot_media_pipeline_push_remote_audio(NULL, rtc_frame, sizeof(rtc_frame));
+    mybot_media_pipeline_push_remote_audio(&pipeline, NULL, sizeof(rtc_frame));
+    mybot_media_pipeline_push_remote_audio(&pipeline, rtc_frame, 0);
     mybot_media_pipeline_push_remote_audio(&pipeline, rtc_frame, sizeof(rtc_frame));
     assert(wait_for_writes(1, 1000));
     assert(aosl_atomic_read(&s_last_sample) == 7);
+
+    /* A short write keeps the pending frame and resumes with the remainder. */
+    s_playback_mode = PLAYBACK_MODE_SHORT;
+    int writes_before_short = (int)aosl_atomic_read(&s_playback_writes);
+    rtc_frame[0] = 9;
+    mybot_media_pipeline_push_remote_audio(&pipeline, rtc_frame, sizeof(rtc_frame));
+    assert(wait_for_writes(writes_before_short + 1, 1000));
+    s_playback_mode = PLAYBACK_MODE_FULL;
+    assert(wait_for_writes(writes_before_short + 2, 1000));
+
+    /* Zero progress is retried without losing the pending frame. */
+    s_playback_mode = PLAYBACK_MODE_ZERO;
+    int writes_before_zero = (int)aosl_atomic_read(&s_playback_writes);
+    mybot_media_pipeline_push_remote_audio(&pipeline, rtc_frame, sizeof(rtc_frame));
+    assert(wait_for_writes(writes_before_zero + 1, 1000));
+    s_playback_mode = PLAYBACK_MODE_FULL;
+    assert(wait_for_writes(writes_before_zero + 2, 1000));
+
+    /* A failed write drops only the current pending frame; later audio still works. */
+    s_playback_mode = PLAYBACK_MODE_FAIL;
+    int writes_before_fail = (int)aosl_atomic_read(&s_playback_writes);
+    mybot_media_pipeline_push_remote_audio(&pipeline, rtc_frame, sizeof(rtc_frame));
+    assert(wait_for_writes(writes_before_fail + 1, 1000));
+    s_playback_mode = PLAYBACK_MODE_FULL;
+    mybot_media_pipeline_push_remote_audio(&pipeline, rtc_frame, sizeof(rtc_frame));
+    assert(wait_for_writes(writes_before_fail + 2, 1000));
 
     int writes_before_prompt = (int)aosl_atomic_read(&s_playback_writes);
     assert(mybot_media_pipeline_play_prompt(&pipeline, MYBOT_PROMPT_PAIR_CODE, "1") == 0);
@@ -163,7 +250,19 @@ int main(void) {
     assert(aosl_atomic_read(&s_last_sample) == 100);
     mybot_media_pipeline_stop_prompt(&pipeline);
 
+    /* Capture and uplink run only when the capture source produces frames. */
+    s_capture_mode = CAPTURE_MODE_INVALID;
+    aosl_hal_msleep(70);
+    s_capture_mode = CAPTURE_MODE_FRAME;
+    assert(wait_for_sends(1, 1000));
+    assert(aosl_atomic_read(&s_last_send_len) > 0);
+    mybot_media_pipeline_adjust_volume(&pipeline, -20);
+    assert(mybot_audio_get_media_volume(&pipeline.audio) == 80);
+    mybot_media_pipeline_adjust_volume(&pipeline, 30);
+    assert(mybot_audio_get_media_volume(&pipeline.audio) == 100);
+
     mybot_media_pipeline_set_rtc_connected(&pipeline, false);
+    mybot_media_pipeline_push_remote_audio(&pipeline, rtc_frame, sizeof(rtc_frame));
     assert(mybot_media_pipeline_flush_session(&pipeline) == 0);
     assert(mybot_media_pipeline_stop(&pipeline) == 0);
     assert(mybot_media_pipeline_destroy(&pipeline) == 0);

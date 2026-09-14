@@ -39,6 +39,15 @@ int main(void) {
     mybot_presenter_t presenter = {0};
     mybot_state_model_t state_model;
 
+    assert(mybot_presenter_init(NULL) < 0);
+    mybot_presenter_deinit(NULL);
+    mybot_presenter_show_screen(NULL, MYBOT_LCD_SCREEN_READY);
+    mybot_presenter_show_pair_code(NULL, "1");
+    mybot_presenter_set_vp_registered(NULL, true);
+    mybot_presenter_update_server_indicator(NULL, MYBOT_LCD_INDICATOR_LISTENING, true);
+    mybot_presenter_clear_server_indicators(NULL);
+    mybot_presenter_render_state(NULL, NULL);
+
     aosl_ctor();
     mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
     descriptor.lcd = &ops;
@@ -48,6 +57,10 @@ int main(void) {
 
     mybot_presenter_show_screen(&presenter, MYBOT_LCD_SCREEN_STARTING);
     assert(s_last_content.screen == MYBOT_LCD_SCREEN_STARTING);
+
+    int renders_before_invalid_screen = s_render_count;
+    mybot_presenter_show_screen(&presenter, MYBOT_LCD_SCREEN_COUNT);
+    assert(s_render_count == renders_before_invalid_screen);
 
     mybot_presenter_show_pair_code(&presenter, "123456");
     assert(s_last_content.screen == MYBOT_LCD_SCREEN_PAIR_CODE);

@@ -289,6 +289,11 @@ int main(void) {
     assert(mybot_platform_register(&descriptor) < 0);
 
     descriptor = complete_descriptor();
+    descriptor.audio_volume = &s_volume;
+    descriptor.https = &s_https;
+    descriptor.lcd = &s_lcd;
+    descriptor.announce = &s_announce;
+    descriptor.wake_words = &s_wake_words;
     assert(mybot_platform_register(&descriptor) == 0);
     assert(mybot_platform_registry_is_registered());
     const mybot_platform_descriptor_t *registered = mybot_platform_registry_get();
@@ -297,11 +302,11 @@ int main(void) {
     assert(registered->key == &s_key);
     assert(registered->audio_capture == &s_capture);
     assert(registered->audio_playback == &s_playback);
-    assert(registered->audio_volume == NULL);
-    assert(registered->https == NULL);
-    assert(registered->lcd == NULL);
-    assert(registered->announce == NULL);
-    assert(registered->wake_words == NULL);
+    assert(registered->audio_volume == &s_volume);
+    assert(registered->https == &s_https);
+    assert(registered->lcd == &s_lcd);
+    assert(registered->announce == &s_announce);
+    assert(registered->wake_words == &s_wake_words);
 
     /* Registration is process-wide and succeeds only once. */
     assert(mybot_platform_register(&descriptor) < 0);

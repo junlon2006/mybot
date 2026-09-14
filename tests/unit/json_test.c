@@ -93,6 +93,7 @@ static void test_arrays_escapes_and_numbers(void) {
     assert(mybot_json_parse("1.") == NULL);
     assert(mybot_json_parse("01") == NULL);
     assert(mybot_json_parse("1 trailing") == NULL);
+    assert(mybot_json_parse("\v1") == NULL);
 
     /* Strict RFC 8259 string validation. */
     assert(mybot_json_parse("\"bad\\q\"") == NULL);
@@ -112,8 +113,43 @@ static void test_arrays_escapes_and_numbers(void) {
     assert(mybot_json_parse(nested) == NULL);
 }
 
+static void test_empty_containers_and_number_formats(void) {
+    mybot_json_t *array = mybot_json_parse("[]");
+    assert(array != NULL && array->type == MYBOT_JSON_ARRAY && array->child == NULL);
+    char *printed = mybot_json_print_unformatted(array);
+    assert(printed != NULL && strcmp(printed, "[]") == 0);
+    mybot_json_free_string(printed);
+    mybot_json_delete(array);
+
+    mybot_json_t *object = mybot_json_parse("{}");
+    assert(object != NULL && object->type == MYBOT_JSON_OBJECT && object->child == NULL);
+    printed = mybot_json_print_unformatted(object);
+    assert(printed != NULL && strcmp(printed, "{}") == 0);
+    mybot_json_free_string(printed);
+    mybot_json_delete(object);
+
+    object = mybot_json_create_object();
+    assert(object != NULL);
+    assert(mybot_json_add_number(object, "fraction", 1.5) == 0);
+    assert(mybot_json_add_number(object, "small", 0.0000001) == 0);
+    assert(mybot_json_add_number(object, "large", 10000000000.0) == 0);
+    printed = mybot_json_print_unformatted(object);
+    assert(printed != NULL);
+    assert(strstr(printed, "fraction") != NULL);
+    mybot_json_free_string(printed);
+    mybot_json_delete(object);
+
+    mybot_json_t *escaped = mybot_json_parse("\"\\b\\f\\r\\t\\u0061\\uD83D\\uDE00\"");
+    assert(escaped != NULL && escaped->type == MYBOT_JSON_STRING);
+    const char expected[] = "\b\f\r\ta\xF0\x9F\x98\x80";
+    assert(strcmp(escaped->valuestring, expected) == 0);
+    mybot_json_delete(escaped);
+}
+
 static void test_allocation_failure(void) {
     mybot_json_hooks_t hooks = {.malloc_fn = test_malloc, .free_fn = test_free};
+    mybot_json_hooks_t invalid_hooks = {.malloc_fn = NULL, .free_fn = test_free};
+    assert(mybot_json_init_hooks(&invalid_hooks) < 0);
     assert(mybot_json_init_hooks(&hooks) == 0);
 
     s_alloc_count = 0;
@@ -132,6 +168,7 @@ int main(void) {
     test_parse_and_access();
     test_build_and_print();
     test_arrays_escapes_and_numbers();
+    test_empty_containers_and_number_formats();
     test_allocation_failure();
     aosl_dtor();
     puts("json_test: ok");

@@ -699,11 +699,6 @@ static int parse_response(const char *raw, size_t raw_len, int stream_closed,
     }
     p = nl + 1;
 
-    /* Skip a CR that begins an immediate empty header line. */
-    if (p < end && *p == '\r') {
-        p++;
-    }
-
     /* Parse headers. */
     size_t body_offset = 0;
     size_t content_length = 0;
@@ -721,9 +716,6 @@ static int parse_response(const char *raw, size_t raw_len, int stream_closed,
         /* An empty line terminates the headers. */
         if (hdr_len == 0 || (hdr_len == 1 && *p == '\r')) {
             p = nl + 1;
-            if (p < end && *p == '\r') {
-                p++;
-            }
             body_offset = (size_t)(p - raw);
             headers_complete = 1;
             break;
