@@ -6,6 +6,7 @@
 #include "mybot_state_model.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -14,7 +15,7 @@ extern "C" {
 typedef struct {
     mybot_lcd_t lcd;
     bool active;
-    bool vp_registered;
+    uint32_t indicators;
 } mybot_presenter_t;
 
 int mybot_presenter_init(mybot_presenter_t *presenter);
@@ -23,6 +24,11 @@ void mybot_presenter_show_screen(mybot_presenter_t *presenter, mybot_lcd_screen_
 void mybot_presenter_show_pair_code(mybot_presenter_t *presenter, const char *code);
 /** Set the voice-print registration indicator for the active conversation. */
 void mybot_presenter_set_vp_registered(mybot_presenter_t *presenter, bool registered);
+/** Update one mutually exclusive server-state indicator. */
+void mybot_presenter_update_server_indicator(mybot_presenter_t *presenter,
+                                             mybot_lcd_indicator_t indicator, bool active);
+/** Clear all server-state indicators. */
+void mybot_presenter_clear_server_indicators(mybot_presenter_t *presenter);
 void mybot_presenter_render_state(mybot_presenter_t *presenter,
                                   const mybot_state_model_t *state_model);
 

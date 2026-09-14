@@ -139,7 +139,9 @@ BearSSL 或芯片厂商 TLS socket API；SDK 核心
 `MYBOT_LCD_SCREEN_IN_CONVERSATION` 中，`MYBOT_LCD_INDICATOR_VP_REGISTERED` 表示当前会话的声纹
 已由服务器注册成功，平台应将其渲染为会话界面的附加指示器。平台应忽略无法识别的位，不能
 根据该指示器自行推断生命周期状态。该位清零时，平台可以自行显示“注册中/未注册”标记，
-但这只是显示状态，不能改变 SDK 生命周期。
+但这只是显示状态，不能改变 SDK 生命周期。`MYBOT_LCD_INDICATOR_LISTENING`、
+`MYBOT_LCD_INDICATOR_THINKING` 和 `MYBOT_LCD_INDICATOR_SPEAKING` 分别表示服务端正在监听、
+思考或播报，后三个位互斥。
 
 ### 唤醒词（可选）
 
@@ -270,8 +272,8 @@ RTM UID 必须非空、长度小于 64 字节，并且只能包含 Agora 接受�
 直到订阅成功。两步均成功前不会创建或加入 RTC connection，因此平台必须保证 control owner
 等待期间 RTM 回调线程仍可运行。声纹状态只接受当前会话 channel、当前 agent 发送且字段严格
 匹配 `"object":"message.sal_status"` 与 `"status":"VP_REGISTER_SUCCESS"` 的消息。SDK 在
-会话开始和结束时重置该状态，并通过 `MYBOT_LCD_INDICATOR_VP_REGISTERED` 暴露成功指示；P2P
-RTM 回调继续保留用于点对点消息。
+会话开始和结束时重置这些状态，并通过 `MYBOT_LCD_INDICATOR_VP_REGISTERED` 暴露声纹成功指示，
+通过三个服务端状态位暴露对话阶段；P2P RTM 回调继续保留用于点对点消息。
 
 ## 第 7 步：交叉编译
 

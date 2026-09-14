@@ -1272,6 +1272,38 @@ int main(void) {
 
     emit_rtm_subscribe_data("rtc-channel", "agent-uid", vp_message, sizeof(vp_message) - 1U);
     assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_VP_REGISTERED, 1000));
+
+    const char listening_message[] =
+        "{\"event_type\":\"state.listening\",\"payload\":{\"value\":true}}";
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", listening_message,
+                            sizeof(listening_message) - 1U);
+    assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_LISTENING, 1000));
+    assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_THINKING, false, 1000));
+
+    const char thinking_message[] =
+        "{\"event_type\":\"state.thinking\",\"payload\":{\"value\":true}}";
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", thinking_message,
+                            sizeof(thinking_message) - 1U);
+    assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_THINKING, 1000));
+    assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_LISTENING, false, 1000));
+
+    const char speaking_message[] =
+        "{\"event_type\":\"state.speaking\",\"payload\":{\"value\":true}}";
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", speaking_message,
+                            sizeof(speaking_message) - 1U);
+    assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_SPEAKING, 1000));
+
+    emit_rtm_subscribe_data("rtc-channel", "other-agent", thinking_message,
+                            sizeof(thinking_message) - 1U);
+    assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_SPEAKING, 1000));
+    assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_THINKING, false, 1000));
+
+    const char speaking_done_message[] =
+        "{\"event_type\":\"state.speaking\",\"payload\":{\"value\":false}}";
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", speaking_done_message,
+                            sizeof(speaking_done_message) - 1U);
+    assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_SPEAKING, false, 1000));
+
     emit_key_event(MYBOT_KEY_EVENT_PAIR);
     assert(wait_for_counter(&s_pair_requests, 2, 1000));
 

@@ -69,11 +69,12 @@ int main(void) {
 
     mybot_lcd_content_t content = {0};
     content.screen = MYBOT_LCD_SCREEN_IN_CONVERSATION;
-    content.indicators = MYBOT_LCD_INDICATOR_VP_REGISTERED;
+    content.indicators = MYBOT_LCD_INDICATOR_VP_REGISTERED | MYBOT_LCD_INDICATOR_LISTENING;
     assert(mybot_lcd_show_content(&s_lcd, &content) == 0);
     assert(s_render_count == 2);
     assert(s_last_content.screen == MYBOT_LCD_SCREEN_IN_CONVERSATION);
-    assert(s_last_content.indicators == MYBOT_LCD_INDICATOR_VP_REGISTERED);
+    assert(s_last_content.indicators ==
+           (MYBOT_LCD_INDICATOR_VP_REGISTERED | MYBOT_LCD_INDICATOR_LISTENING));
     assert(mybot_lcd_show_content(&s_lcd, NULL) < 0);
 
     assert(mybot_lcd_show_pair_code(&s_lcd, "123456") == 0);

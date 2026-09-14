@@ -31,6 +31,9 @@
 
 static const char k_rtm_vp_status_object[] = "message.sal_status";
 static const char k_rtm_vp_status_success[] = "VP_REGISTER_SUCCESS";
+static const char k_rtm_state_listening[] = "state.listening";
+static const char k_rtm_state_thinking[] = "state.thinking";
+static const char k_rtm_state_speaking[] = "state.speaking";
 
 typedef struct {
     aosl_atomic_t running;
@@ -128,8 +131,10 @@ static uint32_t rtm_uid_fingerprint(const char *rtm_uid, size_t len) {
     return fingerprint;
 }
 
-static bool rtm_data_is_vp_register_success(const void *data, size_t len) {
-    if (!data || len == 0 || len > RTM_MESSAGE_MAX_BYTES || memchr(data, '\0', len) != NULL) {
+static bool rtm_data_get_lcd_indicator(const void *data, size_t len,
+                                       mybot_lcd_indicator_t *indicator, bool *active) {
+    if (!data || !indicator || !active || len == 0 || len > RTM_MESSAGE_MAX_BYTES ||
+        memchr(data, '\0', len) != NULL) {
         return false;
     }
 
@@ -145,10 +150,57 @@ static bool rtm_data_is_vp_register_success(const void *data, size_t len) {
 
     const char *object = mybot_json_get_string(json_get_exact_object_item(root, "object"));
     const char *status = mybot_json_get_string(json_get_exact_object_item(root, "status"));
-    bool matched = object && status && strcmp(object, k_rtm_vp_status_object) == 0 &&
-                   strcmp(status, k_rtm_vp_status_success) == 0;
+    if (object && status && strcmp(object, k_rtm_vp_status_object) == 0 &&
+        strcmp(status, k_rtm_vp_status_success) == 0) {
+        *indicator = MYBOT_LCD_INDICATOR_VP_REGISTERED;
+        *active = true;
+        mybot_json_delete(root);
+        return true;
+    }
+
+    const char *event_type = mybot_json_get_string(json_get_exact_object_item(root, "event_type"));
+    const mybot_json_t *payload = json_get_exact_object_item(root, "payload");
+    const mybot_json_t *value = payload ? json_get_exact_object_item(payload, "value") : NULL;
+    if (!event_type || !value ||
+        (value->type != MYBOT_JSON_TRUE && value->type != MYBOT_JSON_FALSE)) {
+        mybot_json_delete(root);
+        return false;
+    }
+
+    if (strcmp(event_type, k_rtm_state_listening) == 0) {
+        *indicator = MYBOT_LCD_INDICATOR_LISTENING;
+    } else if (strcmp(event_type, k_rtm_state_thinking) == 0) {
+        *indicator = MYBOT_LCD_INDICATOR_THINKING;
+    } else if (strcmp(event_type, k_rtm_state_speaking) == 0) {
+        *indicator = MYBOT_LCD_INDICATOR_SPEAKING;
+    } else {
+        mybot_json_delete(root);
+        return false;
+    }
+
+    *active = value->type == MYBOT_JSON_TRUE;
     mybot_json_delete(root);
-    return matched;
+    return true;
+}
+
+static void handle_server_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, uintptr_t argc,
+                                uintptr_t argv[]);
+
+static void queue_server_state(mybot_runtime_t *runtime, const char *channel, const char *rtm_uid,
+                               mybot_lcd_indicator_t indicator, bool active) {
+    size_t rtm_uid_len = strlen(rtm_uid);
+    uint32_t rtm_uid_hash = rtm_uid_fingerprint(rtm_uid, rtm_uid_len);
+    size_t channel_len = strlen(channel);
+    uint32_t channel_hash = rtm_uid_fingerprint(channel, channel_len);
+
+    AOSL_LOG_NTC("[RTM] matched server state (channel=%s, from=%s, indicator=0x%x, active=%d)",
+                 channel, rtm_uid, (unsigned int)indicator, active ? 1 : 0);
+    if (aosl_mpq_queue(runtime->control_mpq, AOSL_MPQ_INVALID, AOSL_REF_INVALID,
+                       "handle_server_state", handle_server_state, 7, (uintptr_t)runtime,
+                       (uintptr_t)rtm_uid_len, (uintptr_t)rtm_uid_hash, (uintptr_t)channel_len,
+                       (uintptr_t)channel_hash, (uintptr_t)indicator, (uintptr_t)active) < 0) {
+        AOSL_LOG_WRN("failed to queue server state LCD event");
+    }
 }
 
 static void handle_vp_register_success(const aosl_ts_t *queued_ts, aosl_refobj_t robj,
@@ -175,6 +227,34 @@ static void handle_vp_register_success(const aosl_ts_t *queued_ts, aosl_refobj_t
 
     AOSL_LOG_NTC("[RTM] voiceprint registration succeeded");
     mybot_presenter_set_vp_registered(&runtime->presenter, true);
+    mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_IN_CONVERSATION);
+}
+
+static void handle_server_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, uintptr_t argc,
+                                uintptr_t argv[]) {
+    (void)queued_ts;
+    (void)robj;
+    if (argc != 7) {
+        return;
+    }
+
+    mybot_runtime_t *runtime = (mybot_runtime_t *)argv[0];
+    size_t rtm_uid_len = (size_t)argv[1];
+    uint32_t rtm_uid_hash = (uint32_t)argv[2];
+    size_t channel_len = (size_t)argv[3];
+    uint32_t channel_hash = (uint32_t)argv[4];
+    mybot_lcd_indicator_t indicator = (mybot_lcd_indicator_t)argv[5];
+    bool active = argv[6] != 0;
+    if (!runtime || !runtime_is_running(runtime) ||
+        runtime_get_state(runtime) != MYBOT_STATE_IN_CONVERSATION ||
+        strlen(runtime->rtc_agent_uid) != rtm_uid_len ||
+        rtm_uid_fingerprint(runtime->rtc_agent_uid, rtm_uid_len) != rtm_uid_hash ||
+        strlen(runtime->rtc_channel) != channel_len ||
+        rtm_uid_fingerprint(runtime->rtc_channel, channel_len) != channel_hash) {
+        return;
+    }
+
+    mybot_presenter_update_server_indicator(&runtime->presenter, indicator, active);
     mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_IN_CONVERSATION);
 }
 
@@ -323,8 +403,14 @@ static void rtc_on_rtm_subscribe_data(const char *channel, const char *rtm_uid, 
                      len);
         return;
     }
-    if (rtm_data_is_vp_register_success(data, len)) {
-        queue_vp_register_success(runtime, channel, rtm_uid, custom_type, len);
+    mybot_lcd_indicator_t indicator;
+    bool active;
+    if (rtm_data_get_lcd_indicator(data, len, &indicator, &active)) {
+        if (indicator == MYBOT_LCD_INDICATOR_VP_REGISTERED) {
+            queue_vp_register_success(runtime, channel, rtm_uid, custom_type, len);
+        } else {
+            queue_server_state(runtime, channel, rtm_uid, indicator, active);
+        }
         return;
     }
 
@@ -386,6 +472,7 @@ static void dev_on_conversation_start(const mybot_conversation_params_t *params,
     snprintf(runtime->rtc_channel, sizeof(runtime->rtc_channel), "%s", params->rtc_channel);
     snprintf(runtime->rtc_agent_uid, sizeof(runtime->rtc_agent_uid), "%s", params->rtc_agent_uid);
     mybot_presenter_set_vp_registered(&runtime->presenter, false);
+    mybot_presenter_clear_server_indicators(&runtime->presenter);
     callbacks.on_remote_audio = rtc_on_remote_audio;
     callbacks.on_state_changed = rtc_on_state_changed;
     callbacks.on_token_will_expire = rtc_on_token_will_expire;
@@ -415,6 +502,7 @@ static void dev_on_conversation_stop(void *user_data) {
     runtime->rtc_channel[0] = '\0';
     runtime->rtc_agent_uid[0] = '\0';
     mybot_presenter_set_vp_registered(&runtime->presenter, false);
+    mybot_presenter_clear_server_indicators(&runtime->presenter);
     /* Render from the current state snapshot before the lifecycle publishes its
      * next device state, so the old conversation overlay cannot win a race. */
     mybot_presenter_render_state(&runtime->presenter, &runtime->state_model);

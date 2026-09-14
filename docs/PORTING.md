@@ -156,7 +156,10 @@ operations table to the platform descriptor.
 voice-print registration for the active conversation. Render this as an in-conversation indicator;
 ignore bits the platform does not recognize and do not derive lifecycle state from the indicator.
 A platform may show its own pending/unregistered marker while this bit is clear, but the marker is
-only presentation state and must not change the SDK lifecycle.
+only presentation state and must not change the SDK lifecycle. The
+`MYBOT_LCD_INDICATOR_LISTENING`, `MYBOT_LCD_INDICATOR_THINKING`, and
+`MYBOT_LCD_INDICATOR_SPEAKING` bits expose the server's current conversation phase; these three bits
+are mutually exclusive.
 
 ### Wake words (optional)
 
@@ -303,9 +306,10 @@ channel and waits up to five seconds for subscription success. The SDK does not 
 RTC connection until both operations succeed, so platforms must allow RTM callbacks to run while
 the control owner is waiting. Voiceprint status accepts only a channel message whose exact fields are
 `"object":"message.sal_status"` and `"status":"VP_REGISTER_SUCCESS"`, from the current agent on
-the current conversation channel. The SDK resets this indicator at conversation boundaries and
-exposes success through `MYBOT_LCD_INDICATOR_VP_REGISTERED`; the P2P RTM callback remains available
-for direct messages.
+the current conversation channel. It also accepts `state.listening`, `state.thinking`, and
+`state.speaking` messages with a boolean `payload.value` and exposes them as mutually exclusive LCD
+indicators. The SDK resets these indicators at conversation boundaries and exposes success through
+`MYBOT_LCD_INDICATOR_VP_REGISTERED`; the P2P RTM callback remains available for direct messages.
 
 ## Step 7: Cross-compile
 
