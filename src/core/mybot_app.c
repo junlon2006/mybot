@@ -310,8 +310,7 @@ static void rtc_on_rtm_subscribe_data(const char *channel, const char *rtm_uid, 
         AOSL_LOG_NTC("[RTM] application channel data ignored: runtime is not running");
         return;
     }
-    if (!channel ||
-        strnlen(channel, sizeof(runtime->rtc_channel)) >= sizeof(runtime->rtc_channel)) {
+    if (!channel || strnlen(channel, 128) >= 128) {
         AOSL_LOG_WRN("[RTM] application channel data ignored: invalid channel (len=%zu)", len);
         return;
     }
@@ -322,10 +321,6 @@ static void rtc_on_rtm_subscribe_data(const char *channel, const char *rtm_uid, 
     if (strnlen(rtm_uid, MYBOT_RTM_UID_MAX_LEN) >= MYBOT_RTM_UID_MAX_LEN) {
         AOSL_LOG_WRN("[RTM] application channel data ignored: invalid sender UID length (len=%zu)",
                      len);
-        return;
-    }
-    if (runtime->rtc_agent_uid[0] == '\0' || strcmp(rtm_uid, runtime->rtc_agent_uid) != 0) {
-        AOSL_LOG_WRN("[RTM] application channel data ignored: unexpected sender UID=%s", rtm_uid);
         return;
     }
     if (rtm_data_is_vp_register_success(data, len)) {
@@ -417,20 +412,16 @@ static void dev_on_conversation_start(const mybot_conversation_params_t *params,
 
 static void dev_on_conversation_stop(void *user_data) {
     mybot_runtime_t *runtime = user_data;
-    bool app_running = runtime_is_running(runtime);
     runtime->rtc_channel[0] = '\0';
     runtime->rtc_agent_uid[0] = '\0';
     mybot_presenter_set_vp_registered(&runtime->presenter, false);
     /* Render from the current state snapshot before the lifecycle publishes its
      * next device state, so the old conversation overlay cannot win a race. */
     mybot_presenter_render_state(&runtime->presenter, &runtime->state_model);
-    mybot_media_pipeline_set_rtc_connected(&runtime->media, false);
     if (mybot_agora_rtc_leave() < 0) {
         AOSL_LOG_ERR("failed to leave RTC conversation");
     }
-    if (app_running && mybot_media_pipeline_flush_session(&runtime->media) < 0) {
-        AOSL_LOG_ERR("failed to flush media session after RTC leave");
-    }
+    (void)mybot_media_pipeline_end_session(&runtime->media);
 }
 
 static void dev_on_state_changed(mybot_device_state_t state, void *user_data) {
@@ -529,12 +520,15 @@ static void cleanup_services(mybot_runtime_t *runtime) {
         runtime->control_timer = AOSL_MPQ_TIMER_INVALID;
     }
 
+    if (mybot_media_pipeline_stop(&runtime->media) < 0) {
+        AOSL_LOG_ERR("media pipeline stop incomplete");
+    }
+    /* Stop audio I/O before the lifecycle callback performs network/RTC
+     * shutdown. This guarantees a blocked capture or playback operation is
+     * unblocked before the control worker waits on conversation teardown. */
     if (runtime->lifecycle_initialized) {
         mybot_device_lifecycle_shutdown(&runtime->lifecycle);
         runtime->lifecycle_initialized = false;
-    }
-    if (mybot_media_pipeline_stop(&runtime->media) < 0) {
-        AOSL_LOG_ERR("media pipeline stop incomplete");
     }
     mybot_kv_store_deinit(&runtime->kv_store);
 }
@@ -550,6 +544,7 @@ static int start_services(mybot_runtime_t *runtime) {
     media_cbs.send_audio = media_send_audio;
     media_cbs.on_wake_word = media_on_wake_word;
     media_cbs.user_data = runtime;
+    mybot_media_pipeline_init(&runtime->media);
     if (mybot_media_pipeline_start(&runtime->media, &media_cbs) < 0) {
         goto fail;
     }
@@ -812,7 +807,9 @@ static void control_stop_runtime(mybot_runtime_t *runtime) {
                                                          : MYBOT_LCD_SCREEN_STOPPING);
     mybot_presenter_deinit(&runtime->presenter);
 
-    mybot_agora_rtc_fini();
+    if (mybot_agora_rtc_fini() < 0) {
+        AOSL_LOG_ERR("RTC fini incomplete; RTSA reported terminal cleanup failure");
+    }
     if (mybot_media_pipeline_destroy(&runtime->media) < 0) {
         AOSL_LOG_ERR("media pipeline destroy skipped because stop was incomplete");
     }

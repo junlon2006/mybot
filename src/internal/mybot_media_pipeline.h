@@ -45,6 +45,7 @@ typedef enum {
 } mybot_pb_source_t;
 
 typedef struct {
+    bool initialized;
     aosl_atomic_t running;
     aosl_atomic_t rtc_connected;
 #if MYBOT_WAKE_WORDS
@@ -91,6 +92,8 @@ typedef struct {
     int16_t send_frame[MYBOT_MEDIA_FRAME_SAMPLES * MYBOT_MEDIA_CHANNELS];
 } mybot_media_pipeline_t;
 
+/** Initialize caller-owned pipeline storage before start. */
+void mybot_media_pipeline_init(mybot_media_pipeline_t *pipeline);
 int mybot_media_pipeline_start(mybot_media_pipeline_t *pipeline,
                                const mybot_media_pipeline_callbacks_t *callbacks);
 /** Stop workers and device I/O; returns -1 while any worker remains live. */
@@ -101,6 +104,8 @@ int mybot_media_pipeline_destroy(mybot_media_pipeline_t *pipeline);
 void mybot_media_pipeline_set_rtc_connected(mybot_media_pipeline_t *pipeline, bool connected);
 /** Flush all session-owned PCM through the consumer workers. */
 int mybot_media_pipeline_flush_session(mybot_media_pipeline_t *pipeline);
+/** Mark the RTC session ended and synchronously drain its PCM buffers. */
+int mybot_media_pipeline_end_session(mybot_media_pipeline_t *pipeline);
 #if MYBOT_WAKE_WORDS
 void mybot_media_pipeline_set_wake_words_enabled(mybot_media_pipeline_t *pipeline, bool enabled);
 #endif

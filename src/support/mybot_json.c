@@ -146,6 +146,9 @@ static const char *parse_number_u64(mybot_json_t *item, const char *num) {
     } /* Fractional part? */
 
     if (*num == 'e' || *num == 'E') /* Exponent? */ {
+        is_float = 1;
+        if (f == 0.0)
+            f = (double)n;
         num++;
         if (*num == '+') {
             num++;
@@ -182,8 +185,17 @@ static const char *parse_number_u64(mybot_json_t *item, const char *num) {
             pow(10.0,
                 (scale +
                  subscale * signsubscale)); /* number = +/- number.fraction * 10^+/- exponent */
+        if (!isfinite(f)) {
+            return 0;
+        }
+        /* Converting an out-of-range finite double to long long is undefined
+         * in C.  Keep the integer cache representable as well as the double
+         * value itself. */
+        if (f < -9223372036854775808.0 || f >= 9223372036854775808.0) {
+            return 0;
+        }
         item->valuedouble = f;
-        item->valueint = (long long)f;
+        item->valueint = (f > (double)LLONG_MAX || f < (double)LLONG_MIN) ? 0 : (long long)f;
     }
 
     item->type = MYBOT_JSON_NUMBER;
@@ -266,6 +278,63 @@ static const char *parse_string(mybot_json_t *item, const char *str) {
     if (*str != '\"') {
         return 0;
     } /* not a string! */
+
+    /* Validate the complete string before allocating or decoding it.  The
+     * original cJSON routine tolerated unknown escapes and raw control bytes,
+     * which turns malformed JSON into silently altered application data. */
+    const char *check = str + 1;
+    while (*check != '\"') {
+        if (!*check || (unsigned char)*check < 0x20)
+            return 0;
+        if (*check++ != '\\')
+            continue;
+        switch (*check++) {
+        case '"':
+        case '\\':
+        case '/':
+        case 'b':
+        case 'f':
+        case 'n':
+        case 'r':
+        case 't':
+            break;
+        case 'u': {
+            unsigned first;
+            for (int i = 0; i < 4; ++i) {
+                const unsigned char h = (unsigned char)check[i];
+                if (!h ||
+                    !((h >= '0' && h <= '9') || (h >= 'A' && h <= 'F') || (h >= 'a' && h <= 'f')))
+                    return 0;
+            }
+            first = parse_hex4(check);
+            check += 4;
+            /* Values are exposed as NUL-terminated C strings; preserve that
+             * contract by rejecting an embedded U+0000 escape. */
+            if (first == 0)
+                return 0;
+            if (first >= 0xDC00 && first <= 0xDFFF)
+                return 0;
+            if (first >= 0xD800 && first <= 0xDBFF) {
+                if (check[0] != '\\' || check[1] != 'u' || !check[2] || !check[3] || !check[4] ||
+                    !check[5])
+                    return 0;
+                for (int i = 0; i < 4; ++i) {
+                    const unsigned char h = (unsigned char)check[2 + i];
+                    if (!((h >= '0' && h <= '9') || (h >= 'A' && h <= 'F') ||
+                          (h >= 'a' && h <= 'f')))
+                        return 0;
+                }
+                unsigned second = parse_hex4(check + 2);
+                if (second < 0xDC00 || second > 0xDFFF)
+                    return 0;
+                check += 6;
+            }
+            break;
+        }
+        default:
+            return 0;
+        }
+    }
 
     while (*ptr != '\"' && *ptr && ++len)
         if (*ptr++ == '\\')
@@ -448,11 +517,11 @@ static char *print_string(mybot_json_t *item) {
 }
 
 /* Predeclare these prototypes. */
-static const char *parse_value(mybot_json_t *item, const char *value);
+static const char *parse_value(mybot_json_t *item, const char *value, unsigned depth);
 static char *print_value(mybot_json_t *item);
-static const char *parse_array(mybot_json_t *item, const char *value);
+static const char *parse_array(mybot_json_t *item, const char *value, unsigned depth);
 static char *print_array(mybot_json_t *item);
-static const char *parse_object(mybot_json_t *item, const char *value);
+static const char *parse_object(mybot_json_t *item, const char *value, unsigned depth);
 static char *print_object(mybot_json_t *item);
 
 /* Utility to jump whitespace and cr/lf */
@@ -471,7 +540,7 @@ mybot_json_t *mybot_json_parse(const char *value) {
     if (!c)
         return 0; /* memory fail */
 
-    const char *end = parse_value(c, skip(value));
+    const char *end = parse_value(c, skip(value), 0);
     if (!end || *skip(end) != '\0') {
         mybot_json_delete(c);
         return 0;
@@ -485,7 +554,7 @@ char *mybot_json_print_unformatted(mybot_json_t *item) {
 }
 
 /* Parser core - when encountering text, process appropriately. */
-static const char *parse_value(mybot_json_t *item, const char *value) {
+static const char *parse_value(mybot_json_t *item, const char *value, unsigned depth) {
     if (!value) {
         return 0; /* Fail on null. */
     }
@@ -509,10 +578,10 @@ static const char *parse_value(mybot_json_t *item, const char *value) {
         return parse_number_u64(item, value);
     }
     if (*value == '[') {
-        return parse_array(item, value);
+        return parse_array(item, value, depth);
     }
     if (*value == '{') {
-        return parse_object(item, value);
+        return parse_object(item, value, depth);
     }
 
     return 0; /* failure. */
@@ -552,11 +621,13 @@ static char *print_value(mybot_json_t *item) {
 }
 
 /* Build an array from input text. */
-static const char *parse_array(mybot_json_t *item, const char *value) {
+static const char *parse_array(mybot_json_t *item, const char *value, unsigned depth) {
     mybot_json_t *child;
     if (*value != '[') {
         return 0;
     } /* not an array! */
+    if (depth >= 32)
+        return 0;
 
     item->type = MYBOT_JSON_ARRAY;
     value = skip(value + 1);
@@ -565,8 +636,8 @@ static const char *parse_array(mybot_json_t *item, const char *value) {
 
     item->child = child = mybot_json_new_item();
     if (!item->child)
-        return 0;                                  /* memory fail */
-    value = skip(parse_value(child, skip(value))); /* skip any spacing, get the value. */
+        return 0;                                             /* memory fail */
+    value = skip(parse_value(child, skip(value), depth + 1)); /* skip any spacing, get the value. */
     if (!value)
         return 0;
 
@@ -578,7 +649,7 @@ static const char *parse_array(mybot_json_t *item, const char *value) {
         child->next = new_item;
         new_item->prev = child;
         child = new_item;
-        value = skip(parse_value(child, skip(value + 1)));
+        value = skip(parse_value(child, skip(value + 1), depth + 1));
         if (!value)
             return 0; /* memory fail */
     }
@@ -660,11 +731,13 @@ static char *print_array(mybot_json_t *item) {
 }
 
 /* Build an object from the text. */
-static const char *parse_object(mybot_json_t *item, const char *value) {
+static const char *parse_object(mybot_json_t *item, const char *value, unsigned depth) {
     mybot_json_t *child;
     if (*value != '{') {
         return 0;
     } /* not an object! */
+    if (depth >= 32)
+        return 0;
 
     item->type = MYBOT_JSON_OBJECT;
     value = skip(value + 1);
@@ -682,7 +755,8 @@ static const char *parse_object(mybot_json_t *item, const char *value) {
     if (*value != ':') {
         return 0;
     } /* fail! */
-    value = skip(parse_value(child, skip(value + 1))); /* skip any spacing, get the value. */
+    value =
+        skip(parse_value(child, skip(value + 1), depth + 1)); /* skip any spacing, get the value. */
     if (!value)
         return 0;
 
@@ -702,7 +776,8 @@ static const char *parse_object(mybot_json_t *item, const char *value) {
         if (*value != ':') {
             return 0;
         } /* fail! */
-        value = skip(parse_value(child, skip(value + 1))); /* skip any spacing, get the value. */
+        value = skip(
+            parse_value(child, skip(value + 1), depth + 1)); /* skip any spacing, get the value. */
         if (!value)
             return 0;
     }

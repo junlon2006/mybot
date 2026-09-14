@@ -17,6 +17,8 @@
 #define MYBOT_PAIR_RETRY_MAX_TICKS 600
 #define MYBOT_RTC_TOKEN_RETRY_INITIAL_TICKS 10
 #define MYBOT_RTC_TOKEN_RETRY_MAX_TICKS 100
+#define MYBOT_STOP_RETRY_MAX_ATTEMPTS 3U
+#define MYBOT_STOP_RETRY_DELAY_TICKS 10U
 #define MYBOT_POLL_INTERVAL_MIN_SECONDS 3
 #define MYBOT_POLL_INTERVAL_MAX_SECONDS 60
 
@@ -412,6 +414,8 @@ static void action_start_conversation(mybot_device_lifecycle_t *lifecycle) {
 static void complete_conversation_locally(mybot_device_lifecycle_t *lifecycle) {
     clear_rtc_token_renewal(lifecycle);
     lifecycle->conversation_id[0] = '\0';
+    lifecycle->stop_retry_attempts = 0;
+    lifecycle->stop_retry_ticks_remaining = 0;
     if (lifecycle->cbs.on_conversation_stop) {
         lifecycle->cbs.on_conversation_stop(lifecycle->cbs.user_data);
     }
@@ -431,6 +435,12 @@ static void action_stop_conversation(mybot_device_lifecycle_t *lifecycle, const 
         return;
     }
 
+    if (lifecycle->stop_retry_ticks_remaining > 0) {
+        lifecycle->stop_retry_ticks_remaining--;
+        aosl_atomic_set(&lifecycle->stop_request, MYBOT_STOP_REQUEST_ERROR);
+        return;
+    }
+
     int ret = mybot_device_client_stop_conversation(lifecycle->server_base, lifecycle->device_id,
                                                     lifecycle->device_token,
                                                     lifecycle->conversation_id, reason);
@@ -441,20 +451,41 @@ static void action_stop_conversation(mybot_device_lifecycle_t *lifecycle, const 
         return;
     }
 
-    AOSL_LOG_NTC("conversation stopped");
-    clear_rtc_token_renewal(lifecycle);
-    lifecycle->conversation_id[0] = '\0';
-
-    if (lifecycle->cbs.on_conversation_stop) {
-        lifecycle->cbs.on_conversation_stop(lifecycle->cbs.user_data);
-    }
-
     if (api_rejected_device_auth(ret)) {
         AOSL_LOG_WRN("device credential rejected while stopping conversation (HTTP %d)", ret);
+        complete_conversation_locally(lifecycle);
         restart_pairing_after_auth_rejection(lifecycle);
-    } else {
-        set_state(lifecycle, MYBOT_DEVICE_STATE_RUNTIME);
+        return;
     }
+
+    /* A transient transport error or server failure may leave the remote
+     * conversation alive. Keep the lifecycle in-conversation and retry a few
+     * times so the service can observe the stop.  After the bounded retry
+     * budget, perform local cleanup and expose the failure in the log; this
+     * keeps the device usable even when the service is unavailable. */
+    if (ret < 0 || ret == 408 || ret == 429 || ret >= 500) {
+        if (lifecycle->stop_retry_attempts < MYBOT_STOP_RETRY_MAX_ATTEMPTS) {
+            lifecycle->stop_retry_attempts++;
+            lifecycle->stop_retry_ticks_remaining = MYBOT_STOP_RETRY_DELAY_TICKS;
+            /* Re-arm the control mailbox so the next eligible tick performs
+             * the retry after the delay. */
+            aosl_atomic_set(
+                &lifecycle->stop_request,
+                (reason && strcmp(reason, MYBOT_CONVERSATION_STOP_REASON_DEVICE_HANGUP) == 0)
+                    ? MYBOT_STOP_REQUEST_DEVICE_HANGUP
+                    : MYBOT_STOP_REQUEST_ERROR);
+            AOSL_LOG_WRN("stop conversation transient failure (%d), retry %u/%u", ret,
+                         lifecycle->stop_retry_attempts, MYBOT_STOP_RETRY_MAX_ATTEMPTS);
+            return;
+        }
+        AOSL_LOG_ERR("stop conversation failed after %u retries; completing locally",
+                     lifecycle->stop_retry_attempts);
+    } else if (ret != 0) {
+        AOSL_LOG_WRN("stop conversation rejected (HTTP %d); completing locally", ret);
+    }
+
+    AOSL_LOG_NTC("conversation stopped");
+    complete_conversation_locally(lifecycle);
 }
 
 static void action_renew_rtc_token(mybot_device_lifecycle_t *lifecycle) {
@@ -685,6 +716,13 @@ void mybot_device_lifecycle_shutdown(mybot_device_lifecycle_t *lifecycle) {
         aosl_atomic_read(&lifecycle->network_available) &&
         !aosl_atomic_read(&lifecycle->network_loss_pending)) {
         action_stop_conversation(lifecycle, MYBOT_CONVERSATION_STOP_REASON_DEVICE_HANGUP);
+        /* shutdown() is terminal for the control owner, so there may be no
+         * subsequent ticks to service a retry mailbox. Ensure resources are
+         * released even if the first stop request hit a transient failure. */
+        if (current_state(lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
+            AOSL_LOG_WRN("shutdown completing conversation locally after stop failure");
+            complete_conversation_locally(lifecycle);
+        }
     } else if (current_state(lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
         complete_conversation_locally(lifecycle);
     }

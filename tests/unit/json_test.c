@@ -89,9 +89,27 @@ static void test_arrays_escapes_and_numbers(void) {
     assert(mybot_json_parse("{\"value\":}") == NULL);
     assert(mybot_json_parse("-") == NULL);
     assert(mybot_json_parse("1e") == NULL);
+    assert(mybot_json_parse("1e20") == NULL);
     assert(mybot_json_parse("1.") == NULL);
     assert(mybot_json_parse("01") == NULL);
     assert(mybot_json_parse("1 trailing") == NULL);
+
+    /* Strict RFC 8259 string validation. */
+    assert(mybot_json_parse("\"bad\\q\"") == NULL);
+    assert(mybot_json_parse("\"bad\nline\"") == NULL);
+    assert(mybot_json_parse("\"\\uD800\"") == NULL);
+    assert(mybot_json_parse("\"\\uDC00\"") == NULL);
+    assert(mybot_json_parse("\"\\uD800\\u0041\"") == NULL);
+
+    char nested[80];
+    size_t pos = 0;
+    for (int i = 0; i < 33; ++i)
+        nested[pos++] = '[';
+    nested[pos++] = '0';
+    for (int i = 0; i < 33; ++i)
+        nested[pos++] = ']';
+    nested[pos] = '\0';
+    assert(mybot_json_parse(nested) == NULL);
 }
 
 static void test_allocation_failure(void) {
