@@ -20,6 +20,7 @@
 #include <api/aosl_mpq.h>
 #include <api/aosl_mpq_timer.h>
 #include <api/aosl_time.h>
+#include <hal/aosl_hal_memory.h>
 
 #include <stdio.h>
 #include <string.h>
@@ -138,13 +139,17 @@ static bool rtm_data_get_lcd_indicator(const void *data, size_t len,
         return false;
     }
 
-    char message[RTM_MESSAGE_MAX_BYTES + 1U];
+    char *message = (char *)aosl_hal_malloc(RTM_MESSAGE_MAX_BYTES + 1U);
+    if (!message) {
+        return false;
+    }
     memcpy(message, data, len);
     message[len] = '\0';
 
     mybot_json_t *root = mybot_json_parse(message);
     if (!root || root->type != MYBOT_JSON_OBJECT) {
         mybot_json_delete(root);
+        aosl_hal_free(message);
         return false;
     }
 
@@ -155,6 +160,7 @@ static bool rtm_data_get_lcd_indicator(const void *data, size_t len,
         *indicator = MYBOT_LCD_INDICATOR_VP_REGISTERED;
         *active = true;
         mybot_json_delete(root);
+        aosl_hal_free(message);
         return true;
     }
 
@@ -164,6 +170,7 @@ static bool rtm_data_get_lcd_indicator(const void *data, size_t len,
     if (!event_type || !value ||
         (value->type != MYBOT_JSON_TRUE && value->type != MYBOT_JSON_FALSE)) {
         mybot_json_delete(root);
+        aosl_hal_free(message);
         return false;
     }
 
@@ -175,11 +182,13 @@ static bool rtm_data_get_lcd_indicator(const void *data, size_t len,
         *indicator = MYBOT_LCD_INDICATOR_SPEAKING;
     } else {
         mybot_json_delete(root);
+        aosl_hal_free(message);
         return false;
     }
 
     *active = value->type == MYBOT_JSON_TRUE;
     mybot_json_delete(root);
+    aosl_hal_free(message);
     return true;
 }
 

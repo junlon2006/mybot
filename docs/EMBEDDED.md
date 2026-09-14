@@ -37,11 +37,16 @@ target-architecture package (the bundled shared library is x86_64 Linux only).
   worker keeps prompt PCM separate from the RTC playback ring, pads a final partial frame with
   silence, and plays the prompt once through the normal speaker path. Prompt and digit assets are
   loaded transiently while playing.
-- **Heap**: HTTP responses allocate 4 KB initially and grow to at most 32 KB per request (freed
-  after use); JSON parsing and platform implementations (ALSA, OpenSSL, file KV) allocate transiently.
-  All core allocations go through `aosl_hal_malloc`, which each platform can re-point.
-- Control-plane state (app, device lifecycle, Agora RTC) is statically allocated; there are no
-  per-conversation heap allocations in the core besides the HTTP/JSON temporaries above.
+- **Heap**: the HTTP request buffer is a fixed 2 KB allocation; HTTP responses allocate 4 KB initially
+  and grow to at most 32 KB per request (freed after use). Lifecycle authentication/conversation
+  responses, request headers, and the transient RTM LCD-state message buffer are also bounded
+  `aosl_hal_malloc` allocations released at the end of each transaction. JSON parsing and platform
+  implementations (ALSA, OpenSSL, file KV) allocate transiently as well. All core allocations go
+  through `aosl_hal_malloc`, which each platform can re-point.
+- Control-plane state (app, device lifecycle, Agora RTC) remains statically allocated; the bounded
+  heap allocations above occur only in control/RTM transactions, not in per-frame PCM processing.
+  Include their limits in the platform heap budget and treat allocation failure as an incomplete
+  transaction without using the partial response.
 
 The thread-safe application state model stores runtime phase, connectivity, and the device-lifecycle
 projection in one atomic snapshot. `mybot_get_state()` derives the public state from that snapshot:

@@ -5,6 +5,7 @@
 #include <mybot/platform/mybot_audio.h>
 
 #include <api/aosl_log.h>
+#include <hal/aosl_hal_memory.h>
 
 #include <string.h>
 #include <limits.h>
@@ -30,6 +31,21 @@ static void drain_ringbuf(mybot_ringbuf_t ringbuf, char *scratch, int scratch_si
             return;
         }
     }
+}
+
+static void drain_ringbuf_dynamic(mybot_ringbuf_t ringbuf, size_t scratch_size) {
+    if (!ringbuf || scratch_size == 0 || scratch_size > (size_t)INT_MAX) {
+        return;
+    }
+    char *scratch = (char *)aosl_hal_malloc(scratch_size);
+    if (!scratch) {
+        AOSL_LOG_ERR("failed to allocate media drain buffer (%zu bytes)", scratch_size);
+        char fallback[256];
+        drain_ringbuf(ringbuf, fallback, sizeof(fallback));
+        return;
+    }
+    drain_ringbuf(ringbuf, scratch, (int)scratch_size);
+    aosl_hal_free(scratch);
 }
 
 static void capture_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc, uintptr_t argv[]) {
@@ -230,8 +246,7 @@ static void flush_playback_cb(const aosl_ts_t *ts, aosl_refobj_t ref, uintptr_t 
     (void)ref;
     (void)argc;
     mybot_media_pipeline_t *pipeline = (mybot_media_pipeline_t *)argv[0];
-    char discard[MYBOT_MEDIA_FRAME_BYTES];
-    drain_ringbuf(pipeline->pb_ringbuf, discard, sizeof(discard));
+    drain_ringbuf_dynamic(pipeline->pb_ringbuf, MYBOT_MEDIA_FRAME_BYTES);
     pipeline->pb_pending_offset = 0;
     pipeline->pb_pending_frames = 0;
     pipeline->pb_pending_source = MYBOT_PB_SOURCE_NONE;
@@ -254,10 +269,9 @@ static void flush_send_cb(const aosl_ts_t *ts, aosl_refobj_t ref, uintptr_t argc
     (void)ref;
     (void)argc;
     mybot_media_pipeline_t *pipeline = (mybot_media_pipeline_t *)argv[0];
-    char discard[MYBOT_MEDIA_FRAME_BYTES];
-    drain_ringbuf(pipeline->cap_ringbuf, discard, sizeof(discard));
+    drain_ringbuf_dynamic(pipeline->cap_ringbuf, MYBOT_MEDIA_FRAME_BYTES);
 #if MYBOT_CLOUD_AEC
-    drain_ringbuf(pipeline->ref_ringbuf, discard, sizeof(discard));
+    drain_ringbuf_dynamic(pipeline->ref_ringbuf, MYBOT_MEDIA_FRAME_BYTES);
 #endif
 }
 
