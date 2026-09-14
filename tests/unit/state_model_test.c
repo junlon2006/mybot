@@ -2,11 +2,26 @@
 #include "mybot_state_model.h"
 
 #include <assert.h>
+#include <stdint.h>
 
 int main(void) {
     /* Preserve the established public values while extending the state set. */
     assert(MYBOT_STATE_IN_CONVERSATION == 7);
     assert(MYBOT_STATE_PAIRING == 8);
+
+    mybot_state_view_t null_view = mybot_state_model_get_view(NULL);
+    assert(null_view.app_state == MYBOT_STATE_STOPPED);
+    assert(null_view.device_state == MYBOT_DEVICE_STATE_UNPROVISIONED);
+    mybot_state_model_reset(NULL);
+    mybot_state_model_begin_stop(NULL);
+    assert(!mybot_state_model_begin_start(NULL));
+    assert(!mybot_state_model_begin_services(NULL));
+    assert(!mybot_state_model_services_ready(NULL));
+    assert(!mybot_state_model_network_lost(NULL));
+    assert(!mybot_state_model_network_restored(NULL));
+    assert(!mybot_state_model_set_device_state(NULL, MYBOT_DEVICE_STATE_RUNTIME));
+    assert(!mybot_state_model_set_device_state(NULL, (mybot_device_state_t)-1));
+    assert(!mybot_state_model_fail(NULL));
 
     mybot_state_model_t model;
     mybot_state_model_reset(&model);
@@ -57,5 +72,12 @@ int main(void) {
     mybot_state_model_reset(&model);
     assert(mybot_state_model_get_view(&model).app_state == MYBOT_STATE_STOPPED);
     assert(!mybot_state_model_network_lost(&model));
+
+    /* Unknown packed values must project to FAILED instead of indexing an invalid state. */
+    aosl_atomic_set(&model.snapshot, (intptr_t)6);
+    assert(mybot_state_model_get_view(&model).app_state == MYBOT_STATE_FAILED);
+    aosl_atomic_set(&model.snapshot, (intptr_t)(3u | 8u | (7u << 4)));
+    assert(mybot_state_model_get_view(&model).app_state == MYBOT_STATE_FAILED);
+
     return 0;
 }

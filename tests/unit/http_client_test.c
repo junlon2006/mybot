@@ -423,6 +423,12 @@ int main(void) {
                    0, "hello");
 
     expect_success("HTTP/1.1 200 OK\r\n"
+                   "Content-Length: 5\r\n"
+                   "\r\n"
+                   "\rlead",
+                   0, "\rlead");
+
+    expect_success("HTTP/1.1 200 OK\r\n"
                    "cOnTeNt-LeNgTh: 5\r\n"
                    "\r\n"
                    "hello",

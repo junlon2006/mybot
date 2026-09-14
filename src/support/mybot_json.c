@@ -524,10 +524,11 @@ static char *print_array(mybot_json_t *item);
 static const char *parse_object(mybot_json_t *item, const char *value, unsigned depth);
 static char *print_object(mybot_json_t *item);
 
-/* Utility to jump whitespace and cr/lf */
+/* JSON whitespace is limited to space, tab, LF and CR. */
 static const char *skip(const char *in) {
-    while (in && *in && (unsigned char)*in <= 32)
-        in++;
+    while (in && *in && (*in == ' ' || *in == '\t' || *in == '\n' || *in == '\r')) {
+        ++in;
+    }
     return in;
 }
 
