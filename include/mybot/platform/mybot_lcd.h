@@ -32,7 +32,7 @@ typedef enum {
 } mybot_lcd_indicator_t;
 
 /** The mutually exclusive server-state indicators. */
-#define MYBOT_LCD_INDICATOR_SERVER_STATE_MASK                                                   \
+#define MYBOT_LCD_INDICATOR_SERVER_STATE_MASK                                                      \
     (MYBOT_LCD_INDICATOR_LISTENING | MYBOT_LCD_INDICATOR_THINKING | MYBOT_LCD_INDICATOR_SPEAKING)
 
 /**
