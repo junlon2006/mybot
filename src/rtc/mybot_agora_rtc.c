@@ -141,19 +141,47 @@ typedef struct {
     uint32_t uid;
     uint32_t generation;
     int value;
-    rtm_event_type_e rtm_event;
-    rtm_err_code_e rtm_error;
-    rtm_message_type_e message_type;
-    rtm_msg_state_e message_state;
-    size_t len;
-    uint16_t sent_ts;
-    audio_frame_info_t audio_info;
-    bool has_audio_info;
-    char text[AGORA_RTC_CHANNEL_NAME_MAX_LEN + 1];
-    char uid_text[MYBOT_RTM_UID_MAX_LEN];
-    char custom_type[33];
-    user_info_t user;
     void *data;
+    union {
+        struct {
+            rtm_event_type_e event;
+            rtm_err_code_e error;
+            char uid_text[MYBOT_RTM_UID_MAX_LEN];
+        } rtm_event;
+        struct {
+            rtm_message_type_e message_type;
+            size_t len;
+            char uid_text[MYBOT_RTM_UID_MAX_LEN];
+            char custom_type[33];
+        } rtm_data;
+        struct {
+            rtm_err_code_e error;
+            char channel[AGORA_RTC_CHANNEL_NAME_MAX_LEN + 1];
+        } rtm_sub_result;
+        struct {
+            rtm_message_type_e message_type;
+            size_t len;
+            char channel[AGORA_RTC_CHANNEL_NAME_MAX_LEN + 1];
+            char uid_text[MYBOT_RTM_UID_MAX_LEN];
+            char custom_type[33];
+        } rtm_sub_data;
+        struct {
+            rtm_msg_state_e state;
+            char uid_text[MYBOT_RTM_UID_MAX_LEN];
+        } rtm_send_result;
+        struct {
+            char text[AGORA_RTC_CHANNEL_NAME_MAX_LEN + 1];
+        } error;
+        struct {
+            user_info_t user;
+        } user;
+        struct {
+            uint16_t sent_ts;
+            audio_frame_info_t audio_info;
+            bool has_audio_info;
+            size_t len;
+        } audio;
+    } payload;
 } rtc_event_t;
 
 static void rtc_event_free(rtc_event_t *event) {
@@ -175,21 +203,30 @@ static void rtc_event_process(const aosl_ts_t *ts, aosl_refobj_t ref, uintptr_t 
     rtc_event_t *e = (rtc_event_t *)argv[0];
     switch (e->type) {
     case RTC_EVENT_RTM_EVENT:
-        process_rtm_event(e->uid_text, e->rtm_event, e->rtm_error, e->generation);
+        process_rtm_event(e->payload.rtm_event.uid_text, e->payload.rtm_event.event,
+                          e->payload.rtm_event.error, e->generation);
         break;
     case RTC_EVENT_RTM_DATA:
-        process_rtm_data(e->uid_text, e->data, e->len, e->message_type,
-                         e->custom_type[0] ? e->custom_type : NULL, e->generation);
+        process_rtm_data(e->payload.rtm_data.uid_text, e->data, e->payload.rtm_data.len,
+                         e->payload.rtm_data.message_type,
+                         e->payload.rtm_data.custom_type[0] ? e->payload.rtm_data.custom_type
+                                                            : NULL,
+                         e->generation);
         break;
     case RTC_EVENT_RTM_SUB_RESULT:
-        process_rtm_subscribe_result(e->text, e->rtm_error, e->generation);
+        process_rtm_subscribe_result(e->payload.rtm_sub_result.channel,
+                                     e->payload.rtm_sub_result.error, e->generation);
         break;
     case RTC_EVENT_RTM_SUB_DATA:
-        process_rtm_subscribe_data(e->text, e->uid_text, e->data, e->len, e->message_type,
-                                   e->custom_type[0] ? e->custom_type : NULL, e->generation);
+        process_rtm_subscribe_data(
+            e->payload.rtm_sub_data.channel, e->payload.rtm_sub_data.uid_text, e->data,
+            e->payload.rtm_sub_data.len, e->payload.rtm_sub_data.message_type,
+            e->payload.rtm_sub_data.custom_type[0] ? e->payload.rtm_sub_data.custom_type : NULL,
+            e->generation);
         break;
     case RTC_EVENT_RTM_SEND_RESULT:
-        process_rtm_send_data_result(e->uid_text, e->uid, e->message_state, e->generation);
+        process_rtm_send_data_result(e->payload.rtm_send_result.uid_text, e->uid,
+                                     e->payload.rtm_send_result.state, e->generation);
         break;
     case RTC_EVENT_JOIN_SUCCESS:
         process_join_channel_success(e->conn_id, e->uid, e->value);
@@ -204,17 +241,18 @@ static void rtc_event_process(const aosl_ts_t *ts, aosl_refobj_t ref, uintptr_t 
         process_rejoin_channel_success(e->conn_id, e->uid, e->value);
         break;
     case RTC_EVENT_USER_JOINED:
-        process_user_joined(e->conn_id, &e->user, e->value);
+        process_user_joined(e->conn_id, &e->payload.user.user, e->value);
         break;
     case RTC_EVENT_USER_OFFLINE:
-        process_user_offline(e->conn_id, &e->user, e->value);
+        process_user_offline(e->conn_id, &e->payload.user.user, e->value);
         break;
     case RTC_EVENT_AUDIO:
-        process_audio_data(e->conn_id, e->uid, e->sent_ts, e->data, e->len,
-                           e->has_audio_info ? &e->audio_info : NULL);
+        process_audio_data(e->conn_id, e->uid, e->payload.audio.sent_ts, e->data,
+                           e->payload.audio.len,
+                           e->payload.audio.has_audio_info ? &e->payload.audio.audio_info : NULL);
         break;
     case RTC_EVENT_ERROR:
-        process_error(e->conn_id, e->value, e->text);
+        process_error(e->conn_id, e->value, e->payload.error.text);
         break;
     case RTC_EVENT_LICENSE:
         process_license_failed(e->conn_id, e->value);
@@ -928,14 +966,14 @@ static void on_rtm_event(const char *uid, rtm_event_type_e type, rtm_err_code_e 
         aosl_atomic_set(&s_rtm_login_done, true);
     }
     rtc_event_t *e = rtc_event_new(RTC_EVENT_RTM_EVENT);
-    if (!e || !uid || strlen(uid) >= sizeof(e->uid_text)) {
+    if (!e || !uid || strlen(uid) >= sizeof(e->payload.rtm_event.uid_text)) {
         rtc_event_free(e);
         return;
     }
-    memcpy(e->uid_text, uid, strlen(uid) + 1U);
+    memcpy(e->payload.rtm_event.uid_text, uid, strlen(uid) + 1U);
     e->generation = (uint32_t)aosl_atomic_read(&s_rtm_login_generation);
-    e->rtm_event = type;
-    e->rtm_error = error;
+    e->payload.rtm_event.event = type;
+    e->payload.rtm_event.error = error;
     (void)rtc_event_queue(e);
 }
 static void on_rtm_data(const char *uid, const void *data, size_t len, rtm_message_type_e type,
@@ -953,17 +991,17 @@ static void on_rtm_data(const char *uid, const void *data, size_t len, rtm_messa
         return;
     }
     rtc_event_t *e = rtc_event_new(RTC_EVENT_RTM_DATA);
-    if (!e || strlen(uid) >= sizeof(e->uid_text) ||
-        (custom && strlen(custom) >= sizeof(e->custom_type))) {
+    if (!e || strlen(uid) >= sizeof(e->payload.rtm_data.uid_text) ||
+        (custom && strlen(custom) >= sizeof(e->payload.rtm_data.custom_type))) {
         rtc_event_free(e);
         return;
     }
-    memcpy(e->uid_text, uid, strlen(uid) + 1U);
+    memcpy(e->payload.rtm_data.uid_text, uid, strlen(uid) + 1U);
     if (custom)
-        memcpy(e->custom_type, custom, strlen(custom) + 1U);
-    e->message_type = type;
+        memcpy(e->payload.rtm_data.custom_type, custom, strlen(custom) + 1U);
+    e->payload.rtm_data.message_type = type;
     e->generation = (uint32_t)aosl_atomic_read(&s_rtm_login_generation);
-    e->len = len;
+    e->payload.rtm_data.len = len;
     e->data = aosl_hal_malloc(len);
     if (!e->data) {
         rtc_event_free(e);
@@ -990,14 +1028,15 @@ static void on_rtm_subscribe_result(const char *channel, rtm_err_code_e error) {
     }
     aosl_atomic_set(&s_rtm_sub_ok, error == ERR_RTM_OK);
     aosl_atomic_set(&s_rtm_sub_done, true);
-    if (!channel || strlen(channel) >= sizeof(((rtc_event_t *)0)->text))
+    if (!channel || strlen(channel) >= sizeof(((rtc_event_t *)0)->payload.rtm_sub_result.channel))
         return;
     rtc_event_t *e = rtc_event_new(RTC_EVENT_RTM_SUB_RESULT);
-    if (!e)
+    if (!e) {
         return;
-    memcpy(e->text, channel, strlen(channel) + 1U);
+    }
+    memcpy(e->payload.rtm_sub_result.channel, channel, strlen(channel) + 1U);
     e->generation = (uint32_t)aosl_atomic_read(&s_rtm_sub_generation);
-    e->rtm_error = error;
+    e->payload.rtm_sub_result.error = error;
     (void)rtc_event_queue(e);
 }
 static void on_rtm_subscribe_data(const char *channel, const char *uid, const void *data,
@@ -1017,18 +1056,19 @@ static void on_rtm_subscribe_data(const char *channel, const char *uid, const vo
         return;
     }
     rtc_event_t *e = rtc_event_new(RTC_EVENT_RTM_SUB_DATA);
-    if (!e || strlen(channel) >= sizeof(e->text) || strlen(uid) >= sizeof(e->uid_text) ||
-        (custom && strlen(custom) >= sizeof(e->custom_type))) {
+    if (!e || strlen(channel) >= sizeof(e->payload.rtm_sub_data.channel) ||
+        strlen(uid) >= sizeof(e->payload.rtm_sub_data.uid_text) ||
+        (custom && strlen(custom) >= sizeof(e->payload.rtm_sub_data.custom_type))) {
         rtc_event_free(e);
         return;
     }
-    memcpy(e->text, channel, strlen(channel) + 1U);
-    memcpy(e->uid_text, uid, strlen(uid) + 1U);
+    memcpy(e->payload.rtm_sub_data.channel, channel, strlen(channel) + 1U);
+    memcpy(e->payload.rtm_sub_data.uid_text, uid, strlen(uid) + 1U);
     if (custom)
-        memcpy(e->custom_type, custom, strlen(custom) + 1U);
-    e->message_type = type;
+        memcpy(e->payload.rtm_sub_data.custom_type, custom, strlen(custom) + 1U);
+    e->payload.rtm_sub_data.message_type = type;
     e->generation = (uint32_t)aosl_atomic_read(&s_rtm_sub_generation);
-    e->len = len;
+    e->payload.rtm_sub_data.len = len;
     e->data = aosl_hal_malloc(len);
     if (!e->data) {
         rtc_event_free(e);
@@ -1044,14 +1084,15 @@ static void on_rtm_send_data_result(const char *uid, uint32_t id, rtm_msg_state_
     enabled = aosl_atomic_read(&s_rtc_callbacks_enabled) != 0;
     requested = s_rtc.rtm_login_requested;
     callback_gate_unlock();
-    if (!enabled || !uid || !requested || strlen(uid) >= sizeof(((rtc_event_t *)0)->uid_text))
+    if (!enabled || !uid || !requested ||
+        strlen(uid) >= sizeof(((rtc_event_t *)0)->payload.rtm_send_result.uid_text))
         return;
     rtc_event_t *e = rtc_event_new(RTC_EVENT_RTM_SEND_RESULT);
     if (!e)
         return;
-    memcpy(e->uid_text, uid, strlen(uid) + 1U);
+    memcpy(e->payload.rtm_send_result.uid_text, uid, strlen(uid) + 1U);
     e->uid = id;
-    e->message_state = state;
+    e->payload.rtm_send_result.state = state;
     e->generation = (uint32_t)aosl_atomic_read(&s_rtm_login_generation);
     (void)rtc_event_queue(e);
 }
@@ -1093,7 +1134,7 @@ static void on_user_joined(connection_id_t c, const user_info_t *u, int elapsed)
     rtc_event_t *e = rtc_event_new(RTC_EVENT_USER_JOINED);
     if (e) {
         e->conn_id = c;
-        e->user = *u;
+        e->payload.user.user = *u;
         e->value = elapsed;
         (void)rtc_event_queue(e);
     }
@@ -1104,7 +1145,7 @@ static void on_user_offline(connection_id_t c, const user_info_t *u, int reason)
     rtc_event_t *e = rtc_event_new(RTC_EVENT_USER_OFFLINE);
     if (e) {
         e->conn_id = c;
-        e->user = *u;
+        e->payload.user.user = *u;
         e->value = reason;
         (void)rtc_event_queue(e);
     }
@@ -1123,12 +1164,10 @@ static void on_audio_data(connection_id_t c, uint32_t uid, uint16_t ts, const vo
     if (e) {
         e->conn_id = c;
         e->uid = uid;
-        e->sent_ts = ts;
-        if (i) {
-            e->audio_info = *i;
-            e->has_audio_info = true;
-        }
-        e->len = len;
+        e->payload.audio.sent_ts = ts;
+        e->payload.audio.audio_info = *i;
+        e->payload.audio.has_audio_info = true;
+        e->payload.audio.len = len;
         e->data = aosl_hal_malloc(len);
         if (!e->data) {
             rtc_event_free(e);
@@ -1144,7 +1183,7 @@ static void on_error(connection_id_t c, int code, const char *m) {
         e->conn_id = c;
         e->value = code;
         if (m)
-            snprintf(e->text, sizeof(e->text), "%s", m);
+            snprintf(e->payload.error.text, sizeof(e->payload.error.text), "%s", m);
         (void)rtc_event_queue(e);
     }
 }
