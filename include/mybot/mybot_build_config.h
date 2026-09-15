@@ -32,6 +32,23 @@
 #error "MYBOT_WAKE_WORDS must be 0 or 1"
 #endif
 
+#ifndef MYBOT_ENABLE_VIDEO
+#define MYBOT_ENABLE_VIDEO 0 /* encoded video uplink */
+#endif
+
+#if MYBOT_ENABLE_VIDEO != 0 && MYBOT_ENABLE_VIDEO != 1
+#error "MYBOT_ENABLE_VIDEO must be 0 or 1"
+#endif
+
+/* Target builds should lower this limit to their encoder and heap budget. */
+#ifndef MYBOT_VIDEO_MAX_FRAME_BYTES
+#define MYBOT_VIDEO_MAX_FRAME_BYTES (512U * 1024U)
+#endif
+
+#if MYBOT_VIDEO_MAX_FRAME_BYTES < 1
+#error "MYBOT_VIDEO_MAX_FRAME_BYTES must be positive"
+#endif
+
 #ifndef MYBOT_AI_QOS
 #define MYBOT_AI_QOS 1 /* AI-driven QoS optimization */
 #endif

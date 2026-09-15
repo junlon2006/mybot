@@ -12,6 +12,7 @@
 #include "mybot_platform_registry.h"
 #include "mybot_json.h"
 #include "mybot_state_model.h"
+#include "mybot_video_internal.h"
 #include "mybot_wifi_internal.h"
 
 #include <api/aosl.h>
@@ -47,6 +48,9 @@ typedef struct {
     mybot_wifi_t wifi;
     mybot_presenter_t presenter;
     mybot_media_pipeline_t media;
+#if MYBOT_ENABLE_VIDEO
+    mybot_video_t video;
+#endif
     mybot_device_lifecycle_t lifecycle;
     /* Snapshots used to reject stale RTM events from a previous conversation. */
     char rtc_channel[128];
@@ -323,6 +327,12 @@ static void rtc_on_state_changed(mybot_rtc_state_t state, void *user_data) {
     mybot_runtime_t *runtime = user_data;
     bool connected = state == MYBOT_RTC_STATE_CONNECTED;
     mybot_media_pipeline_set_rtc_connected(&runtime->media, connected);
+#if MYBOT_ENABLE_VIDEO
+    if (state == MYBOT_RTC_STATE_CONNECTED && runtime_is_running(runtime) &&
+        mybot_video_start(&runtime->video) < 0) {
+        AOSL_LOG_ERR("failed to start video source");
+    }
+#endif
     AOSL_LOG_NTC("rtc -> %s", connected ? "connected" : "disconnected");
 
     if (state == MYBOT_RTC_STATE_DISCONNECTED || state == MYBOT_RTC_STATE_ERROR) {
@@ -435,6 +445,24 @@ static void rtc_on_token_will_expire(void *user_data) {
     }
 }
 
+#if MYBOT_ENABLE_VIDEO
+static void rtc_on_video_key_frame_requested(void *user_data) {
+    mybot_runtime_t *runtime = user_data;
+    if (!runtime_is_running(runtime)) {
+        return;
+    }
+    mybot_video_request_key_frame(&runtime->video);
+}
+
+static void rtc_on_video_target_bitrate_changed(uint32_t target_bps, void *user_data) {
+    mybot_runtime_t *runtime = user_data;
+    if (!runtime_is_running(runtime)) {
+        return;
+    }
+    mybot_video_set_target_bitrate(&runtime->video, target_bps);
+}
+#endif
+
 static void dev_on_pair_code(const char *code, void *user_data) {
     mybot_runtime_t *runtime = user_data;
     if (!runtime_is_running(runtime)) {
@@ -489,6 +517,10 @@ static void dev_on_conversation_start(const mybot_conversation_params_t *params,
     callbacks.on_rtm_data = rtc_on_rtm_data;
     callbacks.on_rtm_subscribe_result = rtc_on_rtm_subscribe_result;
     callbacks.on_rtm_subscribe_data = rtc_on_rtm_subscribe_data;
+#if MYBOT_ENABLE_VIDEO
+    callbacks.on_video_key_frame_requested = rtc_on_video_key_frame_requested;
+    callbacks.on_video_target_bitrate_changed = rtc_on_video_target_bitrate_changed;
+#endif
     callbacks.user_data = runtime;
 
     if (mybot_agora_rtc_init(params->rtc_app_id, &callbacks) < 0) {
@@ -498,7 +530,14 @@ static void dev_on_conversation_start(const mybot_conversation_params_t *params,
     }
 
     AOSL_LOG_NTC("joining RTC channel=%s uid=%s", params->rtc_channel, params->rtc_uid);
-    if (mybot_agora_rtc_join(params->rtc_channel, params->rtc_token, params->rtc_uid) < 0) {
+    uint32_t video_min_bps = 0;
+    uint32_t video_max_bps = 0;
+#if MYBOT_ENABLE_VIDEO
+    video_min_bps = runtime->video.min_bps;
+    video_max_bps = runtime->video.max_bps;
+#endif
+    if (mybot_agora_rtc_join(params->rtc_channel, params->rtc_token, params->rtc_uid, video_min_bps,
+                             video_max_bps) < 0) {
         AOSL_LOG_ERR("failed to join Agora RTC channel");
         mybot_device_lifecycle_notify_conversation_ended(&runtime->lifecycle);
         return;
@@ -510,6 +549,11 @@ static void dev_on_conversation_stop(void *user_data) {
     mybot_runtime_t *runtime = user_data;
     runtime->rtc_channel[0] = '\0';
     runtime->rtc_agent_uid[0] = '\0';
+#if MYBOT_ENABLE_VIDEO
+    if (mybot_video_stop(&runtime->video) < 0) {
+        AOSL_LOG_ERR("failed to stop video source");
+    }
+#endif
     mybot_presenter_set_vp_registered(&runtime->presenter, false);
     mybot_presenter_clear_server_indicators(&runtime->presenter);
     /* Render from the current state snapshot before the lifecycle publishes its
@@ -620,6 +664,11 @@ static void cleanup_services(mybot_runtime_t *runtime) {
     if (mybot_media_pipeline_stop(&runtime->media) < 0) {
         AOSL_LOG_ERR("media pipeline stop incomplete");
     }
+#if MYBOT_ENABLE_VIDEO
+    if (mybot_video_stop(&runtime->video) < 0) {
+        AOSL_LOG_ERR("video source stop incomplete");
+    }
+#endif
     /* Stop audio I/O before the lifecycle callback performs network/RTC
      * shutdown. This guarantees a blocked capture or playback operation is
      * unblocked before the control worker waits on conversation teardown. */
@@ -645,6 +694,13 @@ static int start_services(mybot_runtime_t *runtime) {
     if (mybot_media_pipeline_start(&runtime->media, &media_cbs) < 0) {
         goto fail;
     }
+
+#if MYBOT_ENABLE_VIDEO
+    mybot_video_init(&runtime->video);
+    if (!runtime->video.initialized) {
+        goto fail;
+    }
+#endif
 
     mybot_device_lifecycle_callbacks_t lifecycle_cbs;
     memset(&lifecycle_cbs, 0, sizeof(lifecycle_cbs));
@@ -672,6 +728,11 @@ static int start_services(mybot_runtime_t *runtime) {
 
 fail:
     cleanup_services(runtime);
+#if MYBOT_ENABLE_VIDEO
+    if (mybot_video_destroy(&runtime->video) < 0) {
+        AOSL_LOG_ERR("video source destroy incomplete");
+    }
+#endif
     if (mybot_media_pipeline_destroy(&runtime->media) < 0) {
         AOSL_LOG_ERR("media pipeline destroy skipped because stop was incomplete");
     }
@@ -858,6 +919,12 @@ static bool platform_requirements_are_met(const mybot_config_t *cfg) {
         return false;
     }
 #endif
+#if MYBOT_ENABLE_VIDEO
+    if (!mybot_platform_registry_get()->video) {
+        AOSL_LOG_ERR("video platform operations are required but unavailable");
+        return false;
+    }
+#endif
     if (strncmp(cfg->server_base, "https://", 8) == 0 && !mybot_platform_registry_get()->https) {
         AOSL_LOG_ERR("HTTPS platform operations are required but unavailable");
         return false;
@@ -907,6 +974,11 @@ static void control_stop_runtime(mybot_runtime_t *runtime) {
     if (mybot_agora_rtc_fini() < 0) {
         AOSL_LOG_ERR("RTC fini incomplete; RTSA reported terminal cleanup failure");
     }
+#if MYBOT_ENABLE_VIDEO
+    if (mybot_video_destroy(&runtime->video) < 0) {
+        AOSL_LOG_ERR("video source destroy incomplete");
+    }
+#endif
     if (mybot_media_pipeline_destroy(&runtime->media) < 0) {
         AOSL_LOG_ERR("media pipeline destroy skipped because stop was incomplete");
     }

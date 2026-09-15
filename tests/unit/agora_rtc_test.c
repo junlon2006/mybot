@@ -22,6 +22,17 @@
 #define RTC_PCM_FRAME_BYTES (RTC_PCM_FRAME_SAMPLES * RTC_PCM_FRAME_STREAMS * sizeof(int16_t))
 #define RTC_REMOTE_PCM_FRAME_BYTES (RTC_PCM_FRAME_SAMPLES * sizeof(int16_t))
 
+#if MYBOT_ENABLE_VIDEO
+#define TEST_VIDEO_MIN_BPS 32000U
+#define TEST_VIDEO_MAX_BPS 256000U
+#else
+#define TEST_VIDEO_MIN_BPS 0U
+#define TEST_VIDEO_MAX_BPS 0U
+#endif
+
+#define mybot_agora_rtc_join(channel, token, user)                                                 \
+    mybot_agora_rtc_join(channel, token, user, TEST_VIDEO_MIN_BPS, TEST_VIDEO_MAX_BPS)
+
 static agora_rtc_event_handler_t s_handler;
 static connection_id_t s_next_conn = 1;
 static connection_id_t s_last_conn;
@@ -33,6 +44,9 @@ static int s_destroy_result;
 static int s_send_result;
 static int s_renew_result;
 static int s_bwe_result;
+static uint32_t s_last_bwe_min_bps;
+static uint32_t s_last_bwe_max_bps;
+static uint32_t s_last_bwe_start_bps;
 static int s_rtm_login_result;
 static int s_rtm_logout_result;
 static int s_rtm_send_result;
@@ -99,6 +113,11 @@ static agora_rtm_handler_t s_rtm_handler;
 static size_t s_last_send_len;
 static audio_frame_info_t s_last_send_info;
 static int s_callback_owner;
+#if MYBOT_ENABLE_VIDEO
+static int s_video_key_frame_requests;
+static uint32_t s_video_target_bitrate;
+static video_frame_info_t s_last_video_info;
+#endif
 static aosl_atomic_t s_block_send;
 static aosl_atomic_t s_send_entered;
 static aosl_atomic_t s_release_send;
@@ -203,9 +222,9 @@ int agora_rtc_leave_channel(connection_id_t conn_id) {
 int agora_rtc_set_bwe_param(connection_id_t conn_id, uint32_t min_bps, uint32_t max_bps,
                             uint32_t start_bps) {
     assert(conn_id != CONNECTION_ID_INVALID);
-    (void)min_bps;
-    (void)max_bps;
-    (void)start_bps;
+    s_last_bwe_min_bps = min_bps;
+    s_last_bwe_max_bps = max_bps;
+    s_last_bwe_start_bps = start_bps;
     return s_bwe_result;
 }
 
@@ -223,6 +242,20 @@ int agora_rtc_send_audio_data(connection_id_t conn_id, const void *data, size_t 
     s_last_send_info = *info;
     return s_send_result;
 }
+
+#if MYBOT_ENABLE_VIDEO
+int agora_rtc_send_video_data(connection_id_t conn_id, const void *data, size_t len,
+                              video_frame_info_t *info) {
+    assert(conn_id != CONNECTION_ID_INVALID);
+    assert(data != NULL);
+    assert(len > 0);
+    assert(info != NULL);
+    s_send_calls++;
+    s_last_send_len = len;
+    s_last_video_info = *info;
+    return s_send_result;
+}
+#endif
 
 int agora_rtc_renew_token(connection_id_t conn_id, const char *token) {
     assert(conn_id != CONNECTION_ID_INVALID);
@@ -345,6 +378,18 @@ static void on_token_will_expire(void *user_data) {
     s_token_expiry_calls++;
 }
 
+#if MYBOT_ENABLE_VIDEO
+static void on_video_key_frame_requested(void *user_data) {
+    assert(user_data == &s_callback_owner);
+    s_video_key_frame_requests++;
+}
+
+static void on_video_target_bitrate_changed(uint32_t target_bps, void *user_data) {
+    assert(user_data == &s_callback_owner);
+    s_video_target_bitrate = target_bps;
+}
+#endif
+
 static void on_rtm_event(const char *rtm_uid, mybot_rtm_event_type_t event_type, int error_code,
                          void *user_data) {
     assert(user_data == &s_callback_owner);
@@ -446,6 +491,10 @@ int main(void) {
         .on_rtm_subscribe_result = on_rtm_subscribe_result,
         .on_rtm_subscribe_data = on_rtm_subscribe_data,
         .on_rtm_send_data_result = on_rtm_send_data_result,
+#if MYBOT_ENABLE_VIDEO
+        .on_video_key_frame_requested = on_video_key_frame_requested,
+        .on_video_target_bitrate_changed = on_video_target_bitrate_changed,
+#endif
         .user_data = &s_callback_owner,
     };
 
@@ -709,6 +758,12 @@ int main(void) {
     assert(s_rtm_handler.on_rtm_subscribe_result != NULL);
     assert(s_rtm_handler.on_rtm_subscribe_data != NULL);
     assert(s_last_rtm_subscribe_error == ERR_RTM_OK);
+#if MYBOT_ENABLE_VIDEO
+    assert(s_last_bwe_min_bps == TEST_VIDEO_MIN_BPS);
+    assert(s_last_bwe_max_bps == TEST_VIDEO_MAX_BPS);
+    assert(s_last_bwe_start_bps ==
+           TEST_VIDEO_MIN_BPS + (TEST_VIDEO_MAX_BPS - TEST_VIDEO_MIN_BPS) / 2U);
+#endif
     s_bwe_result = 0;
     connection_id_t first_conn = s_last_conn;
     assert(mybot_agora_rtc_init("app-1", &callbacks) < 0);
@@ -719,6 +774,18 @@ int main(void) {
     assert(s_join_options.audio_codec_opt.pcm_duration == MYBOT_AUDIO_PTIME_MS);
     assert(s_join_options.enable_audio_downlink_aec == (MYBOT_CLOUD_AEC != 0));
     assert(s_join_options.enable_audio_ai_qos == (MYBOT_AI_QOS != 0));
+#if MYBOT_ENABLE_VIDEO
+    assert(!s_join_options.auto_subscribe_video);
+    s_handler.on_target_bitrate_changed(first_conn, 123456);
+    s_handler.on_key_frame_gen_req(first_conn, 42, VIDEO_STREAM_HIGH);
+    for (int elapsed = 0;
+         elapsed < 500 && (s_video_target_bitrate != 123456 || s_video_key_frame_requests != 1);
+         ++elapsed) {
+        aosl_hal_msleep(1);
+    }
+    assert(s_video_target_bitrate == 123456);
+    assert(s_video_key_frame_requests == 1);
+#endif
 
     int states_before_wrong_conn = s_state_calls;
     s_handler.on_join_channel_success(first_conn + 100, 42, 0);
@@ -727,6 +794,21 @@ int main(void) {
     s_handler.on_join_channel_success(first_conn, 42, 10);
     aosl_hal_msleep(10);
     assert(s_last_state == MYBOT_RTC_STATE_CONNECTED);
+#if MYBOT_ENABLE_VIDEO
+    unsigned char video_data[] = {0xff, 0xd8, 0xff, 0xd9};
+    mybot_video_frame_t video_frame = {
+        .data = video_data,
+        .len = sizeof(video_data),
+        .codec = MYBOT_VIDEO_CODEC_JPEG,
+    };
+    int sends_before_video = s_send_calls;
+    assert(mybot_agora_rtc_send_video(&video_frame) == 0);
+    assert(s_send_calls == sends_before_video + 1);
+    assert(s_last_video_info.data_type == VIDEO_DATA_TYPE_GENERIC_JPEG);
+    assert(s_last_video_info.frame_type == VIDEO_FRAME_AUTO_DETECT);
+    assert(s_last_video_info.frame_rate == 0);
+    assert(s_last_video_info.rotation == VIDEO_ORIENTATION_0);
+#endif
     s_handler.on_reconnecting(first_conn);
     aosl_hal_msleep(10);
     assert(s_last_state == MYBOT_RTC_STATE_RECONNECTING);
@@ -798,7 +880,11 @@ int main(void) {
     assert(mybot_agora_rtc_send_audio(pcm_frame, sizeof(pcm_frame)) < 0);
     s_send_result = 0;
     assert(mybot_agora_rtc_send_audio(pcm_frame, sizeof(pcm_frame)) == 0);
+#if MYBOT_ENABLE_VIDEO
+    assert(s_send_calls == 3);
+#else
     assert(s_send_calls == 2);
+#endif
     assert(s_last_send_len == sizeof(pcm_frame));
     assert(s_last_send_info.data_type == AUDIO_DATA_TYPE_PCM);
     s_renew_result = -1;

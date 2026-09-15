@@ -148,6 +148,34 @@ static int audio_stop(void *ctx) {
     return 0;
 }
 
+#if MYBOT_ENABLE_VIDEO
+static int video_init(void **ctx, mybot_video_frame_handler_t handler, void *user_data) {
+    (void)handler;
+    (void)user_data;
+    *ctx = ctx;
+    return 0;
+}
+
+static int video_start(void *ctx) {
+    (void)ctx;
+    return 0;
+}
+
+static int video_stop(void *ctx) {
+    (void)ctx;
+    return 0;
+}
+
+static void video_target_bitrate(void *ctx, uint32_t target_bps) {
+    (void)ctx;
+    (void)target_bps;
+}
+
+static void video_destroy(void *ctx) {
+    (void)ctx;
+}
+#endif
+
 static const mybot_wifi_ops_t s_wifi = {
     .init = wifi_init,
     .destroy = destroy_simple,
@@ -205,6 +233,17 @@ static const mybot_audio_playback_ops_t s_playback = {
     .stop = audio_stop,
     .destroy = destroy_simple,
 };
+#if MYBOT_ENABLE_VIDEO
+static const mybot_video_ops_t s_video = {
+    .min_bps = 32000,
+    .max_bps = 256000,
+    .init = video_init,
+    .start = video_start,
+    .stop = video_stop,
+    .on_target_bitrate_changed = video_target_bitrate,
+    .destroy = video_destroy,
+};
+#endif
 
 static mybot_platform_descriptor_t complete_descriptor(void) {
     mybot_platform_descriptor_t descriptor;
@@ -258,6 +297,20 @@ int main(void) {
     descriptor.audio_playback = &invalid_playback;
     assert(mybot_platform_register(&descriptor) < 0);
 
+#if MYBOT_ENABLE_VIDEO
+    mybot_video_ops_t invalid_video = s_video;
+    invalid_video.on_target_bitrate_changed = NULL;
+    descriptor = complete_descriptor();
+    descriptor.video = &invalid_video;
+    assert(mybot_platform_register(&descriptor) < 0);
+
+    invalid_video = s_video;
+    invalid_video.max_bps = 0;
+    descriptor = complete_descriptor();
+    descriptor.video = &invalid_video;
+    assert(mybot_platform_register(&descriptor) < 0);
+#endif
+
     mybot_audio_volume_ops_t invalid_volume = s_volume;
     invalid_volume.set_volume = NULL;
     descriptor = complete_descriptor();
@@ -294,6 +347,9 @@ int main(void) {
     descriptor.lcd = &s_lcd;
     descriptor.announce = &s_announce;
     descriptor.wake_words = &s_wake_words;
+#if MYBOT_ENABLE_VIDEO
+    descriptor.video = &s_video;
+#endif
     assert(mybot_platform_register(&descriptor) == 0);
     assert(mybot_platform_registry_is_registered());
     const mybot_platform_descriptor_t *registered = mybot_platform_registry_get();
@@ -307,6 +363,9 @@ int main(void) {
     assert(registered->lcd == &s_lcd);
     assert(registered->announce == &s_announce);
     assert(registered->wake_words == &s_wake_words);
+#if MYBOT_ENABLE_VIDEO
+    assert(registered->video == &s_video);
+#endif
 
     /* Registration is process-wide and succeeds only once. */
     assert(mybot_platform_register(&descriptor) < 0);

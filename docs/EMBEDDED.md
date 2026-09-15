@@ -20,8 +20,9 @@ How to measure on your target:
     size <firmware.elf>
     ls -l <build>/libmybot_sdk.a
 
-Feature flags directly change the code footprint — `MYBOT_CLOUD_AEC`, `MYBOT_WAKE_WORDS`, and
-`MYBOT_ENABLE_HTTPS` are the main ones; disable what the product does not need. On MCU targets the
+Feature flags directly change the code footprint — `MYBOT_CLOUD_AEC`, `MYBOT_WAKE_WORDS`,
+`MYBOT_ENABLE_VIDEO`, and `MYBOT_ENABLE_HTTPS` are the main ones; disable what the product does not
+need. On MCU targets the
 Agora RTSA library dominates the flash budget, and it must be the
 target-architecture package (the bundled shared library is x86_64 Linux only).
 
@@ -37,6 +38,13 @@ target-architecture package (the bundled shared library is x86_64 Linux only).
   worker keeps prompt PCM separate from the RTC playback ring, pads a final partial frame with
   silence, and plays the prompt once through the normal speaker path. Prompt and digit assets are
   loaded transiently while playing.
+- **Video uplink (optional)**: with `MYBOT_ENABLE_VIDEO`, the platform owns camera capture and
+  JPEG/H.264/H.265 encoding; the SDK performs no encoding, decoding, or video receive. Encoded frames
+  are passed through a borrowed-memory handler directly to RTC without an SDK video ring. RTSA calls
+  `on_target_bitrate_changed()` with the usable uplink target so the platform encoder can adapt. Keep
+  each frame within `MYBOT_VIDEO_MAX_FRAME_BYTES`. Set the platform ops `min_bps` and `max_bps` to
+  bound the initial RTSA BWE range; RTSA starts at their midpoint. Include RTSA's per-frame
+  packetization allocations in the target heap budget.
 - **Heap**: the HTTP request buffer is a fixed 2 KB allocation; HTTP responses allocate 4 KB initially
   and grow to at most 32 KB per request (freed after use). Lifecycle authentication/conversation
   responses, request headers, and the transient RTM LCD-state message buffer are also bounded

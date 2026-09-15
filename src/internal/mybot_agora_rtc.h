@@ -6,6 +6,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include <mybot/mybot_build_config.h>
+#include <mybot/platform/mybot_video.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -58,6 +61,10 @@ typedef struct {
                                   size_t len, const char *custom_type, void *user_data);
     void (*on_rtm_send_data_result)(const char *rtm_uid, uint32_t msg_id,
                                     mybot_rtm_message_state_t state, void *user_data);
+#if MYBOT_ENABLE_VIDEO
+    void (*on_video_key_frame_requested)(void *user_data);
+    void (*on_video_target_bitrate_changed)(uint32_t target_bps, void *user_data);
+#endif
     void *user_data;
 } mybot_agora_rtc_callbacks_t;
 
@@ -95,7 +102,8 @@ bool mybot_agora_rtc_is_rtm_logged_in(void);
  * requested first using user_account as the local RTM UID and token as the RTM
  * token. After RTM login succeeds, this subscribes to the RTM channel with the
  * same name and waits for subscription success before starting RTC join. */
-int mybot_agora_rtc_join(const char *channel, const char *token, const char *user_account);
+int mybot_agora_rtc_join(const char *channel, const char *token, const char *user_account,
+                         uint32_t video_min_bps, uint32_t video_max_bps);
 
 /** Leave and destroy the active connection while keeping RTSA initialized. */
 int mybot_agora_rtc_leave(void);
@@ -107,6 +115,11 @@ int mybot_agora_rtc_fini(void);
 
 /** Send one PCM payload on the active connection. */
 int mybot_agora_rtc_send_audio(const void *data, size_t len);
+
+#if MYBOT_ENABLE_VIDEO
+/** Send one platform-encoded video frame on the active connection. */
+int mybot_agora_rtc_send_video(const mybot_video_frame_t *frame);
+#endif
 
 /** Queue a renewed token for the active connection. */
 int mybot_agora_rtc_renew_token(const char *token);

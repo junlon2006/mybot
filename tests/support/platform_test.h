@@ -78,6 +78,34 @@ static int mybot_test_audio_write(void *ctx, const void *data, int frames) {
     return frames;
 }
 
+#if MYBOT_ENABLE_VIDEO
+static int mybot_test_video_init(void **ctx, mybot_video_frame_handler_t handler, void *user_data) {
+    (void)handler;
+    (void)user_data;
+    *ctx = ctx;
+    return 0;
+}
+
+static int mybot_test_video_start(void *ctx) {
+    (void)ctx;
+    return 0;
+}
+
+static int mybot_test_video_stop(void *ctx) {
+    (void)ctx;
+    return 0;
+}
+
+static void mybot_test_video_target_bitrate(void *ctx, uint32_t target_bps) {
+    (void)ctx;
+    (void)target_bps;
+}
+
+static void mybot_test_video_destroy(void *ctx) {
+    (void)ctx;
+}
+#endif
+
 static inline mybot_platform_descriptor_t mybot_test_platform_descriptor(void) {
     static const mybot_wifi_ops_t wifi = {
         .init = mybot_test_wifi_init,
@@ -108,6 +136,17 @@ static inline mybot_platform_descriptor_t mybot_test_platform_descriptor(void) {
         .stop = mybot_test_audio_start_stop,
         .destroy = mybot_test_destroy,
     };
+#if MYBOT_ENABLE_VIDEO
+    static const mybot_video_ops_t video = {
+        .min_bps = 32000,
+        .max_bps = 256000,
+        .init = mybot_test_video_init,
+        .start = mybot_test_video_start,
+        .stop = mybot_test_video_stop,
+        .on_target_bitrate_changed = mybot_test_video_target_bitrate,
+        .destroy = mybot_test_video_destroy,
+    };
+#endif
 
     mybot_platform_descriptor_t descriptor = {
         .wifi = &wifi,
@@ -115,6 +154,9 @@ static inline mybot_platform_descriptor_t mybot_test_platform_descriptor(void) {
         .key = &key,
         .audio_capture = &capture,
         .audio_playback = &playback,
+#if MYBOT_ENABLE_VIDEO
+        .video = &video,
+#endif
     };
     return descriptor;
 }

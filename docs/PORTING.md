@@ -2,7 +2,7 @@
 
 > [English](PORTING.md) | [简体中文](PORTING.zh-CN.md)
 
-This document defines the cross-platform integration specification for mybot 1.1.0.
+This document defines the cross-platform integration specification for mybot 1.2.0.
 Public APIs and ABI follow
 Semantic Versioning. Platform code must include only headers under `include/mybot` and link
 `mybot::sdk`.
@@ -36,6 +36,7 @@ platforms/my_mcu/
   my_mcu_key.c
   my_mcu_lcd.c          # optional
   my_mcu_announce.c     # optional (pairing-code voice announcement)
+  my_mcu_video.c        # optional (encoded video uplink)
   my_mcu_wake_words.c   # optional
 ```
 
@@ -193,6 +194,30 @@ The Linux reference implementation reads raw PCM files per locale from
 `MYBOT_ASSETS_DIR` environment variable (default `./assets`) and the locale with `MYBOT_LOCALE`
 (default `zh-CN`).
 
+### Video uplink (optional)
+
+When `MYBOT_ENABLE_VIDEO=ON`, implement `mybot_video_ops_t` and add it to the platform descriptor.
+The platform owns camera capture and JPEG, H.264, or H.265 encoding; the SDK does not encode,
+decode, or receive server video. Set `min_bps` and `max_bps` in the operations table to the
+encoder's supported video bitrate range. The SDK validates that range and applies it with
+`agora_rtc_set_bwe_param()` after creating the RTC connection; `start_bps` is the midpoint.
+
+The encoder pushes complete encoded frames through the handler registered by `init()`. Frame data is
+borrowed until the handler returns and the handler must run from a task context, never an ISR.
+`stop()` must stop the encoder and wait for all in-flight handlers before `destroy()` is called.
+
+Video starts only after RTC reaches `CONNECTED` and stops before the session leaves RTC. The SDK has
+no video ring buffer; a failed send drops that frame. RTSA packetizes and copies the input before
+`agora_rtc_send_video_data()` returns, while the platform must keep each frame within
+`MYBOT_VIDEO_MAX_FRAME_BYTES`.
+H.264/H.265 frames must be complete Annex-B access units accepted by the RTSA packetizer; JPEG
+frames must be complete JPEG images.
+
+`on_target_bitrate_changed()` receives RTSA's current uplink target in bits per second; the encoder
+should adjust its bitrate within its supported range and return promptly. `on_key_frame_request()` is
+optional and handles RTSA key-frame requests. MyBot sends one primary stream and explicitly disables
+remote video subscription.
+
 ## Step 4: Register one platform descriptor
 
 ```c
@@ -218,7 +243,8 @@ optional pointer NULL when it is unavailable. `mybot_platform_register()` valida
 table and every provided optional table before committing the complete descriptor, so a failure
 cannot leave a partially registered platform. It is the only platform registration entry point.
 `mybot_start()` separately checks the ops required by the active build and runtime configuration,
-such as HTTPS for an HTTPS server URL and wake words when enabled.
+such as HTTPS for an HTTPS server URL, wake words when enabled, and video (including its bitrate
+callback) when enabled.
 
 ## Step 5: Integrate with CMake
 

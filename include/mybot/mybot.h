@@ -100,6 +100,8 @@ typedef enum {
  * - With MYBOT_ENABLE_HTTPS=ON, a "https://" server requires a TLS transport in the registered
  *   platform descriptor; plain "http://" is rejected
  *   unless MYBOT_ALLOW_INSECURE_HTTP=ON is set for development builds.
+ * - With MYBOT_ENABLE_VIDEO=ON, the registered platform descriptor must provide encoded video
+ *   operations and the selected RTSA package must include video support.
  *
  * The configuration is validated (non-NULL cfg, NUL-terminated strings,
  * non-empty server_base / device_id, supported URL scheme). Calling

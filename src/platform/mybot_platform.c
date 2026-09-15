@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "mybot_platform_registry.h"
 
+#include <mybot/mybot_build_config.h>
+
 static mybot_platform_descriptor_t s_registry;
 static bool s_registered;
 
@@ -44,6 +46,11 @@ static bool wake_words_is_valid(const mybot_wake_words_ops_t *ops) {
     return ops && ops->init && ops->process && ops->destroy;
 }
 
+static bool video_is_valid(const mybot_video_ops_t *ops) {
+    return ops && ops->max_bps > 0 && ops->max_bps >= ops->min_bps && ops->init && ops->start &&
+           ops->stop && ops->on_target_bitrate_changed && ops->destroy;
+}
+
 static bool descriptor_is_valid(const mybot_platform_descriptor_t *descriptor) {
     return descriptor && wifi_is_valid(descriptor->wifi) &&
            kv_store_is_valid(descriptor->kv_store) && key_is_valid(descriptor->key) &&
@@ -53,6 +60,7 @@ static bool descriptor_is_valid(const mybot_platform_descriptor_t *descriptor) {
            (!descriptor->https || https_is_valid(descriptor->https)) &&
            (!descriptor->lcd || lcd_is_valid(descriptor->lcd)) &&
            (!descriptor->announce || announce_is_valid(descriptor->announce)) &&
+           (!MYBOT_ENABLE_VIDEO || video_is_valid(descriptor->video)) &&
            (!descriptor->wake_words || wake_words_is_valid(descriptor->wake_words));
 }
 

@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.16)
 # generated from mybot_version.h.in at configure time, so the code can never
 # drift from the version declared here.
 set(MYBOT_VERSION_MAJOR 1)
-set(MYBOT_VERSION_MINOR 1)
+set(MYBOT_VERSION_MINOR 2)
 set(MYBOT_VERSION_PATCH 0)
 set(MYBOT_VERSION_PRERELEASE "")
 if(MYBOT_VERSION_PRERELEASE)
@@ -54,6 +54,9 @@ set(MYBOT_AUDIO_PTIME_MS "60" CACHE STRING "Audio packet duration: 20, 40, or 60
 set_property(CACHE MYBOT_AUDIO_PTIME_MS PROPERTY STRINGS 20 40 60)
 option(MYBOT_CLOUD_AEC "Enable server-side acoustic echo cancellation" ON)
 option(MYBOT_WAKE_WORDS "Enable the platform local-ASR wake-word implementation" OFF)
+option(MYBOT_ENABLE_VIDEO "Enable encoded video uplink" OFF)
+set(MYBOT_VIDEO_MAX_FRAME_BYTES "524288" CACHE STRING
+    "Maximum encoded video frame accepted by the SDK")
 option(MYBOT_AI_QOS "Enable Agora AI-driven QoS optimization" ON)
 set(MYBOT_FAST_SEND_MULTIPLIER "3" CACHE STRING "Agora fast-send multiplier: 1 through 5")
 set_property(CACHE MYBOT_FAST_SEND_MULTIPLIER PROPERTY STRINGS 1 2 3 4 5)
@@ -70,6 +73,9 @@ if(NOT MYBOT_AUDIO_PTIME_MS MATCHES "^(20|40|60)$")
 endif()
 if(NOT MYBOT_FAST_SEND_MULTIPLIER MATCHES "^[1-5]$")
     message(FATAL_ERROR "MYBOT_FAST_SEND_MULTIPLIER must be an integer from 1 through 5")
+endif()
+if(NOT MYBOT_VIDEO_MAX_FRAME_BYTES MATCHES "^[1-9][0-9]*$")
+    message(FATAL_ERROR "MYBOT_VIDEO_MAX_FRAME_BYTES must be a positive integer")
 endif()
 
 set(AOSL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/aosl" CACHE PATH
@@ -142,6 +148,7 @@ else()
 endif()
 
 mybot_check_rtsa_ptime("${AGORA_SDK_DIR}" "${MYBOT_AUDIO_PTIME_MS}")
+mybot_check_rtsa_video("${AGORA_SDK_DIR}" "${MYBOT_ENABLE_VIDEO}")
 
 function(mybot_enable_sanitizers target)
     if(MYBOT_ENABLE_ASAN AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
@@ -167,6 +174,7 @@ add_library(mybot_sdk STATIC
     src/media/mybot_audio.c
     src/media/mybot_media_pipeline.c
     src/media/mybot_wake_words.c
+    src/media/mybot_video.c
     src/platform/mybot_announce.c
     src/platform/mybot_key.c
     src/platform/mybot_https.c
@@ -204,6 +212,8 @@ target_compile_definitions(mybot_sdk PUBLIC
     MYBOT_AUDIO_PTIME_MS=${MYBOT_AUDIO_PTIME_MS}
     MYBOT_CLOUD_AEC=$<BOOL:${MYBOT_CLOUD_AEC}>
     MYBOT_WAKE_WORDS=$<BOOL:${MYBOT_WAKE_WORDS}>
+    MYBOT_ENABLE_VIDEO=$<BOOL:${MYBOT_ENABLE_VIDEO}>
+    MYBOT_VIDEO_MAX_FRAME_BYTES=${MYBOT_VIDEO_MAX_FRAME_BYTES}
     MYBOT_AI_QOS=$<BOOL:${MYBOT_AI_QOS}>
     MYBOT_FAST_SEND_MULTIPLIER=${MYBOT_FAST_SEND_MULTIPLIER}
     MYBOT_ENABLE_HTTPS=$<BOOL:${MYBOT_ENABLE_HTTPS}>

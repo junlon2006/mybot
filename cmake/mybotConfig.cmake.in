@@ -39,5 +39,6 @@ if(NOT TARGET mybot::agora-rtc-sdk)
 endif()
 
 mybot_check_rtsa_ptime("${MYBOT_AGORA_SDK_DIR}" "@MYBOT_AUDIO_PTIME_MS@")
+mybot_check_rtsa_video("${MYBOT_AGORA_SDK_DIR}" "@MYBOT_ENABLE_VIDEO@")
 
 check_required_components(mybot)

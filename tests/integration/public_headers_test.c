@@ -9,6 +9,7 @@
 #include <mybot/platform/mybot_lcd.h>
 #include <mybot/platform/mybot_platform.h>
 #include <mybot/platform/mybot_https.h>
+#include <mybot/platform/mybot_video.h>
 #include <mybot/platform/mybot_wake_words.h>
 #include <mybot/platform/mybot_wifi.h>
 

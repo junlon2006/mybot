@@ -9,6 +9,7 @@
 #include <mybot/platform/mybot_key.h>
 #include <mybot/platform/mybot_kv_store.h>
 #include <mybot/platform/mybot_lcd.h>
+#include <mybot/platform/mybot_video.h>
 #include <mybot/platform/mybot_wake_words.h>
 #include <mybot/platform/mybot_wifi.h>
 
@@ -46,6 +47,8 @@ typedef struct {
     const mybot_lcd_ops_t *lcd;
     /** Optional announcement operations. */
     const mybot_announce_ops_t *announce;
+    /** Optional encoded video capture and encoder operations (required when video is enabled). */
+    const mybot_video_ops_t *video;
     /** Optional wake-word operations. */
     const mybot_wake_words_ops_t *wake_words;
 } mybot_platform_descriptor_t;

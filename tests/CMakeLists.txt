@@ -9,6 +9,8 @@ set(MYBOT_TEST_FEATURE_DEFINITIONS
     MYBOT_AUDIO_PTIME_MS=${MYBOT_AUDIO_PTIME_MS}
     MYBOT_CLOUD_AEC=$<BOOL:${MYBOT_CLOUD_AEC}>
     MYBOT_WAKE_WORDS=$<BOOL:${MYBOT_WAKE_WORDS}>
+    MYBOT_ENABLE_VIDEO=$<BOOL:${MYBOT_ENABLE_VIDEO}>
+    MYBOT_VIDEO_MAX_FRAME_BYTES=${MYBOT_VIDEO_MAX_FRAME_BYTES}
     MYBOT_AI_QOS=$<BOOL:${MYBOT_AI_QOS}>
     MYBOT_FAST_SEND_MULTIPLIER=${MYBOT_FAST_SEND_MULTIPLIER}
     MYBOT_ENABLE_HTTPS=$<BOOL:${MYBOT_ENABLE_HTTPS}>
@@ -129,6 +131,7 @@ mybot_add_test(mybot_app_test
     ../src/core/mybot_state_model.c
     ../src/core/mybot_presenter.c
     ../src/media/mybot_media_pipeline.c
+    ../src/media/mybot_video.c
     ../src/support/mybot_json.c
     ../src/support/mybot_ringbuf.c
 )
