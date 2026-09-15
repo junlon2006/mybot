@@ -7,6 +7,7 @@
 
 #include <api/aosl_log.h>
 #include <api/aosl_atomic.h>
+#include <hal/aosl_hal_memory.h>
 
 #include <string.h>
 #include <stdio.h>
@@ -88,39 +89,53 @@ static int clamp_poll_interval(int seconds) {
 }
 
 static int persist_device_auth(mybot_device_lifecycle_t *lifecycle) {
-    mybot_device_auth_record_t record;
-    memset(&record, 0, sizeof(record));
-    record.version = MYBOT_DEVICE_AUTH_VERSION;
-    strncpy(record.server_base, lifecycle->server_base, sizeof(record.server_base) - 1);
-    strncpy(record.device_id, lifecycle->device_id, sizeof(record.device_id) - 1);
-    strncpy(record.device_token, lifecycle->device_token, sizeof(record.device_token) - 1);
-    return mybot_kv_store_set(lifecycle->kv_store, MYBOT_DEVICE_AUTH_KEY, &record, sizeof(record));
+    mybot_device_auth_record_t *record =
+        (mybot_device_auth_record_t *)aosl_hal_malloc(sizeof(*record));
+    if (!record) {
+        return -1;
+    }
+    memset(record, 0, sizeof(*record));
+    record->version = MYBOT_DEVICE_AUTH_VERSION;
+    strncpy(record->server_base, lifecycle->server_base, sizeof(record->server_base) - 1);
+    strncpy(record->device_id, lifecycle->device_id, sizeof(record->device_id) - 1);
+    strncpy(record->device_token, lifecycle->device_token, sizeof(record->device_token) - 1);
+    int ret =
+        mybot_kv_store_set(lifecycle->kv_store, MYBOT_DEVICE_AUTH_KEY, record, sizeof(*record));
+    aosl_hal_free(record);
+    return ret;
 }
 
 static bool load_device_auth(mybot_device_lifecycle_t *lifecycle) {
-    mybot_device_auth_record_t record;
+    mybot_device_auth_record_t *record =
+        (mybot_device_auth_record_t *)aosl_hal_malloc(sizeof(*record));
     size_t len = 0;
-    memset(&record, 0, sizeof(record));
-
-    int ret = mybot_kv_store_get(lifecycle->kv_store, MYBOT_DEVICE_AUTH_KEY, &record,
-                                 sizeof(record), &len);
-    if (ret == MYBOT_ERR_NOT_FOUND) {
+    if (!record) {
         return false;
     }
-    if (ret < 0 || len != sizeof(record) || record.version != MYBOT_DEVICE_AUTH_VERSION ||
-        record.server_base[sizeof(record.server_base) - 1] != '\0' ||
-        record.device_id[sizeof(record.device_id) - 1] != '\0' ||
-        record.device_token[sizeof(record.device_token) - 1] != '\0' ||
-        strcmp(record.server_base, lifecycle->server_base) != 0 ||
-        strcmp(record.device_id, lifecycle->device_id) != 0 || record.device_token[0] == '\0') {
+    memset(record, 0, sizeof(*record));
+
+    int ret = mybot_kv_store_get(lifecycle->kv_store, MYBOT_DEVICE_AUTH_KEY, record,
+                                 sizeof(*record), &len);
+    if (ret == MYBOT_ERR_NOT_FOUND) {
+        aosl_hal_free(record);
+        return false;
+    }
+    if (ret < 0 || len != sizeof(*record) || record->version != MYBOT_DEVICE_AUTH_VERSION ||
+        record->server_base[sizeof(record->server_base) - 1] != '\0' ||
+        record->device_id[sizeof(record->device_id) - 1] != '\0' ||
+        record->device_token[sizeof(record->device_token) - 1] != '\0' ||
+        strcmp(record->server_base, lifecycle->server_base) != 0 ||
+        strcmp(record->device_id, lifecycle->device_id) != 0 || record->device_token[0] == '\0') {
         if (ret < 0) {
             AOSL_LOG_ERR("failed to read persisted device credential");
         }
         (void)mybot_kv_store_erase(lifecycle->kv_store, MYBOT_DEVICE_AUTH_KEY);
+        aosl_hal_free(record);
         return false;
     }
 
-    strncpy(lifecycle->device_token, record.device_token, sizeof(lifecycle->device_token) - 1);
+    strncpy(lifecycle->device_token, record->device_token, sizeof(lifecycle->device_token) - 1);
+    aosl_hal_free(record);
     return true;
 }
 
@@ -203,58 +218,68 @@ static void action_poll_binding_pair(mybot_device_lifecycle_t *lifecycle) {
     char auth[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 16];
     snprintf(auth, sizeof(auth), "Pair %s", lifecycle->pair_token);
 
-    mybot_device_binding_t resp;
-    memset(&resp, 0, sizeof(resp));
+    mybot_device_binding_t *resp = (mybot_device_binding_t *)aosl_hal_malloc(sizeof(*resp));
+    if (!resp) {
+        AOSL_LOG_ERR("failed to allocate pair-status response");
+        return;
+    }
+    memset(resp, 0, sizeof(*resp));
 
     intptr_t network_generation = aosl_atomic_read(&lifecycle->network_generation);
     if (!aosl_atomic_read(&lifecycle->network_available)) {
+        aosl_hal_free(resp);
         return;
     }
 
     int ret = mybot_device_client_get_binding_status(lifecycle->server_base, lifecycle->device_id,
-                                                     auth, &resp);
+                                                     auth, resp);
     if (!network_request_is_current(lifecycle, network_generation)) {
         AOSL_LOG_WRN("discarding pair-status response after network change");
+        aosl_hal_free(resp);
         return;
     }
     if (api_rejected_device_auth(ret)) {
         AOSL_LOG_WRN("pair credential rejected (HTTP %d), requesting a new pair code", ret);
         lifecycle->pairing_requested = true;
+        aosl_hal_free(resp);
         return;
     }
     if (ret != 0) {
         AOSL_LOG_ERR("bind poll (pair) failed, retrying");
+        aosl_hal_free(resp);
         return;
     }
 
-    AOSL_LOG_NTC("bind poll -> status=%s", resp.status);
+    AOSL_LOG_NTC("bind poll -> status=%s", resp->status);
 
-    if (strcmp(resp.status, "pending") == 0) {
-        lifecycle->pair_poll_interval = clamp_poll_interval(resp.poll_after_seconds);
+    if (strcmp(resp->status, "pending") == 0) {
+        lifecycle->pair_poll_interval = clamp_poll_interval(resp->poll_after_seconds);
         /* Stay in awaiting_claim. */
-    } else if (strcmp(resp.status, "bound") == 0) {
-        if (resp.device_token[0]) {
-            strncpy(lifecycle->device_token, resp.device_token,
+    } else if (strcmp(resp->status, "bound") == 0) {
+        if (resp->device_token[0]) {
+            strncpy(lifecycle->device_token, resp->device_token,
                     sizeof(lifecycle->device_token) - 1);
         }
         if (!lifecycle->device_token[0]) {
             AOSL_LOG_ERR("bound response did not include the one-time device credential");
+            aosl_hal_free(resp);
             return;
         }
         if (persist_device_auth(lifecycle) < 0) {
             AOSL_LOG_ERR("failed to persist device credential, retrying");
+            aosl_hal_free(resp);
             return;
         }
         AOSL_LOG_NTC("device credential persisted");
         set_state(lifecycle, MYBOT_DEVICE_STATE_RUNTIME);
-        lifecycle->runtime_poll_interval = clamp_poll_interval(resp.poll_after_seconds);
+        lifecycle->runtime_poll_interval = clamp_poll_interval(resp->poll_after_seconds);
         lifecycle->runtime_tick_counter = 0;
-    } else if (strcmp(resp.status, "expired") == 0 || strcmp(resp.status, "failed") == 0) {
-        AOSL_LOG_NTC("pairing status %s, re-pairing", resp.status);
+    } else if (strcmp(resp->status, "expired") == 0 || strcmp(resp->status, "failed") == 0) {
+        AOSL_LOG_NTC("pairing status %s, re-pairing", resp->status);
         /* The top-level pairing handler in tick() re-runs the pair-code
          * request on the next tick. */
         lifecycle->pairing_requested = true;
-    } else if (strcmp(resp.status, "unbound") == 0) {
+    } else if (strcmp(resp->status, "unbound") == 0) {
         /* Unexpected during pairing, but handle it gracefully. */
         AOSL_LOG_NTC("unexpected unbound during pairing");
         set_state(lifecycle, MYBOT_DEVICE_STATE_UNPROVISIONED);
@@ -262,8 +287,9 @@ static void action_poll_binding_pair(mybot_device_lifecycle_t *lifecycle) {
         lifecycle->pairing_requested = true;
     } else {
         /* Unknown status. */
-        AOSL_LOG_ERR("unknown bind status: %s", resp.status);
+        AOSL_LOG_ERR("unknown bind status: %s", resp->status);
     }
+    aosl_hal_free(resp);
 }
 
 /* ----------------------------------------------------------
@@ -282,38 +308,47 @@ static void action_poll_binding_runtime(mybot_device_lifecycle_t *lifecycle) {
     char auth[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 16];
     snprintf(auth, sizeof(auth), "Device %s", lifecycle->device_token);
 
-    mybot_device_binding_t resp;
-    memset(&resp, 0, sizeof(resp));
+    mybot_device_binding_t *resp = (mybot_device_binding_t *)aosl_hal_malloc(sizeof(*resp));
+    if (!resp) {
+        AOSL_LOG_ERR("failed to allocate runtime-status response");
+        return;
+    }
+    memset(resp, 0, sizeof(*resp));
 
     intptr_t network_generation = aosl_atomic_read(&lifecycle->network_generation);
     if (!aosl_atomic_read(&lifecycle->network_available)) {
+        aosl_hal_free(resp);
         return;
     }
 
     int ret = mybot_device_client_get_binding_status(lifecycle->server_base, lifecycle->device_id,
-                                                     auth, &resp);
+                                                     auth, resp);
     if (!network_request_is_current(lifecycle, network_generation)) {
         AOSL_LOG_WRN("discarding runtime-status response after network change");
+        aosl_hal_free(resp);
         return;
     }
     if (api_rejected_device_auth(ret)) {
         AOSL_LOG_WRN("device credential rejected (HTTP %d), re-pairing", ret);
         invalidate_runtime_binding(lifecycle);
+        aosl_hal_free(resp);
         return;
     }
     if (ret != 0) {
         AOSL_LOG_ERR("bind poll (device) failed, retrying");
+        aosl_hal_free(resp);
         return;
     }
 
-    if (strcmp(resp.status, "bound") == 0) {
-        lifecycle->runtime_poll_interval = clamp_poll_interval(resp.poll_after_seconds);
-    } else if (strcmp(resp.status, "unbound") == 0) {
+    if (strcmp(resp->status, "bound") == 0) {
+        lifecycle->runtime_poll_interval = clamp_poll_interval(resp->poll_after_seconds);
+    } else if (strcmp(resp->status, "unbound") == 0) {
         AOSL_LOG_NTC("device unbound by user");
         invalidate_runtime_binding(lifecycle);
     } else {
-        AOSL_LOG_ERR("unexpected runtime status: %s", resp.status);
+        AOSL_LOG_ERR("unexpected runtime status: %s", resp->status);
     }
+    aosl_hal_free(resp);
 }
 
 static void tick_runtime_binding_poll(mybot_device_lifecycle_t *lifecycle) {
@@ -352,60 +387,80 @@ static void schedule_rtc_token_retry(mybot_device_lifecycle_t *lifecycle) {
  * Action: start conversation
  * ---------------------------------------------------------- */
 static void action_start_conversation(mybot_device_lifecycle_t *lifecycle) {
-    mybot_device_conversation_t resp;
-    memset(&resp, 0, sizeof(resp));
+    mybot_device_conversation_t *resp =
+        (mybot_device_conversation_t *)aosl_hal_malloc(sizeof(*resp));
+    if (!resp) {
+        AOSL_LOG_ERR("failed to allocate conversation response");
+        return;
+    }
+    memset(resp, 0, sizeof(*resp));
 
     intptr_t network_generation = aosl_atomic_read(&lifecycle->network_generation);
     if (!aosl_atomic_read(&lifecycle->network_available)) {
+        aosl_hal_free(resp);
         return;
     }
 
     int ret = mybot_device_client_start_conversation(lifecycle->server_base, lifecycle->device_id,
-                                                     lifecycle->device_token, NULL, &resp);
+                                                     lifecycle->device_token, NULL, resp);
     if (!network_request_is_current(lifecycle, network_generation)) {
         AOSL_LOG_WRN("discarding conversation response after network change");
+        aosl_hal_free(resp);
         return;
     }
     if (api_rejected_device_auth(ret)) {
         AOSL_LOG_WRN("device credential rejected while starting conversation (HTTP %d)", ret);
         restart_pairing_after_auth_rejection(lifecycle);
+        aosl_hal_free(resp);
         return;
     }
     if (ret != 0) {
         AOSL_LOG_ERR("start conversation failed");
+        aosl_hal_free(resp);
         return;
     }
 
-    if (!memchr(resp.conversation_id, '\0', sizeof(resp.conversation_id)) ||
-        resp.conversation_id[0] == '\0') {
+    if (!memchr(resp->conversation_id, '\0', sizeof(resp->conversation_id)) ||
+        resp->conversation_id[0] == '\0') {
         AOSL_LOG_ERR("start conversation returned an invalid conversation_id");
+        aosl_hal_free(resp);
         return;
     }
 
-    strncpy(lifecycle->conversation_id, resp.conversation_id,
+    strncpy(lifecycle->conversation_id, resp->conversation_id,
             sizeof(lifecycle->conversation_id) - 1);
     clear_rtc_token_renewal(lifecycle);
-    snprintf(lifecycle->rtc_channel, sizeof(lifecycle->rtc_channel), "%s", resp.rtc_channel);
-    snprintf(lifecycle->rtc_uid, sizeof(lifecycle->rtc_uid), "%s", resp.rtc_uid);
-    snprintf(lifecycle->rtc_agent_uid, sizeof(lifecycle->rtc_agent_uid), "%s", resp.rtc_agent_uid);
+    snprintf(lifecycle->rtc_channel, sizeof(lifecycle->rtc_channel), "%s", resp->rtc_channel);
+    snprintf(lifecycle->rtc_uid, sizeof(lifecycle->rtc_uid), "%s", resp->rtc_uid);
+    snprintf(lifecycle->rtc_agent_uid, sizeof(lifecycle->rtc_agent_uid), "%s", resp->rtc_agent_uid);
 
     AOSL_LOG_NTC("conversation started: %s, channel=%s, uid=%s", lifecycle->conversation_id,
-                 resp.rtc_channel, resp.rtc_uid);
+                 resp->rtc_channel, resp->rtc_uid);
 
     set_state(lifecycle, MYBOT_DEVICE_STATE_IN_CONVERSATION);
 
     /* Notify app */
     if (lifecycle->cbs.on_conversation_start) {
-        mybot_conversation_params_t params;
-        memset(&params, 0, sizeof(params));
-        strncpy(params.conversation_id, resp.conversation_id, sizeof(params.conversation_id) - 1);
-        strncpy(params.rtc_app_id, resp.rtc_app_id, sizeof(params.rtc_app_id) - 1);
-        strncpy(params.rtc_channel, resp.rtc_channel, sizeof(params.rtc_channel) - 1);
-        strncpy(params.rtc_uid, resp.rtc_uid, sizeof(params.rtc_uid) - 1);
-        strncpy(params.rtc_agent_uid, resp.rtc_agent_uid, sizeof(params.rtc_agent_uid) - 1);
-        strncpy(params.rtc_token, resp.rtc_token, sizeof(params.rtc_token) - 1);
-        lifecycle->cbs.on_conversation_start(&params, lifecycle->cbs.user_data);
+        mybot_conversation_params_t *params =
+            (mybot_conversation_params_t *)aosl_hal_malloc(sizeof(*params));
+        if (!params) {
+            AOSL_LOG_ERR("failed to allocate conversation callback parameters");
+            aosl_atomic_set(&lifecycle->stop_request, MYBOT_STOP_REQUEST_ERROR);
+            aosl_hal_free(resp);
+            return;
+        }
+        memset(params, 0, sizeof(*params));
+        strncpy(params->conversation_id, resp->conversation_id,
+                sizeof(params->conversation_id) - 1);
+        strncpy(params->rtc_app_id, resp->rtc_app_id, sizeof(params->rtc_app_id) - 1);
+        strncpy(params->rtc_channel, resp->rtc_channel, sizeof(params->rtc_channel) - 1);
+        strncpy(params->rtc_uid, resp->rtc_uid, sizeof(params->rtc_uid) - 1);
+        strncpy(params->rtc_agent_uid, resp->rtc_agent_uid, sizeof(params->rtc_agent_uid) - 1);
+        strncpy(params->rtc_token, resp->rtc_token, sizeof(params->rtc_token) - 1);
+        lifecycle->cbs.on_conversation_start(params, lifecycle->cbs.user_data);
+        aosl_hal_free(params);
     }
+    aosl_hal_free(resp);
 }
 
 /* ----------------------------------------------------------

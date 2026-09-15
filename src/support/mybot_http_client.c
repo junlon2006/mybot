@@ -27,6 +27,7 @@
 #define RECV_BUF_SIZE 4096
 #define RECV_BUF_MAX (32 * 1024) /* hard cap on response buffer */
 #define MAX_URL_LEN 512
+#define HTTP_REQUEST_BUFFER_SIZE 2048
 
 static bool ascii_case_equal_n(const char *left, const char *right, size_t len) {
     for (size_t i = 0; i < len; i++) {
@@ -820,7 +821,11 @@ static int http_request(const char *method, const char *url, const char *content
 
     /* Build the HTTP request. Include a non-default port in Host so virtual
      * hosts and reverse proxies route the request correctly. */
-    char req[2048];
+    char *req = (char *)aosl_hal_malloc(HTTP_REQUEST_BUFFER_SIZE);
+    if (!req) {
+        stream_close(&stream);
+        return -1;
+    }
     char host_header[sizeof(parts.host) + 8];
     bool include_port = (parts.use_tls && parts.port != HTTPS_DEFAULT_PORT) ||
                         (!parts.use_tls && parts.port != HTTP_DEFAULT_PORT);
@@ -828,13 +833,14 @@ static int http_request(const char *method, const char *url, const char *content
                        ? snprintf(host_header, sizeof(host_header), "%s:%d", parts.host, parts.port)
                        : snprintf(host_header, sizeof(host_header), "%s", parts.host);
     if (host_len < 0 || (size_t)host_len >= sizeof(host_header)) {
+        aosl_hal_free(req);
         stream_close(&stream);
         return -1;
     }
     int req_len;
 
     if (strcmp(method, "POST") == 0 && req_body) {
-        req_len = snprintf(req, sizeof(req),
+        req_len = snprintf(req, HTTP_REQUEST_BUFFER_SIZE,
                            "POST %s HTTP/1.1\r\n"
                            "Host: %s\r\n"
                            "Content-Type: %s\r\n"
@@ -847,7 +853,7 @@ static int http_request(const char *method, const char *url, const char *content
                            content_type ? content_type : "application/octet-stream",
                            strlen(req_body), extra_headers ? extra_headers : "", req_body);
     } else {
-        req_len = snprintf(req, sizeof(req),
+        req_len = snprintf(req, HTTP_REQUEST_BUFFER_SIZE,
                            "GET %s HTTP/1.1\r\n"
                            "Host: %s\r\n"
                            "Connection: close\r\n"
@@ -856,13 +862,15 @@ static int http_request(const char *method, const char *url, const char *content
                            parts.path, host_header, extra_headers ? extra_headers : "");
     }
 
-    if (req_len < 0 || (size_t)req_len >= sizeof(req)) {
+    if (req_len < 0 || (size_t)req_len >= HTTP_REQUEST_BUFFER_SIZE) {
+        aosl_hal_free(req);
         stream_close(&stream);
         return -1;
     }
 
     /* Send the request. */
     int ret = send_all(&stream, req, (size_t)req_len, deadline);
+    aosl_hal_free(req);
     if (ret < 0) {
         stream_close(&stream);
         return -1;
