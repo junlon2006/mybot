@@ -36,7 +36,7 @@
 ## 发布
 
 - [ ] 确认现有 `v1.0.0` tag 仍指向历史 1.0.0 发布提交；绝不移动或覆盖已有发布 tag。
-- [ ] 创建与 `MYBOT_VERSION_STRING` 匹配的带注释的发布 tag（例如 `v1.1.0`）。
+- [ ] 在 `main` 分支创建与 `MYBOT_VERSION_STRING` 匹配的带注释发布 tag（例如 `v1.2.0`）。
 - [ ] 仅在第三方授权审查后附加源码与二进制制品。
 - [ ] 包含 `LICENSE`、`THIRD_PARTY_NOTICES.md`、changelog 与校验和。
 - [ ] 将 GitHub release 发布为正式版（不标记为预发布）并列出已知限制。

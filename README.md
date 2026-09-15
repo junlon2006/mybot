@@ -5,16 +5,18 @@
 
 **[English](README.md) | [简体中文](README.zh-CN.md)**
 
-`mybot` is a cross-platform **AI voice-chat SDK** for edge devices: it lets smart devices hold
-real-time voice conversations with cloud AI agents over Agora RTC. The platform/application owns
+`mybot` is a cross-platform **AI multimodal interaction SDK** for edge devices: it lets smart devices
+send voice and optional device-camera video to cloud AI agents over Agora RTC for real-time
+conversation and visual recognition. The platform/application owns
 APSTA provisioning and Wi-Fi credentials; the SDK consumes connectivity events and handles device
 pairing and authentication, a conversation state machine, full-duplex voice interaction (Agora RTSA
-with Agora AI capabilities), button/LCD workflows, and optional local wake-word recognition.
+with Agora AI capabilities), optional device-video uplink, button/LCD workflows, and optional local
+wake-word recognition.
 Platform-specific capabilities are injected through a small set of `ops` interfaces;
 the core depends only on C99 and AOSL and can be ported to virtually any platform — Linux, an
 RTOS, or a bare-metal MCU.
 
-> Current version: **1.1.0**. The bundled Agora RTSA
+> Current version: **1.2.0**. The bundled Agora RTSA
 > binary and AOSL have separate licensing and usage terms; read
 > [License and third-party dependencies](#license-and-third-party-dependencies) before using the
 > SDK in a product.
@@ -38,6 +40,9 @@ RTOS, or a bare-metal MCU.
 
 - **Real-time AI conversation**: Hold live voice chats with a cloud AI agent; speech recognition,
   language-model reasoning, and speech synthesis (ASR / LLM / TTS) are orchestrated in the cloud.
+- **Multimodal device input**: Optionally upload platform-encoded camera frames so the cloud AI agent
+  can perform visual recognition alongside voice. JPEG, H.264, and H.265 are supported; video is
+  uplink-only and the server does not send video back to the device.
 - **Portable to virtually any platform**: The core depends only on C99 and AOSL, and device
   capabilities are injected through the `ops` contract, so it never touches any OS or peripheral
   API directly — Linux, an RTOS, or a bare-metal MCU.
@@ -81,6 +86,8 @@ RTOS, or a bare-metal MCU.
 
 - Audio is fixed at 16 kHz, mono, 16-bit PCM; `ptime` is configurable to 20/40/60 ms (default
   60 ms).
+- Video uplink is optional and uses platform-owned JPEG, H.264, or H.265 encoding. The SDK does not
+  encode, decode, buffer, or receive video; it sends one primary encoded stream to the cloud agent.
 - The RTC implementation is specific to Agora RTSA; no other RTC protocol adapter is provided.
 - Local ASR wake words are an optional platform implementation, off by default; enabling them
   requires the platform to register an implementation.
@@ -91,14 +98,16 @@ RTOS, or a bare-metal MCU.
 
 ## Conversation flow
 
-The SDK establishes a real-time audio channel with a cloud AI agent over Agora RTC, forming a
-complete voice conversation loop:
+The SDK establishes a real-time audio channel and optional encoded video uplink to a cloud AI agent
+over Agora RTC, forming a multimodal interaction loop:
 
 ```mermaid
 flowchart LR
     user["User speaks"] --> mic["Microphone · capture"]
     mic --> up["Agora RTC uplink"]
-    up --> agent["Cloud AI agent<br/>ASR · LLM · TTS"]
+    camera["Camera"] --> encode["Platform encoder<br/>JPEG · H.264 · H.265"]
+    encode --> up
+    up --> agent["Cloud AI agent<br/>ASR · LLM · TTS · vision"]
     agent --> down["Agora RTC downlink"]
     down --> spk["Speaker · playback"]
     spk --> reply["User hears the AI reply"]
@@ -106,6 +115,9 @@ flowchart LR
 
 - **Uplink**: the device captures 16 kHz PCM from the microphone and sends it to the cloud AI agent
   over Agora RTC.
+- **Visual uplink (optional)**: the platform captures and encodes camera frames; the SDK forwards
+  the encoded frames over the same RTC channel for cloud-side visual recognition. The server does
+  not send video back to the device.
 - **Cloud orchestration**: the AI agent performs speech recognition (ASR), language-model reasoning
   and reply generation (LLM), and speech synthesis (TTS).
 - **Downlink**: the AI reply audio returns over Agora RTC and plays out on the device speaker.
@@ -140,7 +152,7 @@ Run the example:
 ./build/examples/linux/mybot \
   --server https://api.example.com \
   --device-id AG-DEMO-001 \
-  --fw-ver 1.1.0 \
+  --fw-ver 1.2.0 \
   --hw-model linux-reference
 ```
 
@@ -233,6 +245,10 @@ The following options can be set via the CMake command line or cache variables b
 | `MYBOT_AUDIO_PTIME_MS` | `60` | Audio packet duration; accepts only 20, 40, 60 ms |
 | `MYBOT_CLOUD_AEC` | `ON` | Server-side AEC; the uplink carries mic and reference channels |
 | `MYBOT_WAKE_WORDS` | `OFF` | Enable the platform local-ASR wake-word implementation |
+| `MYBOT_ENABLE_VIDEO` | `OFF` | Enable platform-encoded JPEG/H.264/H.265 video uplink |
+| `MYBOT_VIDEO_MAX_FRAME_BYTES` | `524288` | Maximum encoded video frame accepted by the SDK |
+| `MYBOT_VIDEO_MIN_BPS` | `16000` | Minimum video uplink BWE limit in bits per second |
+| `MYBOT_VIDEO_MAX_BPS` | `256000` | Maximum video uplink BWE limit in bits per second |
 | `MYBOT_AI_QOS` | `ON` | Agora AI QoS |
 | `MYBOT_FAST_SEND_MULTIPLIER` | `3` | Fast-send multiplier; accepts only 1–5 |
 | `MYBOT_ENABLE_HTTPS` | `ON` | Enable the platform HTTPS transport; keep ON for production builds |
@@ -308,11 +324,12 @@ flowchart TB
         svc_c["Device-service client<br/>pair / claim / conversation polling"]
         rtc_c["Agora RTC<br/>RTSA wrapper"]
         media_c["Audio pipeline<br/>ring buffers · AEC reference · wake words"]
+        video_c["Video uplink<br/>platform encoder bridge"]
     end
 
     subgraph infra["Foundation layer"]
         aosl["AOSL<br/>MPQ threads · timers · atomics · logging"]
-        ops["Platform ops contract<br/>wifi · kv_store · key · lcd<br/>audio · https · announce · asr"]
+        ops["Platform ops contract<br/>wifi · kv_store · key · lcd<br/>audio · video · https · announce · asr"]
     end
 
     subgraph plat["Platform implementations"]
@@ -334,6 +351,7 @@ flowchart TB
     state_m --> app_state
     app_state --> presenter
     app_c --> media_c
+    app_c --> video_c
     state_m --> svc_c
     svc_c --> rtc_c
     rtc_c <--> media_c
@@ -343,10 +361,13 @@ flowchart TB
     svc_c --> aosl
     rtc_c --> aosl
     media_c --> aosl
+    video_c --> aosl
+    video_c --> ops
     ops --> linux_b
     ops --> mcu_b
     svc_c -->|HTTPS polling| svc_e
     rtc_c -->|real-time audio| agora_e
+    video_c -->|encoded video uplink| agora_e
     agora_e <--> agent_e
     svc_e -->|schedules session| agent_e
 ```
@@ -366,16 +387,17 @@ Layer notes:
   UI and volume actions, and resource startup and shutdown. RTC commands are forwarded synchronously
   to the dedicated `rtc_mpq`, which serializes RTSA lifecycle, vendor calls, and callbacks. Control
   callbacks only publish short events or atomic mailboxes to their owner. The core also contains the
-  device-service HTTP client, the Agora RTSA session wrapper, audio ring buffers, and the optional
-  local wake-word engine. Core code never touches any OS or peripheral API directly.
+  device-service HTTP client, the Agora RTSA session wrapper, audio ring buffers, the optional video
+  uplink bridge, and the optional local wake-word engine. Core code never touches any OS or
+  peripheral API directly.
 - **Foundation layer**: AOSL provides portable threads / MPQ queues / timers / logging; the
   platform `ops` contract defines the device capabilities the SDK requires. Both are implementable
   per platform.
 - **Platform implementations**: the Linux reference implementation and each MCU platform register
   against the same contract.
 - **External services**: the device server (pairing / claim / session scheduling, HTTPS only), the
-  Agora RTC cloud (real-time audio transport), and the cloud AI agent (speech recognition /
-  understanding / synthesis).
+  Agora RTC cloud (real-time audio and optional video transport), and the cloud AI agent (speech
+  recognition / understanding / synthesis / visual recognition).
 
 ### Threading model
 
@@ -395,6 +417,8 @@ Callbacks keep their work bounded: they enqueue a short control event or publish
 PCM capture, RTC uplink/downlink, and playback stay on the direct data path and never pass through
 `control_mpq`. The real-time audio timers (cap / pb / send) are independent, so blocking control or
 device-service work cannot stall the audio cadence.
+When video is enabled, the platform encoder owns frame capture and timing; the SDK adds no video
+worker or frame queue. Each encoded frame is borrowed only for the synchronous RTC send call.
 
 ### Workflows
 
@@ -435,6 +459,19 @@ With `MYBOT_CLOUD_AEC=ON`, the downlink audio is interleaved with the microphone
 reference channel and sent uplink together, letting the server cancel echo. The uplink and downlink
 run concurrently (**full-duplex**): the microphone keeps streaming during AI replies, which is what
 lets the cloud agent support user interruption.
+
+#### Multimodal video flow
+
+```mermaid
+flowchart LR
+    camera["Camera"] --> encoder["Platform encoder"]
+    encoder -->|JPEG · H.264 · H.265| video["MyBot video handler"]
+    video --> rtc_v["Agora RTC video uplink"]
+    rtc_v --> vision["Cloud AI visual recognition"]
+```
+
+The video handler uses RTSA's target-bitrate callback to let the platform encoder adapt to current
+uplink capacity. The device sends only the primary video stream; remote video subscription is off.
 
 ## Repository layout
 

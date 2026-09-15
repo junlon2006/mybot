@@ -4,10 +4,25 @@ This project follows Semantic Versioning.
 
 ## [Unreleased]
 
+Changes since the last release will be recorded here.
+
+## [1.2.0] - 2026-09-15
+
 ### Added
 
 - Forward RTM `state.listening`, `state.thinking`, and `state.speaking` events to the active
   conversation LCD as mutually exclusive server-state indicators alongside voice-print status.
+- Add optional multimodal video uplink. Platforms provide complete JPEG, H.264, or H.265 access units;
+  the SDK forwards them to the cloud agent without encoding, decoding, buffering, or receiving video.
+- Add the `mybot_video_ops_t` platform contract, including RTSA target-bitrate and optional key-frame
+  callbacks so an encoder can adapt to the available video bitrate.
+
+### Changed
+
+- Add `MYBOT_ENABLE_VIDEO`, `MYBOT_VIDEO_MAX_FRAME_BYTES`, `MYBOT_VIDEO_MIN_BPS`, and
+  `MYBOT_VIDEO_MAX_BPS` build options. When video is enabled, the SDK configures RTSA's BWE range
+  from the configured video bitrate limits and starts at their midpoint.
+- Disable remote video subscription because MyBot only sends device video upstream.
 
 ## [1.1.0] - 2026-09-12
 

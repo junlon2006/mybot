@@ -19,7 +19,7 @@ x86_64 Linux 参考构建（GCC 13，默认优化），**仅供参考**——请
     size <firmware.elf>
     ls -l <build>/libmybot_sdk.a
 
-特性开关直接影响代码体积——`MYBOT_CLOUD_AEC`、`MYBOT_WAKE_WORDS`、
+特性开关直接影响代码体积——`MYBOT_CLOUD_AEC`、`MYBOT_WAKE_WORDS`、`MYBOT_ENABLE_VIDEO`、
 `MYBOT_ENABLE_HTTPS` 是主要项；产品用不到的功能请关闭。在 MCU 上 Agora RTSA 库通常占掉
 大部分 Flash，且必须使用目标架构的包（随附共享库仅限 x86_64 Linux）。
 
@@ -32,6 +32,12 @@ x86_64 Linux 参考构建（GCC 13，默认优化），**仅供参考**——请
 - **配对播报（可选）**：拿到配对码时，平台通过 announcement ops 提供原始 16 kHz 单声道
   s16 PCM（SDK 不含解码器）。播放 worker 将提示音与 RTC 播放 ring 分开，末尾不足一帧时补零，
   通过正常扬声器链路只播报一次。提示音和数字音资源在播放期间临时载入内存。
+- **视频上行（可选）**：启用 `MYBOT_ENABLE_VIDEO` 后，平台负责摄像头采集和 JPEG/H.264/H.265
+  编码，SDK 不做编码、解码或视频接收。编码帧通过借用内存的 handler 直接送入 RTC；SDK 不
+  建立视频 ring buffer，RTSA 根据上行带宽回调 `on_target_bitrate_changed()`，平台编码器据此
+  调整码率。`MYBOT_VIDEO_MIN_BPS` 和 `MYBOT_VIDEO_MAX_BPS` 限制初始 RTSA BWE 范围，初始值
+  使用两者中点；每帧大小受 `MYBOT_VIDEO_MAX_FRAME_BYTES` 限制，目标需将 RTSA 每帧内部的
+  分包分配计入堆预算。
 - **堆**：HTTP 请求缓冲固定 2 KB，响应初始分配 4 KB、单请求最大增长到 32 KB（用后即释放）；
   生命周期的认证/会话响应和请求头、RTM LCD 状态解析的临时消息缓冲也通过
   `aosl_hal_malloc` 有界申请并在本次操作结束时释放。JSON 解析与平台实现（ALSA、OpenSSL、

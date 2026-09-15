@@ -40,7 +40,7 @@
 
 - [ ] Confirm the existing `v1.0.0` tag still points to the historical 1.0.0 release; never move
       or overwrite an existing release tag.
-- [ ] Create an annotated release tag matching `MYBOT_VERSION_STRING` (e.g. `v1.1.0`).
+- [ ] Create an annotated release tag matching `MYBOT_VERSION_STRING` (e.g. `v1.2.0`) on `main`.
 - [ ] Attach source and binary artifacts only after third-party authorization review.
 - [ ] Include `LICENSE`, `THIRD_PARTY_NOTICES.md`, changelog, and checksums.
 - [ ] Publish the GitHub release as a stable release (not marked as a prerelease) and list

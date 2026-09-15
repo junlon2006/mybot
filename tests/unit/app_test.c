@@ -5,6 +5,7 @@
 #include <mybot/platform/mybot_key.h>
 #include <mybot/platform/mybot_lcd.h>
 #include <mybot/platform/mybot_platform.h>
+#include <mybot/platform/mybot_video.h>
 #include <mybot/platform/mybot_wake_words.h>
 #include <mybot/platform/mybot_wifi.h>
 
@@ -92,6 +93,44 @@ static bool s_wake_words_registered;
 
 static const mybot_https_ops_t s_registered_https_ops;
 static const mybot_wake_words_ops_t s_registered_wake_words_ops;
+#if MYBOT_ENABLE_VIDEO
+static int video_init(void **ctx, uint32_t min_bps, uint32_t max_bps,
+                      mybot_video_frame_handler_t handler, void *user_data) {
+    assert(min_bps == MYBOT_VIDEO_MIN_BPS);
+    assert(max_bps == MYBOT_VIDEO_MAX_BPS);
+    (void)handler;
+    (void)user_data;
+    *ctx = ctx;
+    return 0;
+}
+
+static int video_start(void *ctx) {
+    (void)ctx;
+    return 0;
+}
+
+static int video_stop(void *ctx) {
+    (void)ctx;
+    return 0;
+}
+
+static void video_target_bitrate(void *ctx, uint32_t target_bps) {
+    (void)ctx;
+    (void)target_bps;
+}
+
+static void video_destroy(void *ctx) {
+    (void)ctx;
+}
+
+static const mybot_video_ops_t s_registered_video_ops = {
+    .init = video_init,
+    .start = video_start,
+    .stop = video_stop,
+    .on_target_bitrate_changed = video_target_bitrate,
+    .destroy = video_destroy,
+};
+#endif
 static mybot_platform_descriptor_t s_registry_view;
 
 static int s_wifi_init_calls;
@@ -432,6 +471,9 @@ bool mybot_platform_registry_is_registered(void) {
 const mybot_platform_descriptor_t *mybot_platform_registry_get(void) {
     s_registry_view.https = s_https_registered ? &s_registered_https_ops : NULL;
     s_registry_view.wake_words = s_wake_words_registered ? &s_registered_wake_words_ops : NULL;
+#if MYBOT_ENABLE_VIDEO
+    s_registry_view.video = s_platform_registered ? &s_registered_video_ops : NULL;
+#endif
     return &s_registry_view;
 }
 
@@ -1118,6 +1160,15 @@ int mybot_agora_rtc_send_audio(const void *data, size_t len) {
     mock_unlock();
     return 0;
 }
+
+#if MYBOT_ENABLE_VIDEO
+int mybot_agora_rtc_send_video(const mybot_video_frame_t *frame) {
+    if (!frame || !frame->data || frame->len == 0) {
+        return -1;
+    }
+    return 0;
+}
+#endif
 
 int mybot_agora_rtc_renew_token(const char *token) {
     observe_control_thread(CONTROL_OBS_RTC_RENEW);

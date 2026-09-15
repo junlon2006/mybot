@@ -5,13 +5,14 @@
 
 **[English](README.md) | 简体中文**
 
-`mybot` 是面向设备端的跨平台 **AI 语音对话 SDK**：让智能设备通过声网 Agora RTC 与
-云端 AI Agent 进行实时语音聊天。平台/应用负责 APSTA 配网和 Wi-Fi 凭据；SDK 消费网络
+`mybot` 是面向设备端的跨平台 **AI 多模态交互 SDK**：让智能设备通过声网 Agora RTC 将
+语音和可选的设备摄像头视频发送给云端 AI Agent，进行实时对话和视觉识别。平台/应用负责
+APSTA 配网和 Wi-Fi 凭据；SDK 消费网络
 连接事件，并负责设备配对与认证、会话状态机、全双工语音交互（Agora RTSA 与 Agora AI
-能力）、按键/LCD 工作流以及可选的本地唤醒词识别。平台相关能力通过一组小型 `ops` 接口注入，SDK 核心只依赖 C99 与 AOSL，理论上
+能力）、可选的设备视频上行、按键/LCD 工作流以及可选的本地唤醒词识别。平台相关能力通过一组小型 `ops` 接口注入，SDK 核心只依赖 C99 与 AOSL，理论上
 可移植到任意平台——Linux、RTOS 或裸机 MCU。
 
-> 当前版本为 **1.1.0**。仓库内置的 Agora RTSA 二进制与
+> 当前版本为 **1.2.0**。仓库内置的 Agora RTSA 二进制与
 > AOSL 有独立的许可及使用条件；用于产品前请阅读[许可证与第三方依赖](#许可证与第三方依赖)。
 
 ## 目录
@@ -33,6 +34,8 @@
 
 - **AI 实时对话**：与云端 AI Agent 进行实时语音聊天，语音识别 / 大模型理解 / 语音合成
   （ASR / LLM / TTS）由云端编排。
+- **多模态设备输入**：可选上传由平台编码的摄像头视频，让云端 AI Agent 结合语音进行
+  视觉识别。支持 JPEG、H.264、H.265；视频仅上行，服务端不会向设备端发送视频。
 - **任意平台可移植**：核心只依赖 C99 与 AOSL，设备能力通过 `ops` 契约注入，不直接触碰
   任何 OS 或外设 API；理论上可移植到 Linux、RTOS、裸机等任意平台。
 - **APSTA 集成**：非阻塞启动，由平台拥有配网流程，并通过 Wi-Fi 事件驱动应用状态机推进。
@@ -65,6 +68,8 @@
 
 - 音频格式固定为 16 kHz、单声道、16-bit PCM；`ptime` 可配置为 20/40/60 ms，默认
   60 ms。
+- 视频上行可选，由平台负责 JPEG、H.264 或 H.265 编码。SDK 不编码、解码或缓存视频，
+  只向云端发送一个主视频流。
 - RTC 实现专用于 Agora RTSA，不提供其他 RTC 协议适配层。
 - 本地 ASR 唤醒词为可选平台实现，默认关闭；开启时必须由平台注册实现。
 - APSTA 配网和凭据由平台/应用负责，SDK 的 Wi-Fi 接口只消费网络连接状态事件。
@@ -72,19 +77,23 @@
 
 ## 对话流程
 
-SDK 通过 Agora RTC 与云端 AI Agent 建立实时音频通道，形成完整的语音对话回路：
+SDK 通过 Agora RTC 与云端 AI Agent 建立实时音频通道，并可上行编码视频，形成多模态交互回路：
 
 ```mermaid
 flowchart LR
     user["用户说话"] --> mic["麦克风 · 采集"]
     mic --> up["Agora RTC 上行"]
-    up --> agent["云端 AI Agent<br/>ASR · LLM · TTS"]
+    camera["摄像头"] --> encode["平台编码器<br/>JPEG · H.264 · H.265"]
+    encode --> up
+    up --> agent["云端 AI Agent<br/>ASR · LLM · TTS · 视觉识别"]
     agent --> down["Agora RTC 下行"]
     down --> spk["扬声器 · 播放"]
     spk --> reply["用户听到 AI 回复"]
 ```
 
 - **上行**：设备麦克风采集 16 kHz PCM，经 Agora RTC 上行至云端 AI Agent。
+- **视觉上行（可选）**：平台采集并编码摄像头帧，SDK 经同一 RTC channel 转发给云端做视觉
+  识别；服务端不会向设备端下发视频。
 - **云端编排**：AI Agent 完成语音识别（ASR）、大模型理解与回答（LLM）、语音合成（TTS）。
 - **下行**：AI 回复音频经 Agora RTC 下行回到设备扬声器播放。
 - **会话调度**：设备服务端负责配对 / 认领，并为每次对话分配 RTC 频道。
@@ -116,7 +125,7 @@ ctest --test-dir build --output-on-failure
 ./build/examples/linux/mybot \
   --server https://api.example.com \
   --device-id AG-DEMO-001 \
-  --fw-ver 1.1.0 \
+  --fw-ver 1.2.0 \
   --hw-model linux-reference
 ```
 
@@ -199,6 +208,10 @@ AOSL 引用，并在 `mybot_stop()` 末尾释放。RTSA 生命周期通过 `agor
 | `MYBOT_AUDIO_PTIME_MS` | `60` | 音频包长，只接受 20、40、60 ms |
 | `MYBOT_CLOUD_AEC` | `ON` | 服务端 AEC；上行包含麦克风和参考声道 |
 | `MYBOT_WAKE_WORDS` | `OFF` | 启用本地 ASR 唤醒词平台实现 |
+| `MYBOT_ENABLE_VIDEO` | `OFF` | 启用平台编码的 JPEG/H.264/H.265 视频上行 |
+| `MYBOT_VIDEO_MAX_FRAME_BYTES` | `524288` | SDK 接受的单个编码视频帧最大字节数 |
+| `MYBOT_VIDEO_MIN_BPS` | `16000` | 视频上行 BWE 最小带宽，单位 bit/s |
+| `MYBOT_VIDEO_MAX_BPS` | `256000` | 视频上行 BWE 最大带宽，单位 bit/s |
 | `MYBOT_AI_QOS` | `ON` | Agora AI QoS |
 | `MYBOT_FAST_SEND_MULTIPLIER` | `3` | 快发倍数，只接受 1 到 5 |
 | `MYBOT_ENABLE_HTTPS` | `ON` | 启用平台 HTTPS 传输，生产构建应保持开启 |
@@ -270,11 +283,12 @@ flowchart TB
         svc_c["设备服务客户端<br/>配对 / claim / 会话轮询"]
         rtc_c["RTC 会话<br/>Agora RTSA 封装"]
         media_c["音频管线<br/>环形缓冲 · AEC 参考 · 唤醒词"]
+        video_c["视频上行<br/>平台编码器桥接"]
     end
 
     subgraph infra["基础服务层"]
         aosl["AOSL<br/>MPQ 线程 · 定时器 · 原子 · 日志"]
-        ops["平台 ops 契约<br/>wifi · kv_store · key · lcd<br/>audio · https · announce · asr"]
+        ops["平台 ops 契约<br/>wifi · kv_store · key · lcd<br/>audio · video · https · announce · asr"]
     end
 
     subgraph plat["平台实现"]
@@ -296,6 +310,7 @@ flowchart TB
     state_m --> app_state
     app_state --> presenter
     app_c --> media_c
+    app_c --> video_c
     state_m --> svc_c
     svc_c --> rtc_c
     rtc_c <--> media_c
@@ -305,10 +320,13 @@ flowchart TB
     svc_c --> aosl
     rtc_c --> aosl
     media_c --> aosl
+    video_c --> aosl
+    video_c --> ops
     ops --> linux_b
     ops --> mcu_b
     svc_c -->|HTTPS 轮询| svc_e
     rtc_c -->|实时音频| agora_e
+    video_c -->|编码视频上行| agora_e
     agora_e <--> agent_e
     svc_e -->|调度会话| agent_e
 ```
@@ -325,13 +343,13 @@ flowchart TB
 - **SDK 核心**（[src/](src/)）：单一控制 owner 串行负责应用状态、设备生命周期、UI / 音量
   动作以及资源启停。RTC 命令同步转发到专用 `rtc_mpq`，由该线程串行执行 RTSA 生命周期、
   厂商调用和回调；控制回调只向各自 owner 投递短控制事件或原子 mailbox。核心还包含设备
-  服务 HTTP 客户端、Agora RTSA 会话封装、音频环形缓冲与可选本地唤醒词。
+  服务 HTTP 客户端、Agora RTSA 会话封装、音频环形缓冲、可选视频上行桥接与可选本地唤醒词。
   核心代码不直接触碰任何 OS 或外设 API。
 - **基础服务层**：AOSL 提供线程 / MPQ / 定时器 / 日志等可移植能力；平台 `ops` 契约
   定义 SDK 所需的设备能力接口，两者都可由具体平台实现。
 - **平台实现**：Linux 参考实现与各 MCU 平台按同一契约注册。
-- **外部服务**：设备服务端（配对 / 认领 / 会话调度，仅 HTTPS）、Agora RTC 云（实时音频
-  传输）与云端 AI Agent（语音识别 / 理解 / 合成）。
+- **外部服务**：设备服务端（配对 / 认领 / 会话调度，仅 HTTPS）、Agora RTC 云（实时音频和
+  可选视频传输）与云端 AI Agent（语音识别 / 理解 / 合成 / 视觉识别）。
 
 ### 线程模型
 
@@ -349,6 +367,8 @@ flowchart TB
 回调只执行有界工作：投递短控制事件或发布原子 mailbox。PCM 采集、RTC 上下行与播放保持
 数据面直达，不经过 `control_mpq`。实时音频定时器（cap / pb / send）相互独立，阻塞的
 控制面或设备服务工作不会拖垮音频节拍。
+启用视频时，帧采集和编码节奏由平台编码器任务负责，SDK 不增加视频 worker 或帧队列；
+每个编码帧仅在同步 RTC 发送调用期间借用。
 
 ### 工作流
 
@@ -387,6 +407,19 @@ flowchart LR
 `MYBOT_CLOUD_AEC=ON` 时，下行音频作为参考声道与麦克风交织后一起上行，由服务端消除回声。
 上行与下行同时运行（**全双工**）：AI 回复期间麦克风仍持续采集上行，这是云端 Agent 支持
 用户打断的基础。
+
+#### 多模态视频流
+
+```mermaid
+flowchart LR
+    camera["摄像头"] --> encoder["平台编码器"]
+    encoder -->|JPEG · H.264 · H.265| video["MyBot 视频 handler"]
+    video --> rtc_v["Agora RTC 视频上行"]
+    rtc_v --> vision["云端 AI 视觉识别"]
+```
+
+视频 handler 使用 RTSA 的目标码率回调，让平台编码器根据当前上行能力调整码率。设备只发送
+主视频流，远端视频订阅保持关闭。
 
 ## 仓库结构
 
