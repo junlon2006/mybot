@@ -16,6 +16,8 @@ extern "C" {
 typedef struct {
     const mybot_video_ops_t *ops;
     void *ctx;
+    uint32_t min_bps;
+    uint32_t max_bps;
     bool initialized;
     aosl_atomic_t active;
     aosl_atomic_t stopping;

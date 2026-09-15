@@ -41,9 +41,17 @@ void mybot_video_init(mybot_video_t *video) {
         AOSL_LOG_ERR("video platform operations are unavailable");
         return;
     }
-    if (video->ops->init(&video->ctx, MYBOT_VIDEO_MIN_BPS, MYBOT_VIDEO_MAX_BPS, video_frame_handler,
-                         video) < 0) {
+    if (video->ops->max_bps == 0 || video->ops->max_bps < video->ops->min_bps) {
+        AOSL_LOG_ERR("video platform bitrate range is invalid (min=%u, max=%u)",
+                     (unsigned int)video->ops->min_bps, (unsigned int)video->ops->max_bps);
+        video->ops = NULL;
+        return;
+    }
+    video->min_bps = video->ops->min_bps;
+    video->max_bps = video->ops->max_bps;
+    if (video->ops->init(&video->ctx, video_frame_handler, video) < 0) {
         video->ctx = NULL;
+        video->ops = NULL;
         AOSL_LOG_ERR("video platform initialization failed");
         return;
     }
@@ -123,8 +131,8 @@ int mybot_video_destroy(mybot_video_t *video) {
 void mybot_video_request_key_frame(mybot_video_t *video) {
 #if MYBOT_ENABLE_VIDEO
     if (video && video->initialized && aosl_atomic_read(&video->active) &&
-        !aosl_atomic_read(&video->stopping) && video->ops && video->ops->request_key_frame) {
-        video->ops->request_key_frame(video->ctx);
+        !aosl_atomic_read(&video->stopping) && video->ops && video->ops->on_key_frame_request) {
+        video->ops->on_key_frame_request(video->ctx);
     }
 #else
     (void)video;

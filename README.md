@@ -247,8 +247,6 @@ The following options can be set via the CMake command line or cache variables b
 | `MYBOT_WAKE_WORDS` | `OFF` | Enable the platform local-ASR wake-word implementation |
 | `MYBOT_ENABLE_VIDEO` | `OFF` | Enable platform-encoded JPEG/H.264/H.265 video uplink |
 | `MYBOT_VIDEO_MAX_FRAME_BYTES` | `524288` | Maximum encoded video frame accepted by the SDK |
-| `MYBOT_VIDEO_MIN_BPS` | `16000` | Minimum video uplink BWE limit in bits per second |
-| `MYBOT_VIDEO_MAX_BPS` | `256000` | Maximum video uplink BWE limit in bits per second |
 | `MYBOT_AI_QOS` | `ON` | Agora AI QoS |
 | `MYBOT_FAST_SEND_MULTIPLIER` | `3` | Fast-send multiplier; accepts only 1–5 |
 | `MYBOT_ENABLE_HTTPS` | `ON` | Enable the platform HTTPS transport; keep ON for production builds |

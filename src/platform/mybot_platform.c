@@ -47,8 +47,8 @@ static bool wake_words_is_valid(const mybot_wake_words_ops_t *ops) {
 }
 
 static bool video_is_valid(const mybot_video_ops_t *ops) {
-    return ops && ops->init && ops->start && ops->stop && ops->on_target_bitrate_changed &&
-           ops->destroy;
+    return ops && ops->max_bps > 0 && ops->max_bps >= ops->min_bps && ops->init && ops->start &&
+           ops->stop && ops->on_target_bitrate_changed && ops->destroy;
 }
 
 static bool descriptor_is_valid(const mybot_platform_descriptor_t *descriptor) {

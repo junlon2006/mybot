@@ -198,14 +198,13 @@ The Linux reference implementation reads raw PCM files per locale from
 
 When `MYBOT_ENABLE_VIDEO=ON`, implement `mybot_video_ops_t` and add it to the platform descriptor.
 The platform owns camera capture and JPEG, H.264, or H.265 encoding; the SDK does not encode,
-decode, or receive server video. The encoder pushes complete encoded frames through the handler
-registered by `init()`. Frame data is borrowed until the handler returns and the handler must run
-from a task context, never an ISR. `stop()` must stop the encoder and wait for all in-flight
-handlers before `destroy()` is called.
+decode, or receive server video. Set `min_bps` and `max_bps` in the operations table to the
+encoder's supported video bitrate range. The SDK validates that range and applies it with
+`agora_rtc_set_bwe_param()` after creating the RTC connection; `start_bps` is the midpoint.
 
-The SDK passes `MYBOT_VIDEO_MIN_BPS` and `MYBOT_VIDEO_MAX_BPS` to `init()` so the encoder can use the
-same range as RTSA. The SDK applies those limits with `agora_rtc_set_bwe_param()` after creating the
-RTC connection; `start_bps` is the midpoint of the configured range.
+The encoder pushes complete encoded frames through the handler registered by `init()`. Frame data is
+borrowed until the handler returns and the handler must run from a task context, never an ISR.
+`stop()` must stop the encoder and wait for all in-flight handlers before `destroy()` is called.
 
 Video starts only after RTC reaches `CONNECTED` and stops before the session leaves RTC. The SDK has
 no video ring buffer; a failed send drops that frame. RTSA packetizes and copies the input before
@@ -215,7 +214,7 @@ H.264/H.265 frames must be complete Annex-B access units accepted by the RTSA pa
 frames must be complete JPEG images.
 
 `on_target_bitrate_changed()` receives RTSA's current uplink target in bits per second; the encoder
-should adjust its bitrate within its supported range and return promptly. `request_key_frame()` is
+should adjust its bitrate within its supported range and return promptly. `on_key_frame_request()` is
 optional and handles RTSA key-frame requests. MyBot sends one primary stream and explicitly disables
 remote video subscription.
 

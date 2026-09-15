@@ -102,7 +102,8 @@ bool mybot_agora_rtc_is_rtm_logged_in(void);
  * requested first using user_account as the local RTM UID and token as the RTM
  * token. After RTM login succeeds, this subscribes to the RTM channel with the
  * same name and waits for subscription success before starting RTC join. */
-int mybot_agora_rtc_join(const char *channel, const char *token, const char *user_account);
+int mybot_agora_rtc_join(const char *channel, const char *token, const char *user_account,
+                         uint32_t video_min_bps, uint32_t video_max_bps);
 
 /** Leave and destroy the active connection while keeping RTSA initialized. */
 int mybot_agora_rtc_leave(void);

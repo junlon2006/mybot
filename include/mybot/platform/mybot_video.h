@@ -70,30 +70,38 @@ typedef int (*mybot_video_frame_handler_t)(const mybot_video_frame_t *frame, voi
 /**
  * Video capture and encoding operations.
  *
- * `init`, `start`, `stop`, `on_target_bitrate_changed`, and `destroy` are
- * required when `MYBOT_ENABLE_VIDEO=ON`. The operations table and all objects
- * referenced by it must remain valid until destroy() returns.
+ * `min_bps`, `max_bps`, `init`, `start`, `stop`, `on_target_bitrate_changed`,
+ * and `destroy` are required when `MYBOT_ENABLE_VIDEO=ON`. The operations table
+ * and all objects referenced by it must remain valid until destroy() returns.
  */
 typedef struct {
+    /**
+     * Minimum video bitrate accepted by the platform encoder, in bits per second.
+     * RTSA accepts zero for this lower bound, but max_bps must be non-zero.
+     */
+    uint32_t min_bps;
+
+    /**
+     * Maximum video bitrate accepted by the platform encoder, in bits per second.
+     * Must be greater than or equal to min_bps.
+     */
+    uint32_t max_bps;
+
     /**
      * Allocate and initialize the encoder source without starting capture.
      *
      * @param ctx      [out] encoder context handle
-     * @param min_bps  minimum initial video bitrate in bits per second
-     * @param max_bps  maximum initial video bitrate in bits per second
      * @param handler  callback used to submit encoded frames
      * @param user_data opaque value forwarded to handler()
      * @return 0 on success, -1 on error
      *
-     * @note min_bps and max_bps are the values configured by
-     *       MYBOT_VIDEO_MIN_BPS and MYBOT_VIDEO_MAX_BPS. The SDK passes the
-     *       same limits to agora_rtc_set_bwe_param() after creating the RTC
-     *       connection and uses their midpoint as start_bps. Do not call RTC
-     *       APIs from this callback. The handler and user_data remain valid
-     *       until destroy() returns; no frame may be emitted before start().
+     * @note The bitrate fields above are platform-owned encoder capabilities. The
+     *       SDK passes them to agora_rtc_set_bwe_param() after creating the RTC
+     *       connection and uses their midpoint as start_bps. Do not call RTC APIs
+     *       from this callback. The handler and user_data remain valid until
+     *       destroy() returns; no frame may be emitted before start().
      */
-    int (*init)(void **ctx, uint32_t min_bps, uint32_t max_bps, mybot_video_frame_handler_t handler,
-                void *user_data);
+    int (*init)(void **ctx, mybot_video_frame_handler_t handler, void *user_data);
 
     /**
      * Start the capture and encoding stream.
@@ -130,7 +138,7 @@ typedef struct {
      * @note For H.264/H.265, schedule key-frame generation asynchronously.
      *       Return promptly and do not call back into the SDK.
      */
-    void (*request_key_frame)(void *ctx);
+    void (*on_key_frame_request)(void *ctx);
 
     /**
      * Apply the current target video bitrate in bits per second.

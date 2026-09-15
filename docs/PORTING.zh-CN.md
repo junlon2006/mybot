@@ -173,14 +173,13 @@ Linux 参考实现按语言从 `./assets/locales/<locale>/` 读取原始 PCM 文
 ### 视频上行（可选）
 
 启用 `MYBOT_ENABLE_VIDEO=ON` 时，实现 `mybot_video_ops_t` 并将其加入平台描述符。平台负责
-摄像头采集和 JPEG、H.264 或 H.265 编码；SDK 不编码、不解码，也不接收服务端视频。编码器通过
-`init()` 注册的 frame handler 推送完整编码帧，帧数据在 handler 返回前为借用内存，且必须来自
-普通任务上下文而非 ISR。`stop()` 必须停止编码器并等待所有进行中的 handler 返回，随后才能
-执行 `destroy()`。
+摄像头采集和 JPEG、H.264 或 H.265 编码；SDK 不编码、不解码，也不接收服务端视频。平台应在
+ops 表的 `min_bps` 和 `max_bps` 中设置编码器支持的视频码率范围。SDK 校验该范围，并在创建
+RTC connection 后调用 `agora_rtc_set_bwe_param()` 设置；`start_bps` 使用范围中点。
 
-SDK 会将 `MYBOT_VIDEO_MIN_BPS` 和 `MYBOT_VIDEO_MAX_BPS` 传给 `init()`，平台编码器应使用同一
-带宽范围。SDK 在创建 RTC connection 后调用 `agora_rtc_set_bwe_param()` 设置范围，
-`start_bps` 使用配置区间的中点。
+编码器通过 `init()` 注册的 frame handler 推送完整编码帧，帧数据在 handler 返回前为借用内存，
+且必须来自普通任务上下文而非 ISR。`stop()` 必须停止编码器并等待所有进行中的 handler 返回，
+随后才能执行 `destroy()`。
 
 视频只在 RTC 状态为 `CONNECTED` 时启动，会话离开时先停止编码器再离开 RTC。SDK 不建立视频
 ring buffer，发送失败直接丢弃当前帧。RTSA 会在 `agora_rtc_send_video_data()` 返回前完成分包
@@ -188,7 +187,7 @@ ring buffer，发送失败直接丢弃当前帧。RTSA 会在 `agora_rtc_send_vi
 H.264/H.265 应提供 RTSA packetizer 要求的完整 Annex-B access unit；JPEG 应是完整 JPEG 帧。
 
 `on_target_bitrate_changed()` 会收到 RTSA 根据上行带宽计算的目标码率（bit/s），编码器应在
-自身支持范围内及时调整码率。`request_key_frame()` 可选，用于响应 RTSA 的关键帧请求。当前
+自身支持范围内及时调整码率。`on_key_frame_request()` 可选，用于响应 RTSA 的关键帧请求。当前
 SDK 只发送一个主视频流，并明确关闭远端视频订阅。
 
 ## 第 4 步：注册一个平台描述符

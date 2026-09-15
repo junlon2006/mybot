@@ -79,10 +79,7 @@ static int mybot_test_audio_write(void *ctx, const void *data, int frames) {
 }
 
 #if MYBOT_ENABLE_VIDEO
-static int mybot_test_video_init(void **ctx, uint32_t min_bps, uint32_t max_bps,
-                                 mybot_video_frame_handler_t handler, void *user_data) {
-    (void)min_bps;
-    (void)max_bps;
+static int mybot_test_video_init(void **ctx, mybot_video_frame_handler_t handler, void *user_data) {
     (void)handler;
     (void)user_data;
     *ctx = ctx;
@@ -141,6 +138,8 @@ static inline mybot_platform_descriptor_t mybot_test_platform_descriptor(void) {
     };
 #if MYBOT_ENABLE_VIDEO
     static const mybot_video_ops_t video = {
+        .min_bps = 32000,
+        .max_bps = 256000,
         .init = mybot_test_video_init,
         .start = mybot_test_video_start,
         .stop = mybot_test_video_stop,

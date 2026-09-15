@@ -94,10 +94,7 @@ static bool s_wake_words_registered;
 static const mybot_https_ops_t s_registered_https_ops;
 static const mybot_wake_words_ops_t s_registered_wake_words_ops;
 #if MYBOT_ENABLE_VIDEO
-static int video_init(void **ctx, uint32_t min_bps, uint32_t max_bps,
-                      mybot_video_frame_handler_t handler, void *user_data) {
-    assert(min_bps == MYBOT_VIDEO_MIN_BPS);
-    assert(max_bps == MYBOT_VIDEO_MAX_BPS);
+static int video_init(void **ctx, mybot_video_frame_handler_t handler, void *user_data) {
     (void)handler;
     (void)user_data;
     *ctx = ctx;
@@ -124,6 +121,8 @@ static void video_destroy(void *ctx) {
 }
 
 static const mybot_video_ops_t s_registered_video_ops = {
+    .min_bps = 32000,
+    .max_bps = 256000,
     .init = video_init,
     .start = video_start,
     .stop = video_stop,
@@ -1063,10 +1062,18 @@ int mybot_agora_rtc_init(const char *app_id, const mybot_agora_rtc_callbacks_t *
     return 0;
 }
 
-int mybot_agora_rtc_join(const char *channel, const char *token, const char *user_account) {
+int mybot_agora_rtc_join(const char *channel, const char *token, const char *user_account,
+                         uint32_t video_min_bps, uint32_t video_max_bps) {
     if (!channel || !token || !user_account) {
         return -1;
     }
+#if MYBOT_ENABLE_VIDEO
+    assert(video_min_bps == 32000U);
+    assert(video_max_bps == 256000U);
+#else
+    assert(video_min_bps == 0U);
+    assert(video_max_bps == 0U);
+#endif
     assert(strcmp(token, "rtc-token") == 0);
     observe_control_thread(CONTROL_OBS_RTC_JOIN);
     mock_lock();

@@ -19,10 +19,16 @@ Changes since the last release will be recorded here.
 
 ### Changed
 
-- Add `MYBOT_ENABLE_VIDEO`, `MYBOT_VIDEO_MAX_FRAME_BYTES`, `MYBOT_VIDEO_MIN_BPS`, and
-  `MYBOT_VIDEO_MAX_BPS` build options. When video is enabled, the SDK configures RTSA's BWE range
-  from the configured video bitrate limits and starts at their midpoint.
+- Make the platform video ops table own the initial `min_bps` and `max_bps` video bitrate range.
+  The SDK validates the platform values, configures RTSA's BWE range, and starts at their midpoint;
+  only `MYBOT_VIDEO_MAX_FRAME_BYTES` remains a build-time SDK safety limit.
 - Disable remote video subscription because MyBot only sends device video upstream.
+
+### Compatibility
+
+- Add the optional `video` member to `mybot_platform_descriptor_t` and the `mybot_video_ops_t`
+  contract, including platform-owned `min_bps`/`max_bps` limits. Video-enabled builds require a
+  platform encoder and an RTSA package with video APIs; video-disabled builds retain prior behavior.
 
 ## [1.1.0] - 2026-09-12
 

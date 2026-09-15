@@ -49,18 +49,6 @@
 #error "MYBOT_VIDEO_MAX_FRAME_BYTES must be positive"
 #endif
 
-#ifndef MYBOT_VIDEO_MIN_BPS
-#define MYBOT_VIDEO_MIN_BPS 16000U
-#endif
-
-#ifndef MYBOT_VIDEO_MAX_BPS
-#define MYBOT_VIDEO_MAX_BPS 256000U
-#endif
-
-#if MYBOT_VIDEO_MAX_BPS == 0 || MYBOT_VIDEO_MAX_BPS < MYBOT_VIDEO_MIN_BPS
-#error "MYBOT_VIDEO_MAX_BPS must be greater than or equal to MYBOT_VIDEO_MIN_BPS"
-#endif
-
 #ifndef MYBOT_AI_QOS
 #define MYBOT_AI_QOS 1 /* AI-driven QoS optimization */
 #endif

@@ -530,7 +530,14 @@ static void dev_on_conversation_start(const mybot_conversation_params_t *params,
     }
 
     AOSL_LOG_NTC("joining RTC channel=%s uid=%s", params->rtc_channel, params->rtc_uid);
-    if (mybot_agora_rtc_join(params->rtc_channel, params->rtc_token, params->rtc_uid) < 0) {
+    uint32_t video_min_bps = 0;
+    uint32_t video_max_bps = 0;
+#if MYBOT_ENABLE_VIDEO
+    video_min_bps = runtime->video.min_bps;
+    video_max_bps = runtime->video.max_bps;
+#endif
+    if (mybot_agora_rtc_join(params->rtc_channel, params->rtc_token, params->rtc_uid, video_min_bps,
+                             video_max_bps) < 0) {
         AOSL_LOG_ERR("failed to join Agora RTC channel");
         mybot_device_lifecycle_notify_conversation_ended(&runtime->lifecycle);
         return;

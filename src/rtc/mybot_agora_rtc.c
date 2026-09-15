@@ -1415,12 +1415,23 @@ static int rtc_send_rtm_data_impl(const char *peer_rtm_uid, const void *data, si
     return ret;
 }
 
-static int rtc_join_impl(const char *channel, const char *token, const char *user_account) {
+static int rtc_join_impl(const char *channel, const char *token, const char *user_account,
+                         uint32_t video_min_bps, uint32_t video_max_bps) {
     if (!channel || !channel[0] || strlen(channel) >= AGORA_RTC_CHANNEL_NAME_MAX_LEN ||
         !user_account || !user_account[0]) {
         AOSL_LOG_ERR("[RTC] join rejected: invalid channel or user account");
         return -1;
     }
+#if MYBOT_ENABLE_VIDEO
+    if (video_max_bps == 0 || video_max_bps < video_min_bps) {
+        AOSL_LOG_ERR("[RTC] join rejected: invalid video bitrate range (min=%u, max=%u)",
+                     (unsigned int)video_min_bps, (unsigned int)video_max_bps);
+        return -1;
+    }
+#else
+    (void)video_min_bps;
+    (void)video_max_bps;
+#endif
     bool rtm_started_for_join = false;
     if (s_rtc.rtm_login_requested) {
         if (strcmp(s_rtc.rtm_uid, user_account) != 0) {
@@ -1497,18 +1508,13 @@ static int rtc_join_impl(const char *channel, const char *token, const char *use
     channel_options.audio_codec_opt.pcm_channel_num = 1;
     channel_options.audio_codec_opt.pcm_duration = MYBOT_AUDIO_PTIME_MS;
 
-    uint32_t bwe_min_bps = 16000U;
-    uint32_t bwe_max_bps = 256000U;
-    uint32_t bwe_start_bps = 64000U;
 #if MYBOT_ENABLE_VIDEO
-    bwe_min_bps = MYBOT_VIDEO_MIN_BPS;
-    bwe_max_bps = MYBOT_VIDEO_MAX_BPS;
-    bwe_start_bps = bwe_min_bps + (bwe_max_bps - bwe_min_bps) / 2U;
-#endif
-    int bwe_ret = agora_rtc_set_bwe_param(conn_id, bwe_min_bps, bwe_max_bps, bwe_start_bps);
+    uint32_t bwe_start_bps = video_min_bps + (video_max_bps - video_min_bps) / 2U;
+    int bwe_ret = agora_rtc_set_bwe_param(conn_id, video_min_bps, video_max_bps, bwe_start_bps);
     if (bwe_ret < 0) {
         AOSL_LOG_WRN("set_bwe_param failed: %s", agora_rtc_err_2_str(bwe_ret));
     }
+#endif
 
     s_rtc.conn_id = conn_id;
     set_state(MYBOT_RTC_STATE_CONNECTING);
@@ -1721,9 +1727,10 @@ static void cmd_send_rtm(const aosl_ts_t *ts, aosl_refobj_t ref, uintptr_t argc,
 static void cmd_join(const aosl_ts_t *ts, aosl_refobj_t ref, uintptr_t argc, uintptr_t argv[]) {
     (void)ts;
     (void)ref;
-    if (argc == 4)
+    if (argc == 6)
         *(int *)argv[0] =
-            rtc_join_impl((const char *)argv[1], (const char *)argv[2], (const char *)argv[3]);
+            rtc_join_impl((const char *)argv[1], (const char *)argv[2], (const char *)argv[3],
+                          (uint32_t)argv[4], (uint32_t)argv[5]);
 }
 static void cmd_leave(const aosl_ts_t *ts, aosl_refobj_t ref, uintptr_t argc, uintptr_t argv[]) {
     (void)ts;
@@ -1812,10 +1819,12 @@ int mybot_agora_rtc_send_rtm_data(const char *peer, const void *data, size_t len
                         (uintptr_t)len,     (uintptr_t)id,   (uintptr_t)custom};
     return rtc_call("rtc_send_rtm", cmd_send_rtm, 6, argv) < 0 ? -1 : result;
 }
-int mybot_agora_rtc_join(const char *channel, const char *token, const char *user) {
+int mybot_agora_rtc_join(const char *channel, const char *token, const char *user,
+                         uint32_t video_min_bps, uint32_t video_max_bps) {
     int result = -1;
-    uintptr_t argv[] = {(uintptr_t)&result, (uintptr_t)channel, (uintptr_t)token, (uintptr_t)user};
-    return rtc_call("rtc_join", cmd_join, 4, argv) < 0 ? -1 : result;
+    uintptr_t argv[] = {(uintptr_t)&result, (uintptr_t)channel,       (uintptr_t)token,
+                        (uintptr_t)user,    (uintptr_t)video_min_bps, (uintptr_t)video_max_bps};
+    return rtc_call("rtc_join", cmd_join, 6, argv) < 0 ? -1 : result;
 }
 int mybot_agora_rtc_leave(void) {
     int result = -1;

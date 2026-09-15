@@ -149,10 +149,7 @@ static int audio_stop(void *ctx) {
 }
 
 #if MYBOT_ENABLE_VIDEO
-static int video_init(void **ctx, uint32_t min_bps, uint32_t max_bps,
-                      mybot_video_frame_handler_t handler, void *user_data) {
-    assert(min_bps == MYBOT_VIDEO_MIN_BPS);
-    assert(max_bps == MYBOT_VIDEO_MAX_BPS);
+static int video_init(void **ctx, mybot_video_frame_handler_t handler, void *user_data) {
     (void)handler;
     (void)user_data;
     *ctx = ctx;
@@ -238,6 +235,8 @@ static const mybot_audio_playback_ops_t s_playback = {
 };
 #if MYBOT_ENABLE_VIDEO
 static const mybot_video_ops_t s_video = {
+    .min_bps = 32000,
+    .max_bps = 256000,
     .init = video_init,
     .start = video_start,
     .stop = video_stop,
@@ -301,6 +300,12 @@ int main(void) {
 #if MYBOT_ENABLE_VIDEO
     mybot_video_ops_t invalid_video = s_video;
     invalid_video.on_target_bitrate_changed = NULL;
+    descriptor = complete_descriptor();
+    descriptor.video = &invalid_video;
+    assert(mybot_platform_register(&descriptor) < 0);
+
+    invalid_video = s_video;
+    invalid_video.max_bps = 0;
     descriptor = complete_descriptor();
     descriptor.video = &invalid_video;
     assert(mybot_platform_register(&descriptor) < 0);

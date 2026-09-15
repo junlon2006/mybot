@@ -57,10 +57,6 @@ option(MYBOT_WAKE_WORDS "Enable the platform local-ASR wake-word implementation"
 option(MYBOT_ENABLE_VIDEO "Enable encoded video uplink" OFF)
 set(MYBOT_VIDEO_MAX_FRAME_BYTES "524288" CACHE STRING
     "Maximum encoded video frame accepted by the SDK")
-set(MYBOT_VIDEO_MIN_BPS "16000" CACHE STRING
-    "Minimum video uplink bandwidth for RTSA BWE")
-set(MYBOT_VIDEO_MAX_BPS "256000" CACHE STRING
-    "Maximum video uplink bandwidth for RTSA BWE")
 option(MYBOT_AI_QOS "Enable Agora AI-driven QoS optimization" ON)
 set(MYBOT_FAST_SEND_MULTIPLIER "3" CACHE STRING "Agora fast-send multiplier: 1 through 5")
 set_property(CACHE MYBOT_FAST_SEND_MULTIPLIER PROPERTY STRINGS 1 2 3 4 5)
@@ -80,12 +76,6 @@ if(NOT MYBOT_FAST_SEND_MULTIPLIER MATCHES "^[1-5]$")
 endif()
 if(NOT MYBOT_VIDEO_MAX_FRAME_BYTES MATCHES "^[1-9][0-9]*$")
     message(FATAL_ERROR "MYBOT_VIDEO_MAX_FRAME_BYTES must be a positive integer")
-endif()
-if(NOT MYBOT_VIDEO_MIN_BPS MATCHES "^[0-9]+$" OR NOT MYBOT_VIDEO_MAX_BPS MATCHES "^[1-9][0-9]*$")
-    message(FATAL_ERROR "MYBOT_VIDEO_MIN_BPS must be non-negative and MYBOT_VIDEO_MAX_BPS must be positive")
-endif()
-if(MYBOT_VIDEO_MAX_BPS LESS MYBOT_VIDEO_MIN_BPS)
-    message(FATAL_ERROR "MYBOT_VIDEO_MAX_BPS must be greater than or equal to MYBOT_VIDEO_MIN_BPS")
 endif()
 
 set(AOSL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/aosl" CACHE PATH
@@ -224,8 +214,6 @@ target_compile_definitions(mybot_sdk PUBLIC
     MYBOT_WAKE_WORDS=$<BOOL:${MYBOT_WAKE_WORDS}>
     MYBOT_ENABLE_VIDEO=$<BOOL:${MYBOT_ENABLE_VIDEO}>
     MYBOT_VIDEO_MAX_FRAME_BYTES=${MYBOT_VIDEO_MAX_FRAME_BYTES}
-    MYBOT_VIDEO_MIN_BPS=${MYBOT_VIDEO_MIN_BPS}
-    MYBOT_VIDEO_MAX_BPS=${MYBOT_VIDEO_MAX_BPS}
     MYBOT_AI_QOS=$<BOOL:${MYBOT_AI_QOS}>
     MYBOT_FAST_SEND_MULTIPLIER=${MYBOT_FAST_SEND_MULTIPLIER}
     MYBOT_ENABLE_HTTPS=$<BOOL:${MYBOT_ENABLE_HTTPS}>

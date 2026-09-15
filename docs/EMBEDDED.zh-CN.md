@@ -35,9 +35,9 @@ x86_64 Linux 参考构建（GCC 13，默认优化），**仅供参考**——请
 - **视频上行（可选）**：启用 `MYBOT_ENABLE_VIDEO` 后，平台负责摄像头采集和 JPEG/H.264/H.265
   编码，SDK 不做编码、解码或视频接收。编码帧通过借用内存的 handler 直接送入 RTC；SDK 不
   建立视频 ring buffer，RTSA 根据上行带宽回调 `on_target_bitrate_changed()`，平台编码器据此
-  调整码率。`MYBOT_VIDEO_MIN_BPS` 和 `MYBOT_VIDEO_MAX_BPS` 限制初始 RTSA BWE 范围，初始值
-  使用两者中点；每帧大小受 `MYBOT_VIDEO_MAX_FRAME_BYTES` 限制，目标需将 RTSA 每帧内部的
-  分包分配计入堆预算。
+  调整码率。平台 ops 表的 `min_bps` 和 `max_bps` 限制初始 RTSA BWE 范围，初始值使用两者
+  中点；每帧大小受 `MYBOT_VIDEO_MAX_FRAME_BYTES` 限制，目标需将 RTSA 每帧内部的分包分配
+  计入堆预算。
 - **堆**：HTTP 请求缓冲固定 2 KB，响应初始分配 4 KB、单请求最大增长到 32 KB（用后即释放）；
   生命周期的认证/会话响应和请求头、RTM LCD 状态解析的临时消息缓冲也通过
   `aosl_hal_malloc` 有界申请并在本次操作结束时释放。JSON 解析与平台实现（ALSA、OpenSSL、

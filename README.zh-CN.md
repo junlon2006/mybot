@@ -210,8 +210,6 @@ AOSL 引用，并在 `mybot_stop()` 末尾释放。RTSA 生命周期通过 `agor
 | `MYBOT_WAKE_WORDS` | `OFF` | 启用本地 ASR 唤醒词平台实现 |
 | `MYBOT_ENABLE_VIDEO` | `OFF` | 启用平台编码的 JPEG/H.264/H.265 视频上行 |
 | `MYBOT_VIDEO_MAX_FRAME_BYTES` | `524288` | SDK 接受的单个编码视频帧最大字节数 |
-| `MYBOT_VIDEO_MIN_BPS` | `16000` | 视频上行 BWE 最小带宽，单位 bit/s |
-| `MYBOT_VIDEO_MAX_BPS` | `256000` | 视频上行 BWE 最大带宽，单位 bit/s |
 | `MYBOT_AI_QOS` | `ON` | Agora AI QoS |
 | `MYBOT_FAST_SEND_MULTIPLIER` | `3` | 快发倍数，只接受 1 到 5 |
 | `MYBOT_ENABLE_HTTPS` | `ON` | 启用平台 HTTPS 传输，生产构建应保持开启 |

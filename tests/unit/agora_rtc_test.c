@@ -22,6 +22,17 @@
 #define RTC_PCM_FRAME_BYTES (RTC_PCM_FRAME_SAMPLES * RTC_PCM_FRAME_STREAMS * sizeof(int16_t))
 #define RTC_REMOTE_PCM_FRAME_BYTES (RTC_PCM_FRAME_SAMPLES * sizeof(int16_t))
 
+#if MYBOT_ENABLE_VIDEO
+#define TEST_VIDEO_MIN_BPS 32000U
+#define TEST_VIDEO_MAX_BPS 256000U
+#else
+#define TEST_VIDEO_MIN_BPS 0U
+#define TEST_VIDEO_MAX_BPS 0U
+#endif
+
+#define mybot_agora_rtc_join(channel, token, user)                                                 \
+    mybot_agora_rtc_join(channel, token, user, TEST_VIDEO_MIN_BPS, TEST_VIDEO_MAX_BPS)
+
 static agora_rtc_event_handler_t s_handler;
 static connection_id_t s_next_conn = 1;
 static connection_id_t s_last_conn;
@@ -748,10 +759,10 @@ int main(void) {
     assert(s_rtm_handler.on_rtm_subscribe_data != NULL);
     assert(s_last_rtm_subscribe_error == ERR_RTM_OK);
 #if MYBOT_ENABLE_VIDEO
-    assert(s_last_bwe_min_bps == MYBOT_VIDEO_MIN_BPS);
-    assert(s_last_bwe_max_bps == MYBOT_VIDEO_MAX_BPS);
+    assert(s_last_bwe_min_bps == TEST_VIDEO_MIN_BPS);
+    assert(s_last_bwe_max_bps == TEST_VIDEO_MAX_BPS);
     assert(s_last_bwe_start_bps ==
-           MYBOT_VIDEO_MIN_BPS + (MYBOT_VIDEO_MAX_BPS - MYBOT_VIDEO_MIN_BPS) / 2U);
+           TEST_VIDEO_MIN_BPS + (TEST_VIDEO_MAX_BPS - TEST_VIDEO_MIN_BPS) / 2U);
 #endif
     s_bwe_result = 0;
     connection_id_t first_conn = s_last_conn;
