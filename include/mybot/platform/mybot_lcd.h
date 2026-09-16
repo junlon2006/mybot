@@ -8,7 +8,16 @@
 extern "C" {
 #endif
 
-/** Maximum length of the pairing code buffer, including the NUL terminator. */
+/* ----------------------------------------------------------
+ * Platform LCD operations (hook interface)
+ *
+ * The SDK provides semantic workflow content. Each platform owns
+ * the concrete layout, fonts, icons, and QR-code presentation.
+ * ---------------------------------------------------------- */
+
+/**
+ * Maximum length of the pairing code buffer, including the NUL terminator.
+ */
 #define MYBOT_LCD_PAIR_CODE_CAPACITY 16
 
 /**
@@ -31,7 +40,9 @@ typedef enum {
     MYBOT_LCD_INDICATOR_SPEAKING = 1u << 3,
 } mybot_lcd_indicator_t;
 
-/** The mutually exclusive server-state indicators. */
+/**
+ * Mask of the mutually exclusive server-state indicators.
+ */
 #define MYBOT_LCD_INDICATOR_SERVER_STATE_MASK                                                      \
     (MYBOT_LCD_INDICATOR_LISTENING | MYBOT_LCD_INDICATOR_THINKING | MYBOT_LCD_INDICATOR_SPEAKING)
 

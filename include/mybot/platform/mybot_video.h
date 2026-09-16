@@ -41,6 +41,7 @@ typedef enum {
 typedef struct {
     /**
      * Encoded frame bytes, borrowed until the frame handler returns.
+     *
      * H.264/H.265 data must use the complete Annex-B access-unit format
      * expected by the RTSA packetizer; JPEG data must be a complete image.
      *
@@ -90,8 +91,8 @@ typedef struct {
     /**
      * Allocate and initialize the encoder source without starting capture.
      *
-     * @param ctx      [out] encoder context handle
-     * @param handler  callback used to submit encoded frames
+     * @param ctx       [out] encoder context handle
+     * @param handler   callback used to submit encoded frames
      * @param user_data opaque value forwarded to handler()
      * @return 0 on success, -1 on error
      *

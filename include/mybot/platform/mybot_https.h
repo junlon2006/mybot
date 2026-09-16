@@ -9,6 +9,13 @@
 extern "C" {
 #endif
 
+/* ----------------------------------------------------------
+ * Platform HTTPS transport operations (hook interface)
+ *
+ * The SDK provides the HTTP protocol implementation. The platform supplies
+ * the TLS stream used for HTTPS requests and owns each connection handle.
+ * ---------------------------------------------------------- */
+
 /**
  * TLS stream operations used by the built-in HTTPS client.
  *
@@ -19,14 +26,14 @@ typedef struct {
     /**
      * Establish TCP and TLS to the server.
      *
-     * Must validate the server certificate chain and verify the host against
-     * the certificate. The DNS host must also be sent as the TLS SNI name.
-     *
      * @param connection [out] TLS connection handle
      * @param host       NUL-terminated DNS host name
      * @param port       TCP port in host byte order
      * @param timeout_ms maximum blocking time for the whole operation
      * @return 0 on success, -1 on error or timeout
+     *
+     * @note The implementation must validate the server certificate chain, verify host against
+     *       the certificate, and send the DNS host as the TLS SNI name.
      */
     int (*connect)(void **connection, const char *host, uint16_t port, int timeout_ms);
 
