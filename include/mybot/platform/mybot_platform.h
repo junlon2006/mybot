@@ -17,6 +17,13 @@
 extern "C" {
 #endif
 
+/* ----------------------------------------------------------
+ * Process-wide platform registration
+ *
+ * A platform collects its operation tables in one descriptor and
+ * registers that descriptor before starting the SDK.
+ * ---------------------------------------------------------- */
+
 /**
  * Process-wide platform implementation.
  *
@@ -59,10 +66,10 @@ typedef struct {
  * The call either commits the complete descriptor or leaves the registry unchanged.
  * One successful registration is allowed and must happen before mybot_start().
  *
- * @param descriptor complete descriptor satisfying mybot_platform_descriptor_t's operations and
- *                   lifetime contract
- * @return 0 on success; -1 if the descriptor is NULL or invalid, any registration
- *         already succeeded
+ * @param descriptor complete descriptor satisfying the operation and lifetime
+ *                   contracts of mybot_platform_descriptor_t
+ * @return 0 on success; -1 if descriptor is NULL or invalid, or if a
+ *         registration has already succeeded
  */
 MYBOT_API int mybot_platform_register(const mybot_platform_descriptor_t *descriptor);
 

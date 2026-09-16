@@ -6,6 +6,13 @@
 extern "C" {
 #endif
 
+/* ----------------------------------------------------------
+ * Platform key input operations (hook interface)
+ *
+ * The platform translates hardware input into semantic key events and emits
+ * them to the SDK through the registered callback.
+ * ---------------------------------------------------------- */
+
 /**
  * Semantic key events translated from hardware input by the platform implementation.
  */
@@ -47,19 +54,20 @@ typedef struct {
      *
      * @param ctx       [out] implementation context handle
      * @param emit      callback for reporting key events
-     * @param user_data opaque context forwarded unchanged to emit(); it must remain
-     *                  valid until destroy() returns
+     * @param user_data opaque context forwarded unchanged to emit()
      * @return 0 on success, -1 on error
+     *
+     * @note user_data remains valid until destroy() returns.
      */
     int (*init)(void **ctx, mybot_key_event_handler_t emit, void *user_data);
 
     /**
      * Stop the key event source and release all resources.
      *
-     * Must stop the input source and wait for in-flight handlers. No event is
-     * emitted after this returns.
-     *
      * @param ctx implementation context from init()
+     *
+     * @note The implementation must stop the input source and wait for in-flight handlers. It
+     *       must not emit an event after this callback returns.
      */
     void (*destroy)(void *ctx);
 } mybot_key_ops_t;

@@ -8,11 +8,18 @@
 extern "C" {
 #endif
 
+/* ----------------------------------------------------------
+ * Platform persistent key-value store operations (hook interface)
+ *
+ * Each platform provides one store implementation. The SDK uses it
+ * to persist small records such as device credentials.
+ * ---------------------------------------------------------- */
+
 /**
  * Persistent key-value store operations.
  *
- * The implementation provides durable storage for small records (the SDK persists
- * device credentials through this interface). All callbacks are required.
+ * The implementation provides durable storage for small records. All callbacks
+ * are required.
  */
 typedef struct {
     /**
@@ -45,8 +52,8 @@ typedef struct {
      * @param len   value length in bytes
      * @return 0 on success, -1 on error
      *
-     * @note Must survive power loss and must not expose a partially replaced
-     *       record (atomic rename or equivalent).
+     * @note The operation must survive power loss and must not expose a
+     *       partially replaced record (atomic rename or equivalent).
      */
     int (*set)(void *ctx, const char *key, const void *value, size_t len);
 
@@ -57,12 +64,14 @@ typedef struct {
      * @param key NUL-terminated key
      * @return 0 on success, -1 on error
      *
-     * @note Must be idempotent.
+     * @note The operation must be idempotent.
      */
     int (*erase)(void *ctx, const char *key);
 
     /**
      * Close the store and release all resources.
+     *
+     * Called after the SDK has stopped using the store.
      *
      * @param ctx store context from init()
      */

@@ -8,7 +8,7 @@ extern "C" {
 #endif
 
 /* ----------------------------------------------------------
- * Platform announcement (local voice prompt) operations
+ * Platform announcement operations (hook interface)
  *
  * The SDK plays short local prompts on the speaker through the normal playback
  * path — for example, the fixed prompt "Please enter the pairing code in the
@@ -19,19 +19,33 @@ extern "C" {
  * platform is responsible for matching the fixed output format.
  * ---------------------------------------------------------- */
 
-/** Logical sounds used by the SDK. */
+/**
+ * Logical sounds used by the SDK.
+ */
 typedef enum {
-    MYBOT_ANNOUNCE_SOUND_PROMPT = 0, /* e.g. "Please enter the pairing code in the console" */
+    /** Fixed prompt played before the pairing-code digits. */
+    MYBOT_ANNOUNCE_SOUND_PROMPT = 0,
+    /** Spoken digit zero. */
     MYBOT_ANNOUNCE_SOUND_DIGIT_0,
+    /** Spoken digit one. */
     MYBOT_ANNOUNCE_SOUND_DIGIT_1,
+    /** Spoken digit two. */
     MYBOT_ANNOUNCE_SOUND_DIGIT_2,
+    /** Spoken digit three. */
     MYBOT_ANNOUNCE_SOUND_DIGIT_3,
+    /** Spoken digit four. */
     MYBOT_ANNOUNCE_SOUND_DIGIT_4,
+    /** Spoken digit five. */
     MYBOT_ANNOUNCE_SOUND_DIGIT_5,
+    /** Spoken digit six. */
     MYBOT_ANNOUNCE_SOUND_DIGIT_6,
+    /** Spoken digit seven. */
     MYBOT_ANNOUNCE_SOUND_DIGIT_7,
+    /** Spoken digit eight. */
     MYBOT_ANNOUNCE_SOUND_DIGIT_8,
+    /** Spoken digit nine. */
     MYBOT_ANNOUNCE_SOUND_DIGIT_9,
+    /** Sentinel; not a valid sound. */
     MYBOT_ANNOUNCE_SOUND_COUNT
 } mybot_announce_sound_t;
 
@@ -44,24 +58,53 @@ typedef enum {
  * because the SDK calls it from the real-time playback worker.
  */
 typedef struct {
-    /** Allocate and initialize the announcement implementation.
-     *  @param ctx [out] implementation context handle
-     *  @return 0 on success, -1 on error */
+    /**
+     * Allocate and initialize the announcement implementation.
+     *
+     * @param ctx [out] implementation context handle
+     * @return 0 on success, -1 on error
+     */
     int (*init)(void **ctx);
 
-    /** Open one logical sound for streaming.
-     *  @return a non-NULL handle on success, or NULL when the asset is
-     *          unavailable (the SDK then skips that sound gracefully). */
+    /**
+     * Open one logical sound for streaming.
+     *
+     * @param ctx   implementation context from init()
+     * @param sound logical sound to open
+     * @return a non-NULL sound handle on success, or NULL when the asset is unavailable
+     *
+     * @note A missing fixed prompt aborts the announcement. A missing digit
+     *       sound is skipped while the remaining digits continue.
+     */
     void *(*open)(void *ctx, mybot_announce_sound_t sound);
 
-    /** Read up to max_frames frames (16 kHz mono s16) from an open sound.
-     *  @return frames read (0 = end of sound, -1 = error treated as end). */
+    /**
+     * Read PCM frames from an open sound.
+     *
+     * @param ctx        implementation context from init()
+     * @param sound      sound handle from open()
+     * @param dst        destination buffer for 16 kHz mono signed 16-bit PCM
+     * @param max_frames maximum number of PCM frames to read
+     * @return frames read, 0 at the end of the sound, or -1 on error
+     *
+     * @note The SDK treats an error as the end of the current sound. This callback runs in the
+     *       real-time playback worker and must not perform blocking I/O.
+     */
     int (*read)(void *ctx, void *sound, int16_t *dst, int max_frames);
 
-    /** Close a sound handle returned by open(). */
+    /**
+     * Close an open sound.
+     *
+     * @param ctx   implementation context from init()
+     * @param sound sound handle from open()
+     */
     void (*close)(void *ctx, void *sound);
 
-    /** Release the implementation context. */
+    /**
+     * Release the announcement implementation.
+     *
+     * @param ctx implementation context from init()
+     */
     void (*destroy)(void *ctx);
 } mybot_announce_ops_t;
 

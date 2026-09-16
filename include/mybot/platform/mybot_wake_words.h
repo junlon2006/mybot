@@ -7,6 +7,14 @@
 extern "C" {
 #endif
 
+/* ----------------------------------------------------------
+ * Platform wake-word operations (hook interface)
+ *
+ * The platform owns local wake-word detection. The SDK feeds captured PCM
+ * frames to the implementation and receives detected wake words through a
+ * callback.
+ * ---------------------------------------------------------- */
+
 /**
  * Local ASR detection callback.
  *

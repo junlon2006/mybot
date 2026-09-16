@@ -6,6 +6,13 @@
 extern "C" {
 #endif
 
+/* ----------------------------------------------------------
+ * Platform Wi-Fi connectivity operations (hook interface)
+ *
+ * The platform owns its connection or provisioning workflow and reports
+ * usable network-connectivity transitions to the SDK.
+ * ---------------------------------------------------------- */
+
 /**
  * Network connectivity events emitted by the platform Wi-Fi implementation.
  *
@@ -39,8 +46,8 @@ typedef void (*mybot_wifi_event_handler_t)(mybot_wifi_event_t event, void *user_
  * APSTA provisioning is the project's recommended production model and current
  * preferred solution. Platform ports should use APSTA wherever available so
  * onboarding, connection transitions, and recovery behavior remain consistent
- * across products. Alternative platform implementations remain supported for development hosts
- * or platforms that cannot provide APSTA.
+ * across products. Alternative platform implementations remain supported for
+ * development hosts or platforms that cannot provide APSTA.
  *
  * The implementation owns the platform-specific connection or provisioning
  * workflow and, where applicable, Wi-Fi credential persistence. It must keep
@@ -50,8 +57,7 @@ typedef void (*mybot_wifi_event_handler_t)(mybot_wifi_event_t event, void *user_
  * after a disconnected or failed event.
  *
  * @note All callbacks may run on platform threads. destroy() must stop the
- *       transport and wait for any in-flight callback to return before it
- *       returns.
+ *       transport and wait for any in-flight callback to return before returning.
  */
 typedef struct {
     /**
