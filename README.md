@@ -495,6 +495,8 @@ Key CMake targets:
 
 - [docs/PORTING.md](docs/PORTING.md) ([简体中文](docs/PORTING.zh-CN.md)) — porting guide and
   acceptance checklist
+- [mybot-bk7258](https://github.com/junlon2006/mybot-bk7258) — BK7258 reference firmware project
+- [mybot-bk7259](https://github.com/junlon2006/mybot-bk7259) — BK7259 reference firmware project
 - [mybot-esp32](https://github.com/junlon2006/mybot-esp32) — ESP32 cross-platform reference project
 - [docs/EMBEDDED.md](docs/EMBEDDED.md) ([简体中文](docs/EMBEDDED.zh-CN.md)) — footprint, memory,
   thread/stack, timing, power and logging guidance for MCU integrators
