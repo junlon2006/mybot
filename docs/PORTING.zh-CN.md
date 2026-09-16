@@ -41,9 +41,14 @@ platforms/my_mcu/
 
 ## 参考移植工程
 
-[mybot-esp32](https://github.com/junlon2006/mybot-esp32) 提供 ESP32 跨平台固件参考实现。
-可用它了解 AOSL 平台集成、描述符注册和固件生命周期，同时遵循本文定义的 SDK 公共契约与
-所有权边界。
+以下独立仓库提供可运行的固件参考实现：
+
+- [mybot-bk7258](https://github.com/junlon2006/mybot-bk7258)：BK7258；
+- [mybot-bk7259](https://github.com/junlon2006/mybot-bk7259)：BK7259；
+- [mybot-esp32](https://github.com/junlon2006/mybot-esp32)：ESP32。
+
+可用这些工程了解目标构建集成、AOSL 平台接线、描述符注册和固件生命周期。参考工程与本文
+不一致时，以本文定义的 SDK 公共契约和所有权边界为准。
 
 ## 第 3 步：实现必需平台操作
 

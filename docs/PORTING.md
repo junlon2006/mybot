@@ -44,9 +44,15 @@ An out-of-tree firmware project may use the same layout without changing this re
 
 ## Reference port projects
 
-The [mybot-esp32](https://github.com/junlon2006/mybot-esp32) repository provides an ESP32
-cross-platform firmware reference. Use it to study AOSL platform integration, descriptor wiring,
-and firmware lifecycle while keeping the SDK public contract and ownership boundaries defined here.
+The following out-of-tree repositories provide working firmware references:
+
+- [mybot-bk7258](https://github.com/junlon2006/mybot-bk7258) for BK7258;
+- [mybot-bk7259](https://github.com/junlon2006/mybot-bk7259) for BK7259;
+- [mybot-esp32](https://github.com/junlon2006/mybot-esp32) for ESP32.
+
+Use them to study target build integration, AOSL platform wiring, descriptor registration, and
+firmware lifecycle. The SDK public contract and ownership boundaries defined in this document remain
+authoritative when a reference project differs.
 
 ## Step 3: Implement the required platform operations
 
