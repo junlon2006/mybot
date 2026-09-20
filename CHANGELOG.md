@@ -4,7 +4,10 @@ This project follows Semantic Versioning.
 
 ## [Unreleased]
 
-Changes since the last release will be recorded here.
+### Changed
+
+- Set RTSA logging to `RTC_LOG_ERROR` and restore the previous AOSL log level after
+  RTSA initialization, including when initialization fails.
 
 ## [1.2.0] - 2026-09-15
 

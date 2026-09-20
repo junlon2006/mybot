@@ -6,6 +6,7 @@
 #include "agora_rtc_api.h"
 #include <api/aosl.h>
 #include <api/aosl_atomic.h>
+#include <api/aosl_log.h>
 #include <hal/aosl_hal_time.h>
 
 #include <assert.h>
@@ -142,6 +143,9 @@ int agora_rtc_init(const char *app_id, const agora_rtc_event_handler_t *handler,
                    rtc_service_option_t *options) {
     assert(app_id != NULL);
     assert(options != NULL);
+    assert(options->log_cfg.log_level == RTC_LOG_ERROR);
+    /* Model RTSA's process-wide AOSL logging side effect, including failure. */
+    aosl_set_log_level((int)options->log_cfg.log_level);
     s_init_calls++;
     if (handler) {
         s_handler = *handler;
@@ -527,7 +531,9 @@ int main(void) {
     assert(mybot_agora_rtc_renew_token("") < 0);
     assert(mybot_agora_rtc_renew_token("token") < 0);
 
+    aosl_set_log_level(AOSL_LOG_INFO);
     assert(mybot_agora_rtc_init("app-1", &callbacks) == 0);
+    assert(aosl_get_log_level() == AOSL_LOG_INFO);
     assert(s_init_calls == 1);
     assert(s_handler.on_rtc_stats == NULL);
 
@@ -1012,13 +1018,16 @@ int main(void) {
     assert(s_fini_calls == 3);
 
     s_init_result = -1;
+    aosl_set_log_level(AOSL_LOG_DEBUG);
     int init_calls_before_retry = s_init_calls;
     int fini_calls_before_retry = s_fini_calls;
     assert(mybot_agora_rtc_init("app-fail", &callbacks) < 0);
+    assert(aosl_get_log_level() == AOSL_LOG_DEBUG);
     assert(s_init_calls == init_calls_before_retry + 1);
     assert(s_fini_calls == fini_calls_before_retry);
     s_init_result = 0;
     assert(mybot_agora_rtc_init("app-fail", &callbacks) == 0);
+    assert(aosl_get_log_level() == AOSL_LOG_DEBUG);
     assert(s_init_calls == init_calls_before_retry + 2);
     mybot_agora_rtc_fini();
     assert(s_fini_calls == fini_calls_before_retry + 1);
