@@ -1090,6 +1090,9 @@ int mybot_start(const mybot_config_t *cfg) {
     runtime->control_start_result = -1;
 
     aosl_ctor();
+    if (aosl_get_log_level() < AOSL_LOG_NOTICE) {
+        aosl_set_log_level(AOSL_LOG_NOTICE);
+    }
     aosl_atomic_set(&runtime->aosl_ref_held, true);
 
     runtime->control_mpq = aosl_mpq_create_flags(AOSL_MPQ_FLAG_SIGP_EVENT, AOSL_THRD_PRI_NORMAL,

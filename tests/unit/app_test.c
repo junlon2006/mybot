@@ -21,6 +21,7 @@
 #include "mybot_wifi_internal.h"
 
 #include <api/aosl.h>
+#include <api/aosl_log.h>
 #include <hal/aosl_hal_time.h>
 
 #include <assert.h>
@@ -1246,8 +1247,10 @@ int main(void) {
     s_https_registered = true;
 #endif
 
+    aosl_set_log_level(AOSL_LOG_ERROR);
     begin_control_thread_tracking();
     assert(mybot_start(&config) == 0);
+    assert(aosl_get_log_level() == AOSL_LOG_NOTICE);
     assert(mybot_is_running());
     assert(mybot_get_state() == MYBOT_STATE_WIFI_PROVISIONING);
     assert(read_counter(&s_wifi_init_calls) == 1);
@@ -1486,8 +1489,10 @@ int main(void) {
     assert(read_counter(&s_device_shutdown_calls) == 1);
     assert(read_counter(&s_rtc_fini_calls) == 1);
 
+    aosl_set_log_level(AOSL_LOG_DEBUG);
     s_wifi_init_fails = true;
     assert(mybot_start(&config) < 0);
+    assert(aosl_get_log_level() == AOSL_LOG_DEBUG);
     s_wifi_init_fails = false;
     assert(!mybot_is_running());
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);

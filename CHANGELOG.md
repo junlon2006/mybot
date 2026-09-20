@@ -6,6 +6,8 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- Ensure `mybot_start()` raises an overly restrictive AOSL log level to `AOSL_LOG_NOTICE`
+  while preserving existing `INFO` and `DEBUG` levels.
 - Move routine RTM events, message previews, and forwarding logs to debug level while
   retaining warning/error diagnostics for failures and invalid callbacks.
 - Set RTSA logging to `RTC_LOG_ERROR` and restore the previous AOSL log level after
