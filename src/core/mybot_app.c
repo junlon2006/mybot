@@ -206,7 +206,7 @@ static void queue_server_state(mybot_runtime_t *runtime, const char *channel, co
     size_t channel_len = strlen(channel);
     uint32_t channel_hash = rtm_uid_fingerprint(channel, channel_len);
 
-    AOSL_LOG_NTC("[RTM] matched server state (channel=%s, from=%s, indicator=0x%x, active=%d)",
+    AOSL_LOG_DBG("[RTM] matched server state (channel=%s, from=%s, indicator=0x%x, active=%d)",
                  channel, rtm_uid, (unsigned int)indicator, active ? 1 : 0);
     if (aosl_mpq_queue(runtime->control_mpq, AOSL_MPQ_INVALID, AOSL_REF_INVALID,
                        "handle_server_state", handle_server_state, 7, (uintptr_t)runtime,
@@ -238,7 +238,7 @@ static void handle_vp_register_success(const aosl_ts_t *queued_ts, aosl_refobj_t
         return;
     }
 
-    AOSL_LOG_NTC("[RTM] voiceprint registration succeeded");
+    AOSL_LOG_DBG("[RTM] voiceprint registration succeeded");
     mybot_presenter_set_vp_registered(&runtime->presenter, true);
     mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_IN_CONVERSATION);
 }
@@ -343,7 +343,7 @@ static void rtc_on_state_changed(mybot_rtc_state_t state, void *user_data) {
 static void rtc_on_rtm_event(const char *rtm_uid, mybot_rtm_event_type_t event_type, int error_code,
                              void *user_data) {
     mybot_runtime_t *runtime = user_data;
-    AOSL_LOG_NTC("[RTM] application event: uid=%s type=%d error=%d", rtm_uid ? rtm_uid : "(null)",
+    AOSL_LOG_DBG("[RTM] application event: uid=%s type=%d error=%d", rtm_uid ? rtm_uid : "(null)",
                  (int)event_type, error_code);
     if ((event_type == MYBOT_RTM_EVENT_LOGIN && error_code != 0) ||
         event_type == MYBOT_RTM_EVENT_KICKOFF || event_type == MYBOT_RTM_EVENT_EXIT) {
@@ -358,7 +358,7 @@ static void queue_vp_register_success(mybot_runtime_t *runtime, const char *chan
     size_t channel_len = strlen(channel);
     uint32_t channel_hash = rtm_uid_fingerprint(channel, channel_len);
 
-    AOSL_LOG_NTC("[RTM] matched channel VP_REGISTER_SUCCESS (channel=%s, type=%s, len=%zu)",
+    AOSL_LOG_DBG("[RTM] matched channel VP_REGISTER_SUCCESS (channel=%s, type=%s, len=%zu)",
                  channel, custom_type ? custom_type : "(null)", len);
     if (aosl_mpq_queue(runtime->control_mpq, AOSL_MPQ_INVALID, AOSL_REF_INVALID,
                        "handle_vp_register_success", handle_vp_register_success, 5,
@@ -374,7 +374,7 @@ static void rtc_on_rtm_data(const char *rtm_uid, const void *data, size_t len,
     (void)data;
     mybot_runtime_t *runtime = user_data;
     if (!runtime_is_running(runtime)) {
-        AOSL_LOG_NTC("[RTM] application data ignored: runtime is not running");
+        AOSL_LOG_DBG("[RTM] application data ignored: runtime is not running");
         return;
     }
     if (!rtm_uid) {
@@ -385,17 +385,17 @@ static void rtc_on_rtm_data(const char *rtm_uid, const void *data, size_t len,
         AOSL_LOG_WRN("[RTM] application data ignored: invalid sender UID length (len=%zu)", len);
         return;
     }
-    AOSL_LOG_NTC("[RTM] P2P application data not handled (from=%s, type=%s, len=%zu)", rtm_uid,
+    AOSL_LOG_DBG("[RTM] P2P application data not handled (from=%s, type=%s, len=%zu)", rtm_uid,
                  custom_type ? custom_type : "(null)", len);
 }
 
 static void rtc_on_rtm_subscribe_result(const char *channel, int error_code, void *user_data) {
     mybot_runtime_t *runtime = user_data;
     if (!runtime_is_running(runtime)) {
-        AOSL_LOG_NTC("[RTM] application subscribe result ignored: runtime is not running");
+        AOSL_LOG_DBG("[RTM] application subscribe result ignored: runtime is not running");
         return;
     }
-    AOSL_LOG_NTC("[RTM] application subscribe result: channel=%s error=%d",
+    AOSL_LOG_DBG("[RTM] application subscribe result: channel=%s error=%d",
                  channel ? channel : "(null)", error_code);
     if (error_code != 0) {
         mybot_device_lifecycle_notify_conversation_ended(&runtime->lifecycle);
@@ -406,7 +406,7 @@ static void rtc_on_rtm_subscribe_data(const char *channel, const char *rtm_uid, 
                                       size_t len, const char *custom_type, void *user_data) {
     mybot_runtime_t *runtime = user_data;
     if (!runtime_is_running(runtime)) {
-        AOSL_LOG_NTC("[RTM] application channel data ignored: runtime is not running");
+        AOSL_LOG_DBG("[RTM] application channel data ignored: runtime is not running");
         return;
     }
     if (!channel || strnlen(channel, 128) >= 128) {
@@ -433,7 +433,7 @@ static void rtc_on_rtm_subscribe_data(const char *channel, const char *rtm_uid, 
         return;
     }
 
-    AOSL_LOG_NTC("[RTM] application channel data not handled: no matching message type "
+    AOSL_LOG_DBG("[RTM] application channel data not handled: no matching message type "
                  "(channel=%s, from=%s, type=%s, len=%zu)",
                  channel, rtm_uid, custom_type ? custom_type : "(null)", len);
 }
