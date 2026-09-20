@@ -463,7 +463,7 @@ static void process_rtm_event(const char *rtm_uid, rtm_event_type_e event_type,
     mybot_rtm_event_type_t mapped_event;
 
     if (!s_rtc.rtm_login_requested) {
-        AOSL_LOG_NTC("[RTM] event ignored: login was not requested (type=%s(%d), error=%d)",
+        AOSL_LOG_DBG("[RTM] event ignored: login was not requested (type=%s(%d), error=%d)",
                      rtm_event_name(event_type), (int)event_type, (int)error_code);
         return;
     }
@@ -483,7 +483,7 @@ static void process_rtm_event(const char *rtm_uid, rtm_event_type_e event_type,
         return;
     }
 
-    AOSL_LOG_NTC("[RTM] event: uid=%s type=%s(%d) error=%d", rtm_uid, rtm_event_name(event_type),
+    AOSL_LOG_DBG("[RTM] event: uid=%s type=%s(%d) error=%d", rtm_uid, rtm_event_name(event_type),
                  (int)event_type, (int)error_code);
 
     switch (event_type) {
@@ -493,7 +493,7 @@ static void process_rtm_event(const char *rtm_uid, rtm_event_type_e event_type,
         s_rtc.rtm_logged_in = error_code == ERR_RTM_OK;
         callback_gate_unlock();
         if (s_rtc.rtm_logged_in) {
-            AOSL_LOG_NTC("[RTM] login succeeded (uid=%s)", rtm_uid);
+            AOSL_LOG_DBG("[RTM] login succeeded (uid=%s)", rtm_uid);
         } else {
             clear_rtm_login();
             AOSL_LOG_WRN("[RTM] login failed (uid=%s, error=%d)", rtm_uid, (int)error_code);
@@ -505,7 +505,11 @@ static void process_rtm_event(const char *rtm_uid, rtm_event_type_e event_type,
         break;
     case RTM_EVENT_TYPE_EXIT:
         clear_rtm_login();
-        AOSL_LOG_NTC("[RTM] account exited (uid=%s, error=%d)", rtm_uid, (int)error_code);
+        if (error_code != ERR_RTM_OK) {
+            AOSL_LOG_WRN("[RTM] account exited (uid=%s, error=%d)", rtm_uid, (int)error_code);
+        } else {
+            AOSL_LOG_DBG("[RTM] account exited (uid=%s, error=%d)", rtm_uid, (int)error_code);
+        }
         break;
     default:
         AOSL_LOG_WRN("[RTM] unknown event received (uid=%s, type=%d, error=%d)", rtm_uid,
@@ -514,12 +518,12 @@ static void process_rtm_event(const char *rtm_uid, rtm_event_type_e event_type,
     }
 
     if (!map_rtm_event(event_type, &mapped_event)) {
-        AOSL_LOG_NTC("[RTM] event not forwarded: unsupported type=%d", (int)event_type);
+        AOSL_LOG_DBG("[RTM] event not forwarded: unsupported type=%d", (int)event_type);
     } else if (!s_rtc.callbacks.on_rtm_event) {
-        AOSL_LOG_NTC("[RTM] event not forwarded: no application callback (type=%s)",
+        AOSL_LOG_DBG("[RTM] event not forwarded: no application callback (type=%s)",
                      rtm_event_name(event_type));
     } else {
-        AOSL_LOG_NTC("[RTM] forwarding event to application (type=%s)", rtm_event_name(event_type));
+        AOSL_LOG_DBG("[RTM] forwarding event to application (type=%s)", rtm_event_name(event_type));
         s_rtc.callbacks.on_rtm_event(rtm_uid, mapped_event, (int)error_code,
                                      s_rtc.callbacks.user_data);
     }
@@ -531,7 +535,7 @@ static void process_rtm_data(const char *rtm_uid, const void *data, size_t len,
     size_t preview_len = len > 512U ? 512U : len;
 
     if (!s_rtc.rtm_login_requested) {
-        AOSL_LOG_NTC(
+        AOSL_LOG_DBG(
             "[RTM] data ignored: login was not requested (from=%s, message_type=%s, type=%s, "
             "len=%zu)",
             rtm_uid ? rtm_uid : "(null)", rtm_message_type_name(message_type),
@@ -545,26 +549,26 @@ static void process_rtm_data(const char *rtm_uid, const void *data, size_t len,
     }
 
     if (message_type == RTM_MESSAGE_TYPE_STRING && data && preview_len > 0) {
-        AOSL_LOG_NTC("[RTM] data received: from=%s message_type=%s type=%s len=%zu msg=%.*s",
+        AOSL_LOG_DBG("[RTM] data received: from=%s message_type=%s type=%s len=%zu msg=%.*s",
                      rtm_uid ? rtm_uid : "(null)", rtm_message_type_name(message_type),
                      custom_type ? custom_type : "(null)", len, (int)preview_len,
                      (const char *)data);
     } else if (message_type == RTM_MESSAGE_TYPE_STRING) {
-        AOSL_LOG_NTC("[RTM] data received: from=%s message_type=%s type=%s len=%zu msg=(empty)",
+        AOSL_LOG_DBG("[RTM] data received: from=%s message_type=%s type=%s len=%zu msg=(empty)",
                      rtm_uid ? rtm_uid : "(null)", rtm_message_type_name(message_type),
                      custom_type ? custom_type : "(null)", len);
     } else {
-        AOSL_LOG_NTC("[RTM] data received: from=%s message_type=%s type=%s len=%zu msg=(binary)",
+        AOSL_LOG_DBG("[RTM] data received: from=%s message_type=%s type=%s len=%zu msg=(binary)",
                      rtm_uid ? rtm_uid : "(null)", rtm_message_type_name(message_type),
                      custom_type ? custom_type : "(null)", len);
     }
 
     if (s_rtc.callbacks.on_rtm_data) {
-        AOSL_LOG_NTC("[RTM] forwarding data to application (from=%s, len=%zu)",
+        AOSL_LOG_DBG("[RTM] forwarding data to application (from=%s, len=%zu)",
                      rtm_uid ? rtm_uid : "(null)", len);
         s_rtc.callbacks.on_rtm_data(rtm_uid, data, len, custom_type, s_rtc.callbacks.user_data);
     } else {
-        AOSL_LOG_NTC("[RTM] data not forwarded: no application callback (from=%s, len=%zu)",
+        AOSL_LOG_DBG("[RTM] data not forwarded: no application callback (from=%s, len=%zu)",
                      rtm_uid ? rtm_uid : "(null)", len);
     }
 }
@@ -572,7 +576,7 @@ static void process_rtm_data(const char *rtm_uid, const void *data, size_t len,
 static void process_rtm_subscribe_result(const char *channel, rtm_err_code_e error_code,
                                          uint32_t generation) {
     if (!s_rtc.rtm_subscribe_requested) {
-        AOSL_LOG_NTC("[RTM] subscribe result ignored: no subscription requested (channel=%s, "
+        AOSL_LOG_DBG("[RTM] subscribe result ignored: no subscription requested (channel=%s, "
                      "error=%d)",
                      channel ? channel : "(null)", (int)error_code);
         return;
@@ -593,18 +597,18 @@ static void process_rtm_subscribe_result(const char *channel, rtm_err_code_e err
     s_rtc.rtm_subscribed = error_code == ERR_RTM_OK;
     callback_gate_unlock();
     if (s_rtc.rtm_subscribed) {
-        AOSL_LOG_NTC("[RTM] channel subscription succeeded (channel=%s)", channel);
+        AOSL_LOG_DBG("[RTM] channel subscription succeeded (channel=%s)", channel);
     } else {
         AOSL_LOG_WRN("[RTM] channel subscription failed (channel=%s, error=%d)", channel,
                      (int)error_code);
     }
 
     if (s_rtc.callbacks.on_rtm_subscribe_result) {
-        AOSL_LOG_NTC("[RTM] forwarding subscribe result to application (channel=%s)", channel);
+        AOSL_LOG_DBG("[RTM] forwarding subscribe result to application (channel=%s)", channel);
         s_rtc.callbacks.on_rtm_subscribe_result(channel, (int)error_code,
                                                 s_rtc.callbacks.user_data);
     } else {
-        AOSL_LOG_NTC("[RTM] subscribe result not forwarded: no application callback (channel=%s)",
+        AOSL_LOG_DBG("[RTM] subscribe result not forwarded: no application callback (channel=%s)",
                      channel);
     }
 }
@@ -615,7 +619,7 @@ static void process_rtm_subscribe_data(const char *channel, const char *rtm_uid,
     size_t preview_len = len > 512U ? 512U : len;
 
     if (!s_rtc.rtm_subscribed) {
-        AOSL_LOG_NTC("[RTM] channel data ignored: no active subscription (channel=%s, from=%s, "
+        AOSL_LOG_DBG("[RTM] channel data ignored: no active subscription (channel=%s, from=%s, "
                      "len=%zu)",
                      channel ? channel : "(null)", rtm_uid ? rtm_uid : "(null)", len);
         return;
@@ -630,31 +634,31 @@ static void process_rtm_subscribe_data(const char *channel, const char *rtm_uid,
         return;
     }
     if (message_type != RTM_MESSAGE_TYPE_STRING) {
-        AOSL_LOG_NTC("[RTM] channel data ignored: expected string payload (channel=%s, type=%s)",
+        AOSL_LOG_DBG("[RTM] channel data ignored: expected string payload (channel=%s, type=%s)",
                      channel, rtm_message_type_name(message_type));
         return;
     }
 
     if (data && preview_len > 0) {
-        AOSL_LOG_NTC("[RTM] channel data received: channel=%s from=%s message_type=%s type=%s "
+        AOSL_LOG_DBG("[RTM] channel data received: channel=%s from=%s message_type=%s type=%s "
                      "len=%zu msg=%.*s",
                      channel, rtm_uid ? rtm_uid : "(null)", rtm_message_type_name(message_type),
                      custom_type ? custom_type : "(null)", len, (int)preview_len,
                      (const char *)data);
     } else {
-        AOSL_LOG_NTC("[RTM] channel data received: channel=%s from=%s message_type=%s type=%s "
+        AOSL_LOG_DBG("[RTM] channel data received: channel=%s from=%s message_type=%s type=%s "
                      "len=%zu msg=(empty)",
                      channel, rtm_uid ? rtm_uid : "(null)", rtm_message_type_name(message_type),
                      custom_type ? custom_type : "(null)", len);
     }
 
     if (s_rtc.callbacks.on_rtm_subscribe_data) {
-        AOSL_LOG_NTC("[RTM] forwarding channel data to application (channel=%s, from=%s, len=%zu)",
+        AOSL_LOG_DBG("[RTM] forwarding channel data to application (channel=%s, from=%s, len=%zu)",
                      channel, rtm_uid ? rtm_uid : "(null)", len);
         s_rtc.callbacks.on_rtm_subscribe_data(channel, rtm_uid, data, len, custom_type,
                                               s_rtc.callbacks.user_data);
     } else {
-        AOSL_LOG_NTC("[RTM] channel data not forwarded: no application callback (channel=%s, "
+        AOSL_LOG_DBG("[RTM] channel data not forwarded: no application callback (channel=%s, "
                      "from=%s, len=%zu)",
                      channel, rtm_uid ? rtm_uid : "(null)", len);
     }
@@ -711,13 +715,13 @@ static int login_rtm(const char *rtm_uid, const char *rtm_token) {
         clear_rtm_login();
         return -1;
     }
-    AOSL_LOG_NTC("[RTM] login requested (uid=%s)", rtm_uid);
+    AOSL_LOG_DBG("[RTM] login requested (uid=%s)", rtm_uid);
     return 0;
 }
 
 static int wait_for_rtm_login(const char *rtm_uid) {
     aosl_ts_t started_at = aosl_tick_ms();
-    AOSL_LOG_NTC("[RTM] waiting for login before RTC join (uid=%s, timeout=%u ms)", rtm_uid,
+    AOSL_LOG_DBG("[RTM] waiting for login before RTC join (uid=%s, timeout=%u ms)", rtm_uid,
                  (unsigned int)MYBOT_RTM_LOGIN_TIMEOUT_MS);
 
     for (;;) {
@@ -737,7 +741,7 @@ static int wait_for_rtm_login(const char *rtm_uid) {
                 AOSL_LOG_ERR("[RTM] login did not succeed (uid=%s)", rtm_uid);
                 return -1;
             }
-            AOSL_LOG_NTC("[RTM] login confirmed before RTC join (uid=%s)", rtm_uid);
+            AOSL_LOG_DBG("[RTM] login confirmed before RTC join (uid=%s)", rtm_uid);
             return 0;
         }
         if (aosl_tick_ms() - started_at >= MYBOT_RTM_LOGIN_TIMEOUT_MS) {
@@ -783,7 +787,7 @@ static int unsubscribe_rtm(void) {
                          agora_rtc_err_2_str(ret));
             return ret;
         } else {
-            AOSL_LOG_NTC("[RTM] unsubscribed from channel=%s", s_rtc.rtm_channel);
+            AOSL_LOG_DBG("[RTM] unsubscribed from channel=%s", s_rtc.rtm_channel);
         }
     }
     clear_rtm_subscription();
@@ -821,13 +825,13 @@ static int subscribe_rtm(const char *channel) {
         clear_rtm_subscription();
         return -1;
     }
-    AOSL_LOG_NTC("[RTM] channel subscription requested (channel=%s)", channel);
+    AOSL_LOG_DBG("[RTM] channel subscription requested (channel=%s)", channel);
     return 0;
 }
 
 static int wait_for_rtm_subscription(const char *channel) {
     aosl_ts_t started_at = aosl_tick_ms();
-    AOSL_LOG_NTC("[RTM] waiting for channel subscription before RTC join (channel=%s, timeout=%u "
+    AOSL_LOG_DBG("[RTM] waiting for channel subscription before RTC join (channel=%s, timeout=%u "
                  "ms)",
                  channel, (unsigned int)MYBOT_RTM_SUBSCRIBE_TIMEOUT_MS);
 
@@ -850,7 +854,7 @@ static int wait_for_rtm_subscription(const char *channel) {
                 AOSL_LOG_ERR("[RTM] channel subscription did not succeed (channel=%s)", channel);
                 return -1;
             }
-            AOSL_LOG_NTC("[RTM] channel subscription confirmed before RTC join (channel=%s)",
+            AOSL_LOG_DBG("[RTM] channel subscription confirmed before RTC join (channel=%s)",
                          channel);
             return 0;
         }
@@ -1384,7 +1388,7 @@ static int rtc_logout_rtm_impl(void) {
     if (ret < 0) {
         AOSL_LOG_ERR("[RTM] logout failed: %s", agora_rtc_err_2_str(ret));
     } else {
-        AOSL_LOG_NTC("[RTM] logged out (uid=%s)", s_rtc.rtm_uid);
+        AOSL_LOG_DBG("[RTM] logged out (uid=%s)", s_rtc.rtm_uid);
     }
     /* Clear wrapper state even when the vendor call fails. Keeping a stale
      * logged-in flag would block a later login and route sends to a dead
