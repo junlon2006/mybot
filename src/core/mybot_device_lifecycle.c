@@ -439,26 +439,9 @@ static void action_start_conversation(mybot_device_lifecycle_t *lifecycle) {
 
     set_state(lifecycle, MYBOT_DEVICE_STATE_IN_CONVERSATION);
 
-    /* Notify app */
+    /* The app borrows this response only for the synchronous callback. */
     if (lifecycle->cbs.on_conversation_start) {
-        mybot_conversation_params_t *params =
-            (mybot_conversation_params_t *)aosl_hal_malloc(sizeof(*params));
-        if (!params) {
-            AOSL_LOG_ERR("failed to allocate conversation callback parameters");
-            aosl_atomic_set(&lifecycle->stop_request, MYBOT_STOP_REQUEST_ERROR);
-            aosl_hal_free(resp);
-            return;
-        }
-        memset(params, 0, sizeof(*params));
-        strncpy(params->conversation_id, resp->conversation_id,
-                sizeof(params->conversation_id) - 1);
-        strncpy(params->rtc_app_id, resp->rtc_app_id, sizeof(params->rtc_app_id) - 1);
-        strncpy(params->rtc_channel, resp->rtc_channel, sizeof(params->rtc_channel) - 1);
-        strncpy(params->rtc_uid, resp->rtc_uid, sizeof(params->rtc_uid) - 1);
-        strncpy(params->rtc_agent_uid, resp->rtc_agent_uid, sizeof(params->rtc_agent_uid) - 1);
-        strncpy(params->rtc_token, resp->rtc_token, sizeof(params->rtc_token) - 1);
-        lifecycle->cbs.on_conversation_start(params, lifecycle->cbs.user_data);
-        aosl_hal_free(params);
+        lifecycle->cbs.on_conversation_start(resp, lifecycle->cbs.user_data);
     }
     aosl_hal_free(resp);
 }

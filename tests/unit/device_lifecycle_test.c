@@ -194,10 +194,12 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
     } else if (!s_start_missing_conversation_id) {
         strcpy(resp->conversation_id, "conversation-1");
     }
+    strcpy(resp->rtc_app_id, "rtc-app");
     strcpy(resp->rtc_channel, "rtc-channel");
     strcpy(resp->rtc_uid, "rtc-uid");
     strcpy(resp->rtc_agent_uid, "agent-uid");
-    strcpy(resp->rtc_token, "rtc-token");
+    memset(resp->rtc_token, 't', sizeof(resp->rtc_token) - 1);
+    resp->rtc_token[sizeof(resp->rtc_token) - 1] = '\0';
     return 0;
 }
 
@@ -260,10 +262,17 @@ static void on_state_changed(mybot_device_state_t state, void *user_data) {
     s_state_change_count++;
 }
 
-static void on_conversation_start(const mybot_conversation_params_t *params, void *user_data) {
+static void on_conversation_start(const mybot_device_conversation_t *params, void *user_data) {
     assert(user_data == &s_lifecycle);
     assert(strcmp(params->conversation_id, "conversation-1") == 0);
+    assert(strcmp(params->rtc_app_id, "rtc-app") == 0);
+    assert(strcmp(params->rtc_channel, "rtc-channel") == 0);
+    assert(strcmp(params->rtc_uid, "rtc-uid") == 0);
     assert(strcmp(params->rtc_agent_uid, "agent-uid") == 0);
+    assert(strlen(params->rtc_token) == MYBOT_DEVICE_CLIENT_MAX_RTC_TOKEN - 1);
+    for (size_t i = 0; i < MYBOT_DEVICE_CLIENT_MAX_RTC_TOKEN - 1; ++i) {
+        assert(params->rtc_token[i] == 't');
+    }
     snprintf(s_last_conversation_agent_uid, sizeof(s_last_conversation_agent_uid), "%s",
              params->rtc_agent_uid);
     s_conversation_start_count++;

@@ -72,24 +72,6 @@ static int build_authorization_header(const char *scheme, const char *credential
     return written >= 0 && (size_t)written < header_size ? 0 : -1;
 }
 
-static int copy_json_string(const mybot_json_t *object, const char *name, char *destination,
-                            size_t destination_size) {
-    mybot_json_t *item = mybot_json_get_object_item(object, name);
-    /* Callers use the zero result for optional response fields. */
-    if (!item || item->type == MYBOT_JSON_NULL) {
-        return 0;
-    }
-    const char *value = mybot_json_get_string(item);
-    if (!value) {
-        return -1;
-    }
-    if (!destination || destination_size == 0 || strlen(value) >= destination_size) {
-        return -1;
-    }
-    memcpy(destination, value, strlen(value) + 1);
-    return 0;
-}
-
 static int copy_optional_json_string(const mybot_json_t *object, const char *name,
                                      char *destination, size_t destination_size) {
     mybot_json_t *item = mybot_json_get_object_item(object, name);
@@ -439,11 +421,12 @@ int mybot_device_client_get_binding_status(const char *base_url, const char *dev
         return -1;
     }
 
-    if (copy_json_string(data, "status", resp->status, sizeof(resp->status)) < 0 ||
-        copy_json_string(data, "device_token", resp->device_token, sizeof(resp->device_token)) <
-            0 ||
-        copy_json_string(data, "agent_id", resp->agent_id, sizeof(resp->agent_id)) < 0 ||
-        copy_json_string(data, "agent_name", resp->agent_name, sizeof(resp->agent_name)) < 0) {
+    if (copy_optional_json_string(data, "status", resp->status, sizeof(resp->status)) < 0 ||
+        copy_optional_json_string(data, "device_token", resp->device_token,
+                                  sizeof(resp->device_token)) < 0 ||
+        copy_optional_json_string(data, "agent_id", resp->agent_id, sizeof(resp->agent_id)) < 0 ||
+        copy_optional_json_string(data, "agent_name", resp->agent_name, sizeof(resp->agent_name)) <
+            0) {
         mybot_json_delete(root);
         mybot_http_client_response_free(&raw);
         aosl_hal_free(extra_hdrs);
