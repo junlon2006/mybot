@@ -20,6 +20,8 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- Share RTM-to-LCD event queuing, session validation, and rendering for voiceprint and server-state
+  indicators while preserving their independent and mutually exclusive display semantics.
 - Share the device-service conversation response with the synchronous application callback,
   removing a duplicate parameter type, allocation, and copy. Reuse one optional JSON string reader.
 - Compile unit tests with the SDK's exported feature definitions and preserve selected features
