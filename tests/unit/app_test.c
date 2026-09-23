@@ -94,16 +94,27 @@ static bool s_wake_words_registered;
 
 static const mybot_https_ops_t s_registered_https_ops;
 static const mybot_wake_words_ops_t s_registered_wake_words_ops;
+static void mock_lock(void);
+static void mock_unlock(void);
+static void observe_control_thread(unsigned int observation);
 #if MYBOT_ENABLE_VIDEO
 static int s_video_context;
+static pthread_t s_video_owner;
+static bool s_block_video_start;
+static bool s_video_start_entered;
+static bool s_video_start_in_progress;
 static aosl_atomic_t s_video_init_fails;
 static aosl_atomic_t s_video_init_calls;
 static aosl_atomic_t s_video_start_calls;
 static aosl_atomic_t s_video_stop_calls;
 static aosl_atomic_t s_video_destroy_calls;
+static aosl_atomic_t s_video_key_frame_calls;
+static aosl_atomic_t s_video_bitrate_calls;
 
 static int video_init(void **ctx, mybot_video_frame_handler_t handler, void *user_data) {
     assert(handler != NULL && user_data != NULL);
+    observe_control_thread(0);
+    s_video_owner = pthread_self();
     aosl_atomic_inc(&s_video_init_calls);
     if (aosl_atomic_read(&s_video_init_fails)) {
         return -1;
@@ -114,23 +125,53 @@ static int video_init(void **ctx, mybot_video_frame_handler_t handler, void *use
 
 static int video_start(void *ctx) {
     assert(ctx == &s_video_context);
+    assert(pthread_equal(s_video_owner, pthread_self()));
+    observe_control_thread(0);
+    mock_lock();
+    s_video_start_in_progress = true;
+    s_video_start_entered = true;
+    struct timespec deadline;
+    assert(clock_gettime(CLOCK_REALTIME, &deadline) == 0);
+    deadline.tv_sec += 3;
+    while (s_block_video_start) {
+        assert(pthread_cond_timedwait(&s_io_cond, &s_lock, &deadline) == 0);
+    }
+    s_video_start_in_progress = false;
+    mock_unlock();
     aosl_atomic_inc(&s_video_start_calls);
     return 0;
 }
 
 static int video_stop(void *ctx) {
     assert(ctx == &s_video_context);
+    assert(pthread_equal(s_video_owner, pthread_self()));
+    observe_control_thread(0);
+    mock_lock();
+    assert(!s_video_start_in_progress);
+    mock_unlock();
     aosl_atomic_inc(&s_video_stop_calls);
     return 0;
 }
 
 static void video_target_bitrate(void *ctx, uint32_t target_bps) {
-    (void)ctx;
-    (void)target_bps;
+    assert(ctx == &s_video_context);
+    assert(pthread_equal(s_video_owner, pthread_self()));
+    observe_control_thread(0);
+    assert(target_bps == 96000U);
+    aosl_atomic_inc(&s_video_bitrate_calls);
+}
+
+static void video_key_frame(void *ctx) {
+    assert(ctx == &s_video_context);
+    assert(pthread_equal(s_video_owner, pthread_self()));
+    observe_control_thread(0);
+    aosl_atomic_inc(&s_video_key_frame_calls);
 }
 
 static void video_destroy(void *ctx) {
     assert(ctx == &s_video_context);
+    assert(pthread_equal(s_video_owner, pthread_self()));
+    observe_control_thread(0);
     aosl_atomic_inc(&s_video_destroy_calls);
 }
 
@@ -141,6 +182,7 @@ static const mybot_video_ops_t s_registered_video_ops = {
     .start = video_start,
     .stop = video_stop,
     .on_target_bitrate_changed = video_target_bitrate,
+    .on_key_frame_request = video_key_frame,
     .destroy = video_destroy,
 };
 #endif
@@ -332,6 +374,35 @@ static bool wait_for_counter(const int *counter, int minimum, int timeout_ms) {
     }
     return false;
 }
+
+#if MYBOT_ENABLE_VIDEO
+static bool wait_for_video_counter(aosl_atomic_t *counter, intptr_t minimum) {
+    for (int elapsed = 0; elapsed < 1000; elapsed++) {
+        if (aosl_atomic_read(counter) >= minimum) {
+            return true;
+        }
+        aosl_hal_msleep(1);
+    }
+    return false;
+}
+
+static void *rtc_connected_thread(void *arg) {
+    (void)arg;
+    mock_lock();
+    mybot_agora_rtc_callbacks_t callbacks = s_rtc_callbacks;
+    mock_unlock();
+    assert(callbacks.on_state_changed != NULL);
+    callbacks.on_state_changed(MYBOT_RTC_STATE_CONNECTED, callbacks.user_data);
+    return NULL;
+}
+
+static void emit_rtc_connected(void) {
+    pthread_t thread;
+    assert(pthread_create(&thread, NULL, rtc_connected_thread, NULL) == 0);
+    assert(pthread_join(thread, NULL) == 0);
+}
+
+#endif
 
 static bool wait_for_flag_value(const bool *flag, bool expected, int timeout_ms) {
     for (int elapsed = 0; elapsed < timeout_ms; elapsed++) {
@@ -1101,12 +1172,18 @@ int mybot_agora_rtc_join(const char *channel, const char *token, const char *use
     snprintf(s_join_channel, sizeof(s_join_channel), "%s", channel);
     snprintf(s_join_user, sizeof(s_join_user), "%s", user_account);
     s_rtc_joined = true;
+#if MYBOT_ENABLE_VIDEO
+    mock_unlock();
+    /* RTC callbacks execute outside the application control worker. */
+    emit_rtc_connected();
+#else
     void (*callback)(mybot_rtc_state_t, void *) = s_rtc_callbacks.on_state_changed;
     void *user_data = s_rtc_callbacks.user_data;
     mock_unlock();
     if (callback) {
         callback(MYBOT_RTC_STATE_CONNECTED, user_data);
     }
+#endif
     return 0;
 }
 
@@ -1310,6 +1387,13 @@ int main(void) {
 
     emit_key_event(MYBOT_KEY_EVENT_CONVERSATION_START);
     assert(wait_for_counter(&s_rtc_join_calls, 1, 3000));
+#if MYBOT_ENABLE_VIDEO
+    assert(wait_for_video_counter(&s_video_start_calls, 1));
+    s_rtc_callbacks.on_video_key_frame_requested(s_rtc_callbacks.user_data);
+    s_rtc_callbacks.on_video_target_bitrate_changed(96000U, s_rtc_callbacks.user_data);
+    assert(wait_for_video_counter(&s_video_key_frame_calls, 1));
+    assert(wait_for_video_counter(&s_video_bitrate_calls, 1));
+#endif
     mock_lock();
     assert(strcmp(s_join_channel, "rtc-channel") == 0);
     assert(strcmp(s_join_user, "device-uid") == 0);
@@ -1441,6 +1525,20 @@ int main(void) {
     assert(wait_for_counter(&s_rtc_leave_calls, 1, 1000));
     assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_VP_REGISTERED, false, 1000));
+#if MYBOT_ENABLE_VIDEO
+    /* Notifications arriving after hangup cannot restart or reconfigure video.
+     * A following volume event confirms that control consumed the notifications. */
+    emit_rtc_connected();
+    s_rtc_callbacks.on_video_key_frame_requested(s_rtc_callbacks.user_data);
+    s_rtc_callbacks.on_video_target_bitrate_changed(96000U, s_rtc_callbacks.user_data);
+    int volume_calls_before_late_video = read_counter(&s_media_volume_set_calls);
+    emit_key_event(MYBOT_KEY_EVENT_VOLUME_UP);
+    assert(wait_for_counter(&s_media_volume_set_calls, volume_calls_before_late_video + 1, 1000));
+    assert(aosl_atomic_read(&s_video_start_calls) == 1);
+    assert(aosl_atomic_read(&s_video_key_frame_calls) == 1);
+    assert(aosl_atomic_read(&s_video_bitrate_calls) == 1);
+    s_rtc_callbacks.on_state_changed(MYBOT_RTC_STATE_INITIALIZED, s_rtc_callbacks.user_data);
+#endif
     int sends_before_second_call = read_counter(&s_rtc_send_calls);
 #if MYBOT_WAKE_WORDS
     emit_wake_word();
@@ -1616,6 +1714,43 @@ int main(void) {
     emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
     assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
     mybot_stop();
+    assert(aosl_atomic_read(&s_video_destroy_calls) == video_destroys_before + 1);
+
+    /* Shutdown must wait for a platform start already executing on control,
+     * rather than invoking stop/destroy concurrently from another thread. */
+    assert(mybot_start(&config) == 0);
+    emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
+    assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
+    intptr_t video_starts_before = aosl_atomic_read(&s_video_start_calls);
+    intptr_t video_stops_before = aosl_atomic_read(&s_video_stop_calls);
+    video_destroys_before = aosl_atomic_read(&s_video_destroy_calls);
+    mock_lock();
+    s_block_video_start = true;
+    s_video_start_entered = false;
+    s_stop_thread_entered = false;
+    s_stop_thread_returned = false;
+    mock_unlock();
+    emit_key_event(MYBOT_KEY_EVENT_CONVERSATION_START);
+    assert(wait_for_flag(&s_video_start_entered, 1000));
+    assert(mybot_is_running());
+    thread_result = pthread_create(&stop_tid, NULL, stop_thread, NULL);
+    assert(thread_result == 0);
+    assert(wait_for_flag(&s_stop_thread_entered, 1000));
+    for (int elapsed = 0; elapsed < 1000 && mybot_is_running(); elapsed++) {
+        aosl_hal_msleep(1);
+    }
+    assert(!mybot_is_running());
+    assert(!read_bool(&s_stop_thread_returned));
+    assert(aosl_atomic_read(&s_video_stop_calls) == video_stops_before);
+    assert(aosl_atomic_read(&s_video_destroy_calls) == video_destroys_before);
+    mock_lock();
+    s_block_video_start = false;
+    assert(pthread_cond_broadcast(&s_io_cond) == 0);
+    mock_unlock();
+    assert(pthread_join(stop_tid, NULL) == 0);
+    assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+    assert(aosl_atomic_read(&s_video_start_calls) == video_starts_before + 1);
+    assert(aosl_atomic_read(&s_video_stop_calls) == video_stops_before + 1);
     assert(aosl_atomic_read(&s_video_destroy_calls) == video_destroys_before + 1);
 #endif
 

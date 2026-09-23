@@ -186,6 +186,8 @@ RTC connection 后调用 `agora_rtc_set_bwe_param()` 设置；`start_bps` 使用
 编码器通过 `init()` 注册的 frame handler 推送完整编码帧，帧数据在 handler 返回前为借用内存，
 且必须来自普通任务上下文而非 ISR。`stop()` 必须停止编码器并等待所有进行中的 handler 返回，
 随后才能执行 `destroy()`。
+SDK 在 `control_mpq` 上串行调用全部视频操作，包括码率调整和关键帧请求。RTC 回调只投递控制
+通知，已经结束的会话通知会被丢弃；编码帧仍由编码器任务直接提交。
 
 视频只在 RTC 状态为 `CONNECTED` 时启动，会话离开时先停止编码器再离开 RTC。SDK 不建立视频
 ring buffer，发送失败直接丢弃当前帧。RTSA 会在 `agora_rtc_send_video_data()` 返回前完成分包

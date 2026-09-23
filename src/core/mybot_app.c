@@ -50,6 +50,7 @@ typedef struct {
     mybot_media_pipeline_t media;
 #if MYBOT_ENABLE_VIDEO
     mybot_video_t video;
+    aosl_atomic_t video_generation;
 #endif
     mybot_device_lifecycle_t lifecycle;
     /* Snapshots used to reject stale RTM events from a previous conversation. */
@@ -317,6 +318,58 @@ static void media_on_wake_word(const char *wake_word, void *user_data) {
     }
 }
 
+#if MYBOT_ENABLE_VIDEO
+typedef enum {
+    VIDEO_CONTROL_START,
+    VIDEO_CONTROL_KEY_FRAME,
+    VIDEO_CONTROL_BITRATE,
+} video_control_event_t;
+
+static void handle_video_control(const aosl_ts_t *ts, aosl_refobj_t ref, uintptr_t argc,
+                                 uintptr_t argv[]) {
+    (void)ts;
+    (void)ref;
+    if (argc != 4) {
+        return;
+    }
+    mybot_runtime_t *runtime = (mybot_runtime_t *)argv[0];
+    if (!runtime_is_running(runtime) ||
+        argv[1] != (uintptr_t)aosl_atomic_read(&runtime->video_generation) ||
+        runtime_get_state(runtime) != MYBOT_STATE_IN_CONVERSATION || !runtime->rtc_channel[0] ||
+        aosl_atomic_read(&runtime->lifecycle.stop_request) ||
+        !aosl_atomic_read(&runtime->media.rtc_connected)) {
+        return;
+    }
+    switch ((video_control_event_t)argv[2]) {
+    case VIDEO_CONTROL_START:
+        if (mybot_video_start(&runtime->video) < 0) {
+            AOSL_LOG_ERR("failed to start video source");
+        }
+        break;
+    case VIDEO_CONTROL_KEY_FRAME:
+        mybot_video_request_key_frame(&runtime->video);
+        break;
+    case VIDEO_CONTROL_BITRATE:
+        mybot_video_set_target_bitrate(&runtime->video, (uint32_t)argv[3]);
+        break;
+    }
+}
+
+static void queue_video_control(mybot_runtime_t *runtime, video_control_event_t event,
+                                uint32_t target_bps) {
+    if (!runtime_is_running(runtime)) {
+        return;
+    }
+    /* Copy scalars into the queue; only the control worker touches the encoder. */
+    uintptr_t generation = (uintptr_t)aosl_atomic_read(&runtime->video_generation);
+    if (aosl_mpq_queue(runtime->control_mpq, AOSL_MPQ_INVALID, AOSL_REF_INVALID,
+                       "handle_video_control", handle_video_control, 4, (uintptr_t)runtime,
+                       generation, (uintptr_t)event, (uintptr_t)target_bps) < 0) {
+        AOSL_LOG_WRN("failed to queue video control event (%d)", (int)event);
+    }
+}
+#endif
+
 static void rtc_on_remote_audio(uint32_t uid, const void *data, size_t len, void *user_data) {
     (void)uid;
     mybot_runtime_t *runtime = user_data;
@@ -328,9 +381,8 @@ static void rtc_on_state_changed(mybot_rtc_state_t state, void *user_data) {
     bool connected = state == MYBOT_RTC_STATE_CONNECTED;
     mybot_media_pipeline_set_rtc_connected(&runtime->media, connected);
 #if MYBOT_ENABLE_VIDEO
-    if (state == MYBOT_RTC_STATE_CONNECTED && runtime_is_running(runtime) &&
-        mybot_video_start(&runtime->video) < 0) {
-        AOSL_LOG_ERR("failed to start video source");
+    if (connected) {
+        queue_video_control(runtime, VIDEO_CONTROL_START, 0);
     }
 #endif
     AOSL_LOG_NTC("rtc -> %s", connected ? "connected" : "disconnected");
@@ -448,18 +500,12 @@ static void rtc_on_token_will_expire(void *user_data) {
 #if MYBOT_ENABLE_VIDEO
 static void rtc_on_video_key_frame_requested(void *user_data) {
     mybot_runtime_t *runtime = user_data;
-    if (!runtime_is_running(runtime)) {
-        return;
-    }
-    mybot_video_request_key_frame(&runtime->video);
+    queue_video_control(runtime, VIDEO_CONTROL_KEY_FRAME, 0);
 }
 
 static void rtc_on_video_target_bitrate_changed(uint32_t target_bps, void *user_data) {
     mybot_runtime_t *runtime = user_data;
-    if (!runtime_is_running(runtime)) {
-        return;
-    }
-    mybot_video_set_target_bitrate(&runtime->video, target_bps);
+    queue_video_control(runtime, VIDEO_CONTROL_BITRATE, target_bps);
 }
 #endif
 
@@ -518,6 +564,7 @@ static void dev_on_conversation_start(const mybot_device_conversation_t *params,
     callbacks.on_rtm_subscribe_result = rtc_on_rtm_subscribe_result;
     callbacks.on_rtm_subscribe_data = rtc_on_rtm_subscribe_data;
 #if MYBOT_ENABLE_VIDEO
+    aosl_atomic_inc(&runtime->video_generation);
     callbacks.on_video_key_frame_requested = rtc_on_video_key_frame_requested;
     callbacks.on_video_target_bitrate_changed = rtc_on_video_target_bitrate_changed;
 #endif
@@ -550,6 +597,7 @@ static void dev_on_conversation_stop(void *user_data) {
     runtime->rtc_channel[0] = '\0';
     runtime->rtc_agent_uid[0] = '\0';
 #if MYBOT_ENABLE_VIDEO
+    aosl_atomic_inc(&runtime->video_generation);
     if (mybot_video_stop(&runtime->video) < 0) {
         AOSL_LOG_ERR("failed to stop video source");
     }

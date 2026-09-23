@@ -74,6 +74,8 @@ typedef int (*mybot_video_frame_handler_t)(const mybot_video_frame_t *frame, voi
  * `min_bps`, `max_bps`, `init`, `start`, `stop`, `on_target_bitrate_changed`,
  * and `destroy` are required when `MYBOT_ENABLE_VIDEO=ON`. The operations table
  * and all objects referenced by it must remain valid until destroy() returns.
+ * All operations below run serially on the SDK control worker. Encoded frame
+ * handlers run separately on the platform encoder task.
  */
 typedef struct {
     /**
@@ -147,8 +149,8 @@ typedef struct {
      * @param ctx       encoder context from init()
      * @param target_bps target bitrate reported by RTSA
      *
-     * @note RTSA invokes this callback when its bandwidth estimate changes.
-     *       The SDK forwards it on the RTC worker. Clamp the value to the
+     * @note The SDK queues RTSA bandwidth updates to the control worker and
+     *       discards notifications from ended conversations. Clamp the value to the
      *       encoder's limits, apply it without blocking, and return promptly.
      *       The SDK does not retry this callback.
      */

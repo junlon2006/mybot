@@ -96,9 +96,12 @@ typedef struct {
 void mybot_media_pipeline_init(mybot_media_pipeline_t *pipeline);
 int mybot_media_pipeline_start(mybot_media_pipeline_t *pipeline,
                                const mybot_media_pipeline_callbacks_t *callbacks);
-/** Stop workers and device I/O; returns -1 while any worker remains live. */
+/**
+ * Stop workers, device I/O, and prompts; retain buffers and prompt state until destroy.
+ * Returns -1 while any worker remains live.
+ */
 int mybot_media_pipeline_stop(mybot_media_pipeline_t *pipeline);
-/** Destroy ring buffers after a successful stop. */
+/** Release buffers and prompt state after a successful stop and RTC callbacks have drained. */
 int mybot_media_pipeline_destroy(mybot_media_pipeline_t *pipeline);
 
 void mybot_media_pipeline_set_rtc_connected(mybot_media_pipeline_t *pipeline, bool connected);

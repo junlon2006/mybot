@@ -214,6 +214,9 @@ encoder's supported video bitrate range. The SDK validates that range and applie
 The encoder pushes complete encoded frames through the handler registered by `init()`. Frame data is
 borrowed until the handler returns and the handler must run from a task context, never an ISR.
 `stop()` must stop the encoder and wait for all in-flight handlers before `destroy()` is called.
+The SDK serializes all video operations on `control_mpq`, including bitrate and key-frame requests.
+RTC callbacks enqueue these control notifications; notifications from ended conversations are discarded.
+Encoded frame submission remains on the encoder task.
 
 Video starts only after RTC reaches `CONNECTED` and stops before the session leaves RTC. The SDK has
 no video ring buffer; a failed send drops that frame. RTSA packetizes and copies the input before
