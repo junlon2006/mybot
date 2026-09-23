@@ -197,55 +197,8 @@ static bool rtm_data_get_lcd_indicator(const void *data, size_t len,
     return true;
 }
 
-static void handle_server_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, uintptr_t argc,
-                                uintptr_t argv[]);
-
-static void queue_server_state(mybot_runtime_t *runtime, const char *channel, const char *rtm_uid,
-                               mybot_lcd_indicator_t indicator, bool active) {
-    size_t rtm_uid_len = strlen(rtm_uid);
-    uint32_t rtm_uid_hash = rtm_uid_fingerprint(rtm_uid, rtm_uid_len);
-    size_t channel_len = strlen(channel);
-    uint32_t channel_hash = rtm_uid_fingerprint(channel, channel_len);
-
-    AOSL_LOG_DBG("[RTM] matched server state (channel=%s, from=%s, indicator=0x%x, active=%d)",
-                 channel, rtm_uid, (unsigned int)indicator, active ? 1 : 0);
-    if (aosl_mpq_queue(runtime->control_mpq, AOSL_MPQ_INVALID, AOSL_REF_INVALID,
-                       "handle_server_state", handle_server_state, 7, (uintptr_t)runtime,
-                       (uintptr_t)rtm_uid_len, (uintptr_t)rtm_uid_hash, (uintptr_t)channel_len,
-                       (uintptr_t)channel_hash, (uintptr_t)indicator, (uintptr_t)active) < 0) {
-        AOSL_LOG_WRN("failed to queue server state LCD event");
-    }
-}
-
-static void handle_vp_register_success(const aosl_ts_t *queued_ts, aosl_refobj_t robj,
-                                       uintptr_t argc, uintptr_t argv[]) {
-    (void)queued_ts;
-    (void)robj;
-    if (argc != 5) {
-        return;
-    }
-
-    mybot_runtime_t *runtime = (mybot_runtime_t *)argv[0];
-    size_t rtm_uid_len = (size_t)argv[1];
-    uint32_t rtm_uid_hash = (uint32_t)argv[2];
-    size_t channel_len = (size_t)argv[3];
-    uint32_t channel_hash = (uint32_t)argv[4];
-    if (!runtime || !runtime_is_running(runtime) ||
-        runtime_get_state(runtime) != MYBOT_STATE_IN_CONVERSATION ||
-        strlen(runtime->rtc_agent_uid) != rtm_uid_len ||
-        rtm_uid_fingerprint(runtime->rtc_agent_uid, rtm_uid_len) != rtm_uid_hash ||
-        strlen(runtime->rtc_channel) != channel_len ||
-        rtm_uid_fingerprint(runtime->rtc_channel, channel_len) != channel_hash) {
-        return;
-    }
-
-    AOSL_LOG_DBG("[RTM] voiceprint registration succeeded");
-    mybot_presenter_set_vp_registered(&runtime->presenter, true);
-    mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_IN_CONVERSATION);
-}
-
-static void handle_server_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, uintptr_t argc,
-                                uintptr_t argv[]) {
+static void handle_lcd_indicator(const aosl_ts_t *queued_ts, aosl_refobj_t robj, uintptr_t argc,
+                                 uintptr_t argv[]) {
     (void)queued_ts;
     (void)robj;
     if (argc != 7) {
@@ -268,8 +221,30 @@ static void handle_server_state(const aosl_ts_t *queued_ts, aosl_refobj_t robj, 
         return;
     }
 
-    mybot_presenter_update_server_indicator(&runtime->presenter, indicator, active);
+    if (indicator == MYBOT_LCD_INDICATOR_VP_REGISTERED) {
+        AOSL_LOG_DBG("[RTM] voiceprint registration succeeded");
+        mybot_presenter_set_vp_registered(&runtime->presenter, active);
+    } else {
+        mybot_presenter_update_server_indicator(&runtime->presenter, indicator, active);
+    }
     mybot_presenter_show_screen(&runtime->presenter, MYBOT_LCD_SCREEN_IN_CONVERSATION);
+}
+
+static void queue_lcd_indicator(mybot_runtime_t *runtime, const char *channel, const char *rtm_uid,
+                                mybot_lcd_indicator_t indicator, bool active) {
+    size_t rtm_uid_len = strlen(rtm_uid);
+    uint32_t rtm_uid_hash = rtm_uid_fingerprint(rtm_uid, rtm_uid_len);
+    size_t channel_len = strlen(channel);
+    uint32_t channel_hash = rtm_uid_fingerprint(channel, channel_len);
+
+    AOSL_LOG_DBG("[RTM] matched LCD indicator (channel=%s, from=%s, indicator=0x%x, active=%d)",
+                 channel, rtm_uid, (unsigned int)indicator, active ? 1 : 0);
+    if (aosl_mpq_queue(runtime->control_mpq, AOSL_MPQ_INVALID, AOSL_REF_INVALID,
+                       "handle_lcd_indicator", handle_lcd_indicator, 7, (uintptr_t)runtime,
+                       (uintptr_t)rtm_uid_len, (uintptr_t)rtm_uid_hash, (uintptr_t)channel_len,
+                       (uintptr_t)channel_hash, (uintptr_t)indicator, (uintptr_t)active) < 0) {
+        AOSL_LOG_WRN("failed to queue LCD indicator event");
+    }
 }
 
 static void handle_start_conversation(const aosl_ts_t *queued_ts, aosl_refobj_t robj,
@@ -403,24 +378,6 @@ static void rtc_on_rtm_event(const char *rtm_uid, mybot_rtm_event_type_t event_t
     }
 }
 
-static void queue_vp_register_success(mybot_runtime_t *runtime, const char *channel,
-                                      const char *rtm_uid, const char *custom_type, size_t len) {
-    size_t rtm_uid_len = strlen(rtm_uid);
-    uint32_t rtm_uid_hash = rtm_uid_fingerprint(rtm_uid, rtm_uid_len);
-    size_t channel_len = strlen(channel);
-    uint32_t channel_hash = rtm_uid_fingerprint(channel, channel_len);
-
-    AOSL_LOG_DBG("[RTM] matched channel VP_REGISTER_SUCCESS (channel=%s, type=%s, len=%zu)",
-                 channel, custom_type ? custom_type : "(null)", len);
-    if (aosl_mpq_queue(runtime->control_mpq, AOSL_MPQ_INVALID, AOSL_REF_INVALID,
-                       "handle_vp_register_success", handle_vp_register_success, 5,
-                       (uintptr_t)runtime, (uintptr_t)rtm_uid_len, (uintptr_t)rtm_uid_hash,
-                       (uintptr_t)channel_len, (uintptr_t)channel_hash) < 0) {
-        /* This is a best-effort UI notification; a full control queue must not tear down RTC. */
-        AOSL_LOG_WRN("failed to queue VP_REGISTER_SUCCESS LCD event");
-    }
-}
-
 static void rtc_on_rtm_data(const char *rtm_uid, const void *data, size_t len,
                             const char *custom_type, void *user_data) {
     (void)data;
@@ -477,11 +434,7 @@ static void rtc_on_rtm_subscribe_data(const char *channel, const char *rtm_uid, 
     mybot_lcd_indicator_t indicator;
     bool active;
     if (rtm_data_get_lcd_indicator(data, len, &indicator, &active)) {
-        if (indicator == MYBOT_LCD_INDICATOR_VP_REGISTERED) {
-            queue_vp_register_success(runtime, channel, rtm_uid, custom_type, len);
-        } else {
-            queue_server_state(runtime, channel, rtm_uid, indicator, active);
-        }
+        queue_lcd_indicator(runtime, channel, rtm_uid, indicator, active);
         return;
     }
 

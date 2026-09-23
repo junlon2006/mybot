@@ -498,6 +498,13 @@ static void emit_key_event(mybot_key_event_t event) {
     handler(event, user_data);
 }
 
+static void wait_for_control_events(void) {
+    /* The following volume event runs after already queued RTM notifications. */
+    int volume_calls = read_counter(&s_media_volume_set_calls);
+    emit_key_event(MYBOT_KEY_EVENT_VOLUME_UP);
+    assert(wait_for_counter(&s_media_volume_set_calls, volume_calls + 1, 1000));
+}
+
 static void emit_wifi_event(mybot_wifi_event_t event) {
     mock_lock();
     mybot_wifi_event_handler_t handler = s_wifi_handler;
@@ -1407,29 +1414,31 @@ int main(void) {
         "{\"object\":\"message.sal_status\",\"status\":\"VP_REGISTER_FAILED\"}";
     emit_rtm_subscribe_data("rtc-channel", "agent-uid", malformed_vp_message,
                             sizeof(malformed_vp_message) - 1U);
+    wait_for_control_events();
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_VP_REGISTERED, false, 1000));
 
     const char vp_message[] =
         "{\"object\":\"message.sal_status\",\"status\":\"VP_REGISTER_SUCCESS\","
         "\"timestamp\":1710000000000,\"data_type\":\"message\","
         "\"message_id\":\"abcd1234\",\"send_ts\":1710000000100}";
-    emit_rtm_subscribe_data("rtc-channel", "other-agent", vp_message, sizeof(vp_message) - 1U);
+    emit_rtm_subscribe_data("rtc-channel", "other-uid", vp_message, sizeof(vp_message) - 1U);
+    wait_for_control_events();
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_VP_REGISTERED, false, 1000));
 
     const char uppercase_key_message[] =
         "{\"Object\":\"message.sal_status\",\"status\":\"VP_REGISTER_SUCCESS\"}";
     emit_rtm_subscribe_data("rtc-channel", "agent-uid", uppercase_key_message,
                             sizeof(uppercase_key_message) - 1U);
+    wait_for_control_events();
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_VP_REGISTERED, false, 1000));
 
     emit_rtm_data("agent-uid", vp_message, sizeof(vp_message) - 1U);
+    wait_for_control_events();
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_VP_REGISTERED, false, 1000));
 
-    emit_rtm_subscribe_data("wrong-channel", "agent-uid", vp_message, sizeof(vp_message) - 1U);
+    emit_rtm_subscribe_data("bad-channel", "agent-uid", vp_message, sizeof(vp_message) - 1U);
+    wait_for_control_events();
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_VP_REGISTERED, false, 1000));
-
-    emit_rtm_subscribe_data("rtc-channel", "agent-uid", vp_message, sizeof(vp_message) - 1U);
-    assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_VP_REGISTERED, 1000));
 
     const char listening_message[] =
         "{\"event_type\":\"state.listening\",\"payload\":{\"value\":true}}";
@@ -1438,6 +1447,14 @@ int main(void) {
     assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_LISTENING, 1000));
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_THINKING, false, 1000));
 
+    /* Voiceprint registration is independent of the current server state. */
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", vp_message, sizeof(vp_message) - 1U);
+    assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_VP_REGISTERED, 1000));
+    mock_lock();
+    assert(s_last_lcd_content.indicators ==
+           (MYBOT_LCD_INDICATOR_VP_REGISTERED | MYBOT_LCD_INDICATOR_LISTENING));
+    mock_unlock();
+
     const char thinking_message[] =
         "{\"event_type\":\"state.thinking\",\"payload\":{\"value\":true}}";
     emit_rtm_subscribe_data("rtc-channel", "agent-uid", thinking_message,
@@ -1445,14 +1462,27 @@ int main(void) {
     assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_THINKING, 1000));
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_LISTENING, false, 1000));
 
+    /* A delayed false for the preceding state must not clear its successor. */
+    const char listening_done_message[] =
+        "{\"event_type\":\"state.listening\",\"payload\":{\"value\":false}}";
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", listening_done_message,
+                            sizeof(listening_done_message) - 1U);
+    wait_for_control_events();
+    mock_lock();
+    assert(s_last_lcd_content.indicators ==
+           (MYBOT_LCD_INDICATOR_VP_REGISTERED | MYBOT_LCD_INDICATOR_THINKING));
+    mock_unlock();
+
     const char speaking_message[] =
         "{\"event_type\":\"state.speaking\",\"payload\":{\"value\":true}}";
     emit_rtm_subscribe_data("rtc-channel", "agent-uid", speaking_message,
                             sizeof(speaking_message) - 1U);
     assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_SPEAKING, 1000));
 
+    /* Keep a different-length sender case alongside the same-length VP case. */
     emit_rtm_subscribe_data("rtc-channel", "other-agent", thinking_message,
                             sizeof(thinking_message) - 1U);
+    wait_for_control_events();
     assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_SPEAKING, 1000));
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_THINKING, false, 1000));
 
@@ -1525,15 +1555,22 @@ int main(void) {
     assert(wait_for_counter(&s_rtc_leave_calls, 1, 1000));
     assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_VP_REGISTERED, false, 1000));
+    /* Late notifications cannot restore the ended conversation's screen. */
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", vp_message, sizeof(vp_message) - 1U);
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", thinking_message,
+                            sizeof(thinking_message) - 1U);
+    wait_for_control_events();
+    mock_lock();
+    assert(s_last_lcd_content.screen == MYBOT_LCD_SCREEN_READY);
+    assert(s_last_lcd_content.indicators == MYBOT_LCD_INDICATOR_NONE);
+    mock_unlock();
 #if MYBOT_ENABLE_VIDEO
     /* Notifications arriving after hangup cannot restart or reconfigure video.
      * A following volume event confirms that control consumed the notifications. */
     emit_rtc_connected();
     s_rtc_callbacks.on_video_key_frame_requested(s_rtc_callbacks.user_data);
     s_rtc_callbacks.on_video_target_bitrate_changed(96000U, s_rtc_callbacks.user_data);
-    int volume_calls_before_late_video = read_counter(&s_media_volume_set_calls);
-    emit_key_event(MYBOT_KEY_EVENT_VOLUME_UP);
-    assert(wait_for_counter(&s_media_volume_set_calls, volume_calls_before_late_video + 1, 1000));
+    wait_for_control_events();
     assert(aosl_atomic_read(&s_video_start_calls) == 1);
     assert(aosl_atomic_read(&s_video_key_frame_calls) == 1);
     assert(aosl_atomic_read(&s_video_bitrate_calls) == 1);
