@@ -135,8 +135,8 @@ ctest --test-dir build-video --output-on-failure
 ```
 
 - Use relevant existing tests first, then the required checks in the current CI workflow. Its
-  matrix covers GCC/Clang ASan, GCC UBSan, AEC disabled, and wake words enabled. Do not claim a
-  variant was tested unless it was configured and run. Test failure/ownership paths when changing
+  matrix covers GCC/Clang ASan, GCC UBSan, AEC disabled, wake words enabled, and video enabled.
+  Do not claim a variant was tested unless it was configured and run. Test failure/ownership paths when changing
   lifecycle, memory, concurrency, or protocol handling.
 - Keep assertions enabled in tests. Public-header and CMake host/install checks matter for public
   API or build changes; inspect their configuration because nested builds may use default features.

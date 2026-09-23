@@ -525,6 +525,9 @@ find include src platforms/linux examples/linux tests -type f \
   on every push / PR; make sure your local commands match CI before merging.
 - CI builds with both GCC and Clang under ASan and UBSan, runs cppcheck and clang-tidy static
   analysis, and publishes gcov/lcov coverage to Codecov.
+- Feature configurations cover disabled cloud AEC, enabled wake words, and enabled video. Unit
+  tests and CMake source/install consumers use the selected SDK feature values; video CI uses
+  mock platform encoders and does not replace device validation.
 - Commit messages follow Conventional Commits (see `CONTRIBUTING.md`). Install the local
   `commit-msg` hook once per clone with `./scripts/setup-githooks.sh`; CI validates every pushed /
   PR commit subject.

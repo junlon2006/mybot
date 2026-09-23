@@ -95,20 +95,32 @@ static bool s_wake_words_registered;
 static const mybot_https_ops_t s_registered_https_ops;
 static const mybot_wake_words_ops_t s_registered_wake_words_ops;
 #if MYBOT_ENABLE_VIDEO
+static int s_video_context;
+static aosl_atomic_t s_video_init_fails;
+static aosl_atomic_t s_video_init_calls;
+static aosl_atomic_t s_video_start_calls;
+static aosl_atomic_t s_video_stop_calls;
+static aosl_atomic_t s_video_destroy_calls;
+
 static int video_init(void **ctx, mybot_video_frame_handler_t handler, void *user_data) {
-    (void)handler;
-    (void)user_data;
-    *ctx = ctx;
+    assert(handler != NULL && user_data != NULL);
+    aosl_atomic_inc(&s_video_init_calls);
+    if (aosl_atomic_read(&s_video_init_fails)) {
+        return -1;
+    }
+    *ctx = &s_video_context;
     return 0;
 }
 
 static int video_start(void *ctx) {
-    (void)ctx;
+    assert(ctx == &s_video_context);
+    aosl_atomic_inc(&s_video_start_calls);
     return 0;
 }
 
 static int video_stop(void *ctx) {
-    (void)ctx;
+    assert(ctx == &s_video_context);
+    aosl_atomic_inc(&s_video_stop_calls);
     return 0;
 }
 
@@ -118,7 +130,8 @@ static void video_target_bitrate(void *ctx, uint32_t target_bps) {
 }
 
 static void video_destroy(void *ctx) {
-    (void)ctx;
+    assert(ctx == &s_video_context);
+    aosl_atomic_inc(&s_video_destroy_calls);
 }
 
 static const mybot_video_ops_t s_registered_video_ops = {
@@ -1472,6 +1485,12 @@ int main(void) {
     assert(read_counter(&s_rtc_leave_calls) == 2);
     assert(read_counter(&s_rtc_fini_calls) == 1);
     assert(read_counter(&s_capture_stop_calls) == 1);
+#if MYBOT_ENABLE_VIDEO
+    assert(aosl_atomic_read(&s_video_init_calls) == 1);
+    assert(aosl_atomic_read(&s_video_start_calls) == 2);
+    assert(aosl_atomic_read(&s_video_stop_calls) == 2);
+    assert(aosl_atomic_read(&s_video_destroy_calls) == 1);
+#endif
     assert(read_counter(&s_capture_destroy_calls) == 1);
     assert(read_counter(&s_playback_stop_calls) == 1);
     assert(read_counter(&s_playback_destroy_calls) == 1);
@@ -1582,6 +1601,23 @@ int main(void) {
     mock_lock();
     s_wifi_emit_connected_on_init = false;
     mock_unlock();
+
+#if MYBOT_ENABLE_VIDEO
+    /* An encoder init failure must fail service startup and leave restart possible. */
+    intptr_t video_destroys_before = aosl_atomic_read(&s_video_destroy_calls);
+    aosl_atomic_set(&s_video_init_fails, true);
+    assert(mybot_start(&config) == 0);
+    emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
+    assert(wait_for_app_state(MYBOT_STATE_FAILED, 1000));
+    mybot_stop();
+    assert(aosl_atomic_read(&s_video_destroy_calls) == video_destroys_before);
+    aosl_atomic_set(&s_video_init_fails, false);
+    assert(mybot_start(&config) == 0);
+    emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
+    assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
+    mybot_stop();
+    assert(aosl_atomic_read(&s_video_destroy_calls) == video_destroys_before + 1);
+#endif
 
     puts("app_test: ok");
     return 0;

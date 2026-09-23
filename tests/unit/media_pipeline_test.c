@@ -19,6 +19,43 @@ static aosl_atomic_t s_send_calls;
 static aosl_atomic_t s_last_send_len;
 static int s_capture_mode;
 static int s_playback_mode;
+#if MYBOT_WAKE_WORDS
+static mybot_wake_words_handler_t s_wake_handler;
+static void *s_wake_user_data;
+static aosl_atomic_t s_wake_calls;
+
+static int wake_init(void **ctx, int rate, int channels, int bits,
+                     mybot_wake_words_handler_t handler, void *user_data) {
+    assert(rate == MYBOT_MEDIA_SAMPLE_RATE && channels == MYBOT_MEDIA_CHANNELS && bits == 16);
+    assert(handler != NULL);
+    *ctx = &s_wake_calls;
+    s_wake_handler = handler;
+    s_wake_user_data = user_data;
+    return 0;
+}
+
+static int wake_process(void *ctx, const void *pcm, int frames) {
+    assert(ctx == &s_wake_calls && pcm != NULL && frames > 0);
+    s_wake_handler("hello", s_wake_user_data);
+    return 0;
+}
+
+static void wake_destroy(void *ctx) {
+    assert(ctx == &s_wake_calls);
+}
+
+static void on_wake_word(const char *word, void *user_data) {
+    (void)user_data;
+    assert(strcmp(word, "hello") == 0);
+    aosl_atomic_inc(&s_wake_calls);
+}
+
+static const mybot_wake_words_ops_t s_wake_ops = {
+    .init = wake_init,
+    .process = wake_process,
+    .destroy = wake_destroy,
+};
+#endif
 
 enum {
     CAPTURE_MODE_NONE = 0,
@@ -143,6 +180,9 @@ static const mybot_platform_descriptor_t s_platform = {
     .audio_capture = &s_capture_ops,
     .audio_playback = &s_playback_ops,
     .announce = &s_announce_ops,
+#if MYBOT_WAKE_WORDS
+    .wake_words = &s_wake_ops,
+#endif
 };
 
 bool mybot_platform_registry_is_registered(void) {
@@ -194,6 +234,9 @@ int main(void) {
     mybot_media_pipeline_t pipeline;
     mybot_media_pipeline_init(&pipeline);
     mybot_media_pipeline_callbacks_t callbacks = {.send_audio = send_audio};
+#if MYBOT_WAKE_WORDS
+    callbacks.on_wake_word = on_wake_word;
+#endif
     assert(mybot_media_pipeline_start(&pipeline, NULL) < 0);
     mybot_media_pipeline_callbacks_t invalid_callbacks = {0};
     assert(mybot_media_pipeline_start(&pipeline, &invalid_callbacks) < 0);
@@ -205,6 +248,9 @@ int main(void) {
     assert(audio_probe.capture_ops == &s_capture_ops);
     assert(audio_probe.playback_ops == &s_playback_ops);
     assert(mybot_media_pipeline_start(&pipeline, &callbacks) == 0);
+#if MYBOT_WAKE_WORDS
+    mybot_media_pipeline_set_wake_words_enabled(&pipeline, true);
+#endif
     mybot_media_pipeline_set_rtc_connected(&pipeline, true);
 
     int16_t rtc_frame[MYBOT_MEDIA_FRAME_SAMPLES];
@@ -255,6 +301,9 @@ int main(void) {
     aosl_hal_msleep(70);
     s_capture_mode = CAPTURE_MODE_FRAME;
     assert(wait_for_sends(1, 1000));
+#if MYBOT_WAKE_WORDS
+    assert(aosl_atomic_read(&s_wake_calls) > 0);
+#endif
     assert(aosl_atomic_read(&s_last_send_len) > 0);
     mybot_media_pipeline_adjust_volume(&pipeline, -20);
     assert(mybot_audio_get_media_volume(&pipeline.audio) == 80);

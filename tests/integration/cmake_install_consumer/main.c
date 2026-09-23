@@ -2,13 +2,13 @@
 #include <mybot/mybot.h>
 #include <mybot/mybot_build_config.h>
 #include <mybot/mybot_version.h>
+#include "mybot_expected_build_config.h"
 
 #include <string.h>
 
 int main(void) {
     return mybot_get_state() == MYBOT_STATE_STOPPED &&
-                   strcmp(mybot_version_string(), MYBOT_VERSION_STRING) == 0 &&
-                   MYBOT_AUDIO_PTIME_MS == 60
+                   strcmp(mybot_version_string(), MYBOT_VERSION_STRING) == 0
                ? 0
                : 1;
 }

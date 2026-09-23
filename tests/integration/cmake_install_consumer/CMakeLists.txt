@@ -6,4 +6,5 @@ project(mybot_install_consumer_check LANGUAGES C)
 find_package(mybot 1.0 CONFIG REQUIRED)
 
 add_executable(mybot_install_consumer_check main.c)
+target_include_directories(mybot_install_consumer_check PRIVATE "${MYBOT_TEST_CONFIG_DIR}")
 target_link_libraries(mybot_install_consumer_check PRIVATE mybot::sdk)
