@@ -28,8 +28,10 @@
 - [ ] Test the bundled RTSA package at 60 ms; test 20/40 ms only with matching RTSA packages.
 - [ ] Verify RTM login, conversation-channel subscription, and the
       `VP_REGISTER_SUCCESS` LCD indicator with a compatible service.
-- [ ] On the BK725x reference, verify the pending/success voiceprint markers and the
-      provisioning-success prompt gate before MyBot startup.
+- [ ] For BK device validation, use the independent
+      [BK7258](https://github.com/junlon2006/mybot-bk7258) or
+      [BK7259](https://github.com/junlon2006/mybot-bk7259) firmware project. Verify the pending/success
+      voiceprint markers and the provisioning-success prompt gate before MyBot startup.
 - [ ] Run provisioning, pairing, bidirectional audio, hangup, shutdown, and reboot on real hardware.
 - [ ] Test network loss, audio-device loss, storage failure, and partial startup failure.
 - [ ] Confirm logs and release archives contain no credentials.

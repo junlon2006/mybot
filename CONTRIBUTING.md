@@ -7,7 +7,8 @@ Contributions are welcome for the 1.2 release series. Public APIs and ABI follow
 ## Workflow
 
 1. Discuss large API, platform, dependency, or protocol changes in an issue first.
-2. Keep platform code outside `src/` and integrate it through public platform ops.
+2. Keep platform code outside `src/` and integrate it through public platform ops. Maintain MCU
+   adapters and firmware in their independent projects; this repository keeps the Linux reference.
 3. Never commit credentials, device tokens, customer data, or unapproved proprietary SDK packages.
    The pinned Agora RTSA package already present under `third_party/agora_rtsa_sdk` is an explicit
    repository dependency; changes or replacements require license and redistribution review.
@@ -15,8 +16,7 @@ Contributions are welcome for the 1.2 release series. Public APIs and ABI follow
    SPDX license header (`/* SPDX-License-Identifier: Apache-2.0 */`; the cJSON-derived `mybot_json`
    sources use `MIT`). After mechanical renames or bulk edits, run
    `find include src platforms/linux examples/linux tests -type f \( -name '*.c' -o -name '*.h'
-   \) -exec clang-format -i {} +` before committing. BK725x Armino sources use their firmware
-   toolchain's formatting rules and are not part of the host format check.
+   \) -exec clang-format -i {} +` before committing.
 5. Build and test before opening a pull request (initialize the AOSL submodule first):
 
        git submodule update --init --recursive

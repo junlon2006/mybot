@@ -19,7 +19,7 @@ Agora RTSA 头文件与库。从 git 检出构建时，先执行 `git submodule 
 
 ## 第 2 步：创建平台目录布局
 
-将平台代码保持在 `src/` 之外：
+MCU 平台代码在独立固件仓库中实现，该仓库可采用以下布局：
 
 ```text
 platforms/my_mcu/
@@ -37,11 +37,12 @@ platforms/my_mcu/
   my_mcu_wake_words.c   # 可选
 ```
 
-独立（out-of-tree）固件工程可使用相同布局，无需改动本仓库。
+通过 SDK 公共平台 ops 集成，不将板级源码或资源复制到本仓库。
 
 ## 参考移植工程
 
-以下独立仓库提供可运行的固件参考实现：
+以下独立仓库维护 MCU 平台适配、板级配置、资源与固件构建，设备集成请直接使用对应工程。
+SDK 仓库保留 Linux 参考实现，不再同步 MCU 源码副本。
 
 - [mybot-bk7258](https://github.com/junlon2006/mybot-bk7258)：BK7258；
 - [mybot-bk7259](https://github.com/junlon2006/mybot-bk7259)：BK7259；

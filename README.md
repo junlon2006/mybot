@@ -493,6 +493,10 @@ Key CMake targets:
 
 ## Documentation
 
+This repository maintains the SDK core and Linux reference implementation. BK7258, BK7259,
+and ESP32 adapters, board configuration, and firmware builds are maintained in the independent
+projects linked below.
+
 - [docs/PORTING.md](docs/PORTING.md) ([简体中文](docs/PORTING.zh-CN.md)) — porting guide and
   acceptance checklist
 - [mybot-bk7258](https://github.com/junlon2006/mybot-bk7258) — BK7258 reference firmware project
@@ -516,8 +520,7 @@ find include src platforms/linux examples/linux tests -type f \
   -exec clang-format --dry-run --Werror {} +
 ```
 
-- Host-checked C code follows the root `.clang-format`; `third_party/` keeps upstream content,
-  and BK725x Armino sources use their firmware toolchain's formatting rules.
+- Self-maintained C code follows the root `.clang-format`; `third_party/` keeps upstream content.
 - CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the build, tests, and format check
   on every push / PR; make sure your local commands match CI before merging.
 - CI builds with both GCC and Clang under ASan and UBSan, runs cppcheck and clang-tidy static
