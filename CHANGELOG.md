@@ -6,6 +6,8 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
+- Align public Wi-Fi comments and integration guides with product-owned provisioning, and
+  correct the embedded notes on RTSA logging and per-frame heap allocations.
 - Serialize video startup and encoder control with shutdown on the application control worker,
   discarding stale conversation notifications.
 - Retain announcement resources until RTC callbacks have stopped, preventing downlink audio

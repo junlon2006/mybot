@@ -37,7 +37,7 @@ typedef struct {
  * Application-level lifecycle state, returned by mybot_get_state().
  *
  * Describes the startup / runtime state of the whole SDK application instance,
- * including Wi-Fi provisioning, service bring-up, device pairing,
+ * including network readiness, service bring-up, device pairing,
  * conversation activity, connectivity, and shutdown.
  */
 typedef enum {
@@ -45,9 +45,8 @@ typedef enum {
      *  after all worker threads and devices are released; also the value
      *  reported before mybot_start(). */
     MYBOT_STATE_STOPPED = 0,
-    /** The platform Wi-Fi provisioning/connection workflow is in progress.
-     *  mybot_start() is non-blocking and returns after starting that workflow;
-     *  this state lasts until MYBOT_WIFI_EVENT_STA_CONNECTED is reported. */
+    /** Waiting for the platform's initial MYBOT_WIFI_EVENT_STA_CONNECTED.
+     *  The historical name is retained; the SDK does not perform provisioning. */
     MYBOT_STATE_WIFI_PROVISIONING,
     /** Wi-Fi is connected and the remaining startup services (KV storage,
      *  keys, audio capture/playback and the device-service state machine) are
@@ -57,11 +56,11 @@ typedef enum {
     /** All startup services are up and the device is ready to start a
      *  conversation or re-pair. */
     MYBOT_STATE_READY,
-    /** Runtime Wi-Fi link was lost (or failed after provisioning);
+    /** Runtime Wi-Fi link was lost or failed;
      *  device-service traffic is paused and any active RTC conversation is
      *  ended locally. Returns to the corresponding online state on reconnect. */
     MYBOT_STATE_WIFI_DISCONNECTED,
-    /** Unrecoverable failure: Wi-Fi provisioning, service bring-up, or a
+    /** Unrecoverable failure: initial network readiness, service bring-up, or a
      *  runtime event queue failure. The application should report the error
      *  and call mybot_stop(). */
     MYBOT_STATE_FAILED,
@@ -82,18 +81,16 @@ typedef enum {
 /**
  * @brief Initialize and start the application.
  *
- * Non-blocking: starts the registered platform Wi-Fi workflow and returns
- * immediately. The remaining startup services (KV storage, keys, audio and the
- * device-service state machine) are initialized asynchronously on the startup
- * worker once MYBOT_WIFI_EVENT_STA_CONNECTED is reported. RTC is
- * initialized later, when a conversation starts.
- *
- * Product platforms should normally use the recommended APSTA provisioning
- * workflow to keep onboarding and connection behavior consistent across
- * products; see mybot_wifi_ops_t. The generic platform contract also supports
- * development environments whose host already manages the network connection.
+ * Initializes the registered connectivity monitor without waiting for network
+ * readiness or service startup. Platform init() runs before this call returns.
+ * The control worker initializes the remaining services (KV storage, keys,
+ * audio and the device-service state machine) after MYBOT_WIFI_EVENT_STA_CONNECTED.
+ * RTC is initialized later, when a conversation starts.
  *
  * Preconditions:
+ * - The host owns network provisioning and Wi-Fi credentials. Complete provisioning and
+ *   establish usable connectivity before starting MyBot; the monitor must still report the
+ *   initial connected event. Stop MyBot before entering provisioning again.
  * - Register one complete mybot_platform_descriptor_t first. Wi-Fi, KV, key, audio capture and
  *   playback are required; HTTPS and wake words become required when selected by the build and
  *   configuration.
@@ -159,8 +156,9 @@ MYBOT_API mybot_state_t mybot_get_state(void);
  * @brief Stop the application and release resources whose workers have exited.
  *
  * Signals every worker to stop, waits for worker threads to exit, and releases
- * audio devices, TLS, Wi-Fi, LCD and RTC resources. If a worker cannot be
- * joined, the associated resources are retained so a later call can retry.
+ * audio devices, TLS, connectivity monitoring, LCD and RTC resources. Product-owned
+ * network connections and Wi-Fi credentials remain outside SDK ownership. If a worker
+ * cannot be joined, the associated resources are retained so a later call can retry.
  *
  * Idempotent: safe to call when the application is not running, after a
  * failed mybot_start(), or repeatedly. After it returns, the application

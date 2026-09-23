@@ -9,8 +9,8 @@ extern "C" {
 /* ----------------------------------------------------------
  * Platform Wi-Fi connectivity operations (hook interface)
  *
- * The platform owns its connection or provisioning workflow and reports
- * usable network-connectivity transitions to the SDK.
+ * The product owns provisioning, network credentials, and the network stack.
+ * These operations attach the SDK to usable connectivity notifications.
  * ---------------------------------------------------------- */
 
 /**
@@ -25,7 +25,7 @@ typedef enum {
     MYBOT_WIFI_EVENT_STA_CONNECTED = 0,
     /** Usable STA network connectivity was lost at runtime. */
     MYBOT_WIFI_EVENT_STA_DISCONNECTED,
-    /** Provisioning failed unrecoverably, or usable connectivity failed at runtime. */
+    /** Initial connectivity confirmation failed, or runtime connectivity failed. */
     MYBOT_WIFI_EVENT_FAILED,
 } mybot_wifi_event_t;
 
@@ -43,26 +43,30 @@ typedef void (*mybot_wifi_event_handler_t)(mybot_wifi_event_t event, void *user_
 /**
  * Platform Wi-Fi connectivity operations.
  *
- * APSTA provisioning is the project's recommended production model and current
- * preferred solution. Platform ports should use APSTA wherever available so
- * onboarding, connection transitions, and recovery behavior remain consistent
- * across products. Alternative platform implementations remain supported for
- * development hosts or platforms that cannot provide APSTA.
+ * Complete product provisioning and establish usable connectivity before calling
+ * mybot_start(). Before entering provisioning again, call mybot_stop() from the
+ * product control task and wait for it to return. The SDK neither starts
+ * provisioning nor owns the product's network connection.
  *
- * The implementation owns the platform-specific connection or provisioning
- * workflow and, where applicable, Wi-Fi credential persistence. It must keep
- * monitoring usable network connectivity after the first successful connection
- * and report runtime disconnects and reconnects through emit(). It must emit
- * only connectivity transitions; a connected event must not be repeated until
- * after a disconnected or failed event.
+ * At initialization, report the current usable connection once, then report runtime
+ * disconnects and reconnects in transition order. Do not repeat a connected
+ * event without an intervening disconnected or failed event. Ordinary link loss
+ * and reconnection are handled through these events while the SDK remains running.
  *
- * @note All callbacks may run on platform threads. destroy() must stop the
- *       transport and wait for any in-flight callback to return before returning.
+ * @note The SDK calls init() and destroy() on its control thread. emit() may run
+ *       during init() or on platform threads, but calls must be serialized.
+ *       destroy() must prevent further SDK notifications and wait for in-flight
+ *       callbacks; it does not shut down the product's network stack.
  */
 typedef struct {
     /**
-     * Start the platform Wi-Fi workflow without waiting for network connectivity.
-     * Production implementations should normally start APSTA provisioning.
+     * Register connectivity monitoring for this SDK run.
+     *
+     * Report MYBOT_WIFI_EVENT_STA_CONNECTED when the existing connection is usable,
+     * including when it was already connected before init(). The first event may
+     * be emitted synchronously here or asynchronously after return. Do not start
+     * provisioning or wait for user input. If registration fails, release partial
+     * resources and stop any callbacks before returning an error.
      *
      * @param ctx       [out] implementation context handle
      * @param device_id NUL-terminated device identifier forwarded from
@@ -75,10 +79,11 @@ typedef struct {
                 void *user_data);
 
     /**
-     * Stop provisioning and release all resources.
+     * Remove this SDK run's connectivity listener and release its resources.
      *
-     * Must stop provisioning and link monitoring, then wait for in-flight
-     * handlers. No event is emitted after this returns.
+     * Prevent new emit() calls and wait for any in-flight handler to return.
+     * No SDK event is emitted after this returns. Keep the product's connection,
+     * network stack, and saved credentials under product control.
      *
      * @param ctx implementation context from init()
      */

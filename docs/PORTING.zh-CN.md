@@ -2,12 +2,14 @@
 
 > [English](PORTING.md) | 简体中文
 
-本文档定义 mybot 1.2.0 的跨平台集成规范。公开 API 与 ABI 遵循语义化版本。平台代码必须只
-包含 `include/mybot` 下的头文件，并链接 `mybot::sdk`。
+本文介绍如何将 mybot 1.2.0 集成到产品。接口契约、所有权和回调线程要求以
+[mybot.h](../include/mybot/mybot.h) 与[平台公共头文件](../include/mybot/platform/)为准。
+公开 API 与 ABI 遵循语义化版本。平台代码必须只包含 `include/mybot` 下的头文件，
+并链接 `mybot::sdk`。
 
 mybot 设计为可移植到几乎任意平台——Linux、RTOS 或裸机——只要 AOSL 有对应的
 `CONFIG_PLATFORM` 移植、且目标 ABI 存在 Agora RTSA 库。无论宿主操作系统或芯片厂商如何，
-以下规范完全一致。
+以下集成流程均适用。
 
 ## 第 1 步：核实前置条件
 
@@ -48,12 +50,13 @@ SDK 仓库保留 Linux 参考实现，不再同步 MCU 源码副本。
 - [mybot-bk7259](https://github.com/junlon2006/mybot-bk7259)：BK7259；
 - [mybot-esp32](https://github.com/junlon2006/mybot-esp32)：ESP32。
 
-可用这些工程了解目标构建集成、AOSL 平台接线、描述符注册和固件生命周期。参考工程与本文
-不一致时，以本文定义的 SDK 公共契约和所有权边界为准。
+可用这些工程了解目标构建集成、AOSL 平台接线、描述符注册和固件生命周期。参考工程存在
+差异时，接口契约和所有权边界以 SDK 公共头文件为准。
 
 ## 第 3 步：实现必需平台操作
 
 实现以下 ops 表，并在第 4 步通过平台描述符一次性注册。
+完整的回调、返回值和生命周期契约请查阅对应公共头文件。
 
 ### 音频
 
@@ -84,16 +87,16 @@ SDK 仓库保留 Linux 参考实现，不再同步 MCU 源码副本。
 
 初始化失败仅禁用设备音量控制；SDK 回退到软件增益，播放不受影响。
 
-### Wi-Fi 配网
+### 网络连接
 
-实现 `mybot_wifi_ops_t`。`init` 无需等待用户即启动 APSTA。将 connected、
-disconnected 与 failed 事件仅在连接状态转换时发出。只有 STA 已获取 IP 且网络可供 SDK
-请求使用时才能上报 connected。事件可来自平台线程，但必须串行传递，且 `destroy` 返回后
-不得再运行任何事件。Destroy 必须停止传输并等待在途回调。实现在首次成功连接后必须持续监控
-网络连接，并上报运行期断开与重连事件；SDK 在离线期间暂停设备服务流量，重连后恢复。将
-ops 表加入平台描述符。
+实现 [mybot_wifi_ops_t](../include/mybot/platform/mybot_wifi.h)，监听产品已有的网络管理器，
+并将其加入平台描述符。产品配网、凭据存储和建立网络连接独立于 MyBot。`init` 注册 SDK
+监听并上报当前可用连接；`destroy` 解除该监听，不关闭产品网络。事件顺序和回调生命周期
+遵循头文件契约。
 
-Linux 参考实现立即上报已连接，不是真正的 APSTA 参考实现。
+MyBot 运行期间持续上报断网和恢复事件。SDK 离线时暂停设备服务请求，重连后恢复；被中断的
+会话在本地结束。进入配网是独立的产品操作，应遵循第 6 步的停止/启动顺序。
+Linux 适配器假定宿主已联网并立即上报已连接，不实现配网，也不监控宿主链路变化。
 
 ### 持久化键值存储
 
@@ -132,8 +135,9 @@ BearSSL 或芯片厂商 TLS socket API；SDK 核心
 
 对于单个硬件切换键，处理按键时查询线程安全的 `mybot_get_state()`：仅在
 `MYBOT_STATE_READY` 时发出 `MYBOT_KEY_EVENT_CONVERSATION_START`，仅在
-`MYBOT_STATE_IN_CONVERSATION` 时发出 `MYBOT_KEY_EVENT_CONVERSATION_STOP`。配网、启动、
-配对、断网、失败和停止状态均忽略切换键。`MYBOT_STATE_PAIRING` 覆盖设备服务的
+`MYBOT_STATE_IN_CONVERSATION` 时发出 `MYBOT_KEY_EVENT_CONVERSATION_STOP`。等待网络确认
+（`MYBOT_STATE_WIFI_PROVISIONING`）、启动、配对、断网、失败和停止状态均忽略切换键。
+`MYBOT_STATE_PAIRING` 覆盖设备服务的
 `unprovisioned`、`pairing` 和 `awaiting_claim` 阶段。不要根据 LCD 推断会话状态，也不要在
 平台侧维护第二份状态；运行期断网会报告 `MYBOT_STATE_WIFI_DISCONNECTED`，SDK 会在本地结束会话。
 
@@ -251,6 +255,17 @@ target_link_libraries(device_firmware PRIVATE mybot::sdk my_mcu_platform)
 
 ## 第 6 步：启动与停止
 
+产品配网与 SDK 生命周期控制应保持独立职责：
+
+1. 产品使用已保存的凭据连接网络，或完成自身配网流程；网络可用后通知产品控制任务。
+2. 产品控制任务调用 `mybot_start()`，Wi-Fi 适配器上报已有连接，MyBot 才开始设备服务配对、
+   认证与会话流程。
+3. 再次进入配网前，由产品控制任务调用 `mybot_stop()` 并等待其完成，然后才将共享设备交给
+   配网流程；网络重新可用后再启动 MyBot。进入配网、配网成功等提示音归产品配网流程所有，
+   SDK 的配对码播报归 MyBot 所有。
+
+生命周期接口契约见 [mybot.h](../include/mybot/mybot.h)。下例由产品控制任务在网络可用后执行：
+
 ```c
 if (my_mcu_platform_register() < 0) fail_startup();
 
@@ -263,21 +278,23 @@ while (mybot_is_running()) platform_sleep_ms(100);
 mybot_stop();
 ```
 
-`server_base` 必须是 HTTPS URL，且两个字段都必须是非空、以 NUL 结尾的字符串。启动会按
-当前配置检查已注册的描述符；缺少 TLS 传输等必需 ops 时，会在全局初始化之前失败。启动是
-非阻塞的；Wi-Fi 上报网络可用后服务继续运行。不要
-从平台回调中调用 stop，因为它会等待工作线程与回调。`mybot_start()` 获取一份应用持有的
- AOSL 引用，`mybot_stop()` 在工作线程、缓冲区和 RTC 回调队列全部销毁后最后释放该
-引用。RTC 生命周期、状态和 vendor 回调由专用 `rtc_mpq` 串行处理，应用回调不得重入 RTC 接口。
+将 `server_base` 设置为 HTTPS URL，`device_id` 设置为非空标识符，并保证两个字段均以
+NUL 结尾。`mybot_start()` 建立 SDK 控制线程与网络监听，首次收到已连接事件后才启动设备服务。
+历史名称
+`MYBOT_STATE_WIFI_PROVISIONING` 与 `MYBOT_LCD_SCREEN_WIFI_PROVISIONING` 表示等待初次网络
+可用确认，不表示 SDK 正在执行配网。不要从平台回调中调用 stop，因为它会等待工作线程与
+回调。`mybot_start()` 获取一份应用持有的 AOSL 引用，`mybot_stop()` 在工作线程、缓冲区和
+RTC 回调队列全部销毁后最后释放该引用。RTC 生命周期、状态和 vendor 回调由专用
+`rtc_mpq` 串行处理，应用回调不得重入 RTC 接口。
 RTSA 生命周期通过 `agora_rtc_init()` / `agora_rtc_fini()` 管理。宿主若直接使用 AOSL，
 必须自行配对 `aosl_ctor()` 与 `aosl_dtor()`，并在所有 AOSL 用户停止前保持该引用。
 
-`mybot_get_state()` 是线程安全的应用层状态查询接口。设备服务处于未配网、申请配对码或等待
-认领时返回 `MYBOT_STATE_PAIRING`；只有认证后的 `runtime` 阶段返回 `MYBOT_STATE_READY`。
-设备服务接受会话后返回 `MYBOT_STATE_IN_CONVERSATION`，正常拆除后回到 `MYBOT_STATE_READY`。
-运行期网络丢失时，`MYBOT_STATE_WIFI_DISCONNECTED` 优先，重连后恢复为对应的在线状态。
-设备服务生命周期状态（`unprovisioned`、`pairing`、`awaiting_claim`、`runtime`、
-`in_conversation`）属于 SDK 内部状态机，平台不应自行重建。
+使用 `mybot_get_state()` 决定当前可执行的产品操作，返回状态的含义以
+[mybot.h](../include/mybot/mybot.h) 为准。不要在平台侧重建 SDK 私有的设备服务状态机。
+
+普通临时断网时保持 MyBot 运行，由产品网络管理器使用已有凭据重连，适配器依次上报断开与
+重新可用的连接，不必每次断网都重新进入配网。SDK 会结束被中断的会话，并在重连后恢复
+设备服务请求；新的会话需要重新触发。
 
 ### RTM 账号映射
 
@@ -329,7 +346,8 @@ CMake 无法检查宿主导入目标的 ABI，宿主必须确保其头文件和�
 
 - 公开头文件以警告即错误编译通过，宿主只链接文档化的目标。
 - HTTPS 拒绝不受信任的 CA、过期证书、错误主机名、缺失 SNI 与握手超时。
-- Wi-Fi 连接、断开与失败路径无死锁完成。
+- SDK 注册监听时能收到已有可用连接，运行期断开、重连和失败事件无死锁完成。
+- 进入配网前等待 `mybot_stop()` 完成，产品仅在网络重新可用后启动 MyBot。
 - KV 在重置后存活，处理缺失与溢出，并保护凭据。
 - 使用对应 RTSA 软件包时，采集/播放通过所选 ptime 的 16 kHz 单声道 S16 测试（仓库附带
   Linux 软件包覆盖 60 ms）。

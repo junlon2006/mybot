@@ -2,138 +2,145 @@
 
 > [English](EMBEDDED.md) | [简体中文](EMBEDDED.zh-CN.md)
 
-Resource and timing facts for MCU / RTOS integrators: footprint, memory, threads, power, and
-logging. Numbers below are measured on the x86_64 Linux reference build (GCC 13, default
-optimization) and are **indicative only** — always measure with the target toolchain, real
-configuration (`-Os`, enabled feature flags), and the target-architecture Agora RTSA package.
+Resource budgets and measurement guidance for MCU / RTOS integrators: footprint, memory, threads,
+timing, power, and logging. Platform contracts live in the
+[public headers](../include/mybot/platform/); integration and lifecycle procedures live in
+[PORTING.md](PORTING.md). Measure with the target toolchain, product feature flags, and matching
+Agora RTSA package; host figures are not MCU limits.
 
 ## Footprint
 
-| Artifact | Size (x86_64 reference) |
+The following is a historical x86_64 Linux snapshot recorded with GCC 13 and default optimization.
+The exact revision and complete build flags were not recorded; these values have not been
+remeasured for the current revision and are not release size guarantees.
+
+| Artifact | Previously recorded size |
 | --- | --- |
 | `libmybot_sdk.a` | ~490 KB |
 | `libaosl.a` | ~545 KB |
 | Minimal consumer binary (SDK core + AOSL + Agora RTSA, no Linux reference implementations) | text ~890 KB, data ~74 KB, bss ~19 KB |
 
-How to measure on your target:
+Measure on the target build, recording the revision, compiler, flags, feature configuration, and
+RTSA package alongside the results:
 
     size <firmware.elf>
     ls -l <build>/libmybot_sdk.a
 
 Feature flags directly change the code footprint — `MYBOT_CLOUD_AEC`, `MYBOT_WAKE_WORDS`,
 `MYBOT_ENABLE_VIDEO`, and `MYBOT_ENABLE_HTTPS` are the main ones; disable what the product does not
-need. On MCU targets the
-Agora RTSA library dominates the flash budget, and it must be the
-target-architecture package (the bundled shared library is x86_64 Linux only).
+need. Measure the final linked firmware and its map file to attribute flash use; archive file size
+is not linked flash consumption. The bundled RTSA shared library is x86_64 Linux only.
 
 ## Memory model
 
-- **Static per-frame audio buffers** (inside the app state): one 16 kHz mono 16-bit frame per
-  worker — capture, pending playback, uplink send, and the AEC reference are each ~1.9 KB
-  (960 samples at 60 ms ptime); the AEC interleave buffer is ~3.8 KB.
-- **Ring buffers**: each holds 2 s of audio = 64 KB. Capture and playback always exist; a third
-  (AEC reference) is created with `MYBOT_CLOUD_AEC=ON`, totaling 192 KB.
-- **Pairing announcement (optional)**: when a pair code is obtained, the platform supplies raw
-  16 kHz mono s16 PCM through the announcement ops (the SDK contains no decoder). The playback
-  worker keeps prompt PCM separate from the RTC playback ring, pads a final partial frame with
-  silence, and plays the prompt once through the normal speaker path. Prompt and digit assets are
-  loaded transiently while playing.
-- **Video uplink (optional)**: with `MYBOT_ENABLE_VIDEO`, the platform owns camera capture and
-  JPEG/H.264/H.265 encoding; the SDK performs no encoding, decoding, or video receive. Encoded frames
-  are passed through a borrowed-memory handler directly to RTC without an SDK video ring. RTSA calls
-  `on_target_bitrate_changed()` with the usable uplink target so the platform encoder can adapt. Keep
-  each frame within `MYBOT_VIDEO_MAX_FRAME_BYTES`. Set the platform ops `min_bps` and `max_bps` to
-  bound the initial RTSA BWE range; RTSA starts at their midpoint. Include RTSA's per-frame
-  packetization allocations in the target heap budget.
-- **Heap**: the HTTP request buffer is a fixed 2 KB allocation; HTTP responses allocate 4 KB initially
-  and grow to at most 32 KB per request (freed after use). Lifecycle authentication/conversation
-  responses, request headers, and the transient RTM LCD-state message buffer are also bounded
-  `aosl_hal_malloc` allocations released at the end of each transaction. JSON parsing and platform
-  implementations (ALSA, OpenSSL, file KV) allocate transiently as well. All core allocations go
-  through `aosl_hal_malloc`, which each platform can re-point.
-- Control-plane state (app, device lifecycle, Agora RTC) remains statically allocated; the bounded
-  heap allocations above occur only in control/RTM transactions, not in per-frame PCM processing.
-  Include their limits in the platform heap budget and treat allocation failure as an incomplete
-  transaction without using the partial response.
+The following capacities are calculated from
+[the pipeline storage](../src/internal/mybot_media_pipeline.h) and
+[its implementation](../src/media/mybot_media_pipeline.c), not measured heap peaks. At 60 ms ptime,
+one 16 kHz mono s16 frame is `F = 16000 × 60 / 1000 × 2 = 1920` bytes.
 
-The thread-safe application state model stores runtime phase, connectivity, and the device-lifecycle
-projection in one atomic snapshot. `mybot_get_state()` derives the public state from that snapshot:
-`MYBOT_STATE_WIFI_DISCONNECTED` takes precedence while offline; online unprovisioned, pairing, and
-awaiting-claim phases report `MYBOT_STATE_PAIRING`, while an authenticated runtime reports
-`MYBOT_STATE_READY`. An accepted conversation reports `MYBOT_STATE_IN_CONVERSATION` until normal
-teardown returns to `MYBOT_STATE_READY`.
+| Storage | Source-derived capacity at 60 ms |
+| --- | --- |
+| Fixed PCM arrays in app state: capture, pending playback, prompt scratch, uplink send | `4F = 7680` bytes |
+| Additional fixed arrays with cloud AEC: reference and two-channel interleave | `3F = 5760` bytes |
+| Capture and playback rings, allocated at startup | `2 × 64000 = 128000` usable bytes |
+| Additional cloud AEC reference ring | `64000` usable bytes |
+
+Each ring holds 2 s of mono PCM (`16000 × 2 × 2 = 64000` bytes, or 62.5 KiB).
+[Ring allocation](../src/support/mybot_ringbuf.c) also adds a guard byte and metadata per ring;
+allocator overhead is additional. These figures exclude the rest of the app state, queues, stacks,
+RTSA, and platform buffers. Fixed PCM arrays scale with ptime; the 2 s ring capacities do not.
+
+Preallocated PCM arrays do **not** make the end-to-end audio path allocation-free:
+
+- **RTC downlink, per frame:** [the RTC adapter](../src/rtc/mybot_agora_rtc.c) allocates an
+  `rtc_event_t` and a PCM payload copy, then queues the event for `rtc_mpq`.
+  [AOSL](../third_party/aosl)'s `kernel/mpq.c` allocates a queued function object and copies its
+  name. The callback copies PCM into the playback ring before these temporary objects are freed.
+- **RTC uplink, per frame:** the send worker reuses its PCM arrays, but its synchronous call to
+  `rtc_mpq` still allocates an AOSL function object and name and initializes a mutex/condition pair
+  for waiting; their resource cost depends on the HAL. It borrows the PCM until the call returns.
+  Video submission uses the same synchronous MPQ path; having no SDK video ring does not
+  imply zero per-frame allocation.
+- **Session flush:** consumer workers temporarily allocate one frame of drain scratch per ring
+  being drained. The normal capture/playback timers reuse their fixed arrays.
+- **Control and RTM:** service responses, request headers, JSON nodes, and RTM message copies have
+  additional transient allocations. [HTTP](../src/support/mybot_http_client.c) allocates a 2 KiB
+  request buffer and a receive buffer growing from 4 KiB to 32 KiB. A separate response body is
+  allocated before the receive buffer is freed; later JSON parsing adds nodes alongside that body.
+  The 32 KiB receive limit is not a total request heap ceiling.
+- **Platform and RTSA:** prompt asset storage, camera/encoder buffers, TLS, and RTSA internal
+  memory require separate target measurements. Prompt `open()` does not require a whole asset to
+  be loaded into RAM; account for the actual adapter implementation.
+
+Measure peak heap, minimum free heap, largest free block, and allocation rate during sustained
+audio/video, prompts, HTTP requests, and repeated start/stop. Include queued payloads, AOSL
+allocations, and allocator overhead, not only `aosl_hal_malloc()` calls made directly by MyBot.
+Use [PORTING.md](PORTING.md) for connectivity, pairing, and conversation lifecycle behavior.
 
 ## Threads and stacks
 
-| MPQ thread | Responsibility | Stack |
+| MPQ thread | Responsibility | Requested stack |
 | --- | --- | --- |
-| `control_mpq` | App state, device lifecycle, blocking HTTP control, UI/volume, resource transitions | 16 KB |
-| `rtc_mpq` | Agora RTSA lifecycle, serialized state, and vendor callback dispatch | 8 KB |
-| `mybot_mpq` | Uplink audio send at the ptime cadence | 16 KB |
-| `cap_mpq` | Microphone capture | 16 KB |
-| `pb_mpq` | Playback and AEC reference | 16 KB |
-| `key_stdin_mpq` (Linux reference only) | Stdin key events | 4 KB |
+| `control_mpq` | App state, device lifecycle, blocking HTTP control, UI/volume, resource transitions | 16 KiB |
+| `rtc_mpq` | Agora RTSA lifecycle, serialized state, and vendor callback dispatch | 8 KiB |
+| `mybot_mpq` | Uplink audio send at the ptime cadence | 16 KiB |
+| `cap_mpq` | Microphone capture | 16 KiB |
+| `pb_mpq` | Playback and AEC reference | 16 KiB |
+| `key_stdin_mpq` (Linux reference only) | Stdin key events | 4 KiB |
 
-Core stack budget is therefore 4 × 16 KB + 8 KB = 72 KB. Stack sizes are compile-time
-constants: the control worker uses `CONTROL_MPQ_STACK_SIZE` in
+Core requested stacks total 4 × 16 KiB + 8 KiB = 72 KiB when all five workers exist. This is a
+source-derived budget, not measured stack use; HAL minimums and alignment can change actual
+allocation. Stack sizes are compile-time constants: the control worker uses `CONTROL_MPQ_STACK_SIZE` in
 `src/core/mybot_app.c`, while audio workers use `MEDIA_MPQ_STACK_SIZE` in
-`src/media/mybot_media_pipeline.c`; profile on the target before tuning. The real-time
-audio timers live on separate MPQs, and PCM stays on the direct data path rather than passing
-through `control_mpq`, so blocking HTTP or control work cannot stall audio. Control callbacks,
-including wake-word callbacks, only enqueue short events or publish atomic mailboxes.
-RTSA callbacks copy borrowed payloads and enqueue them on `rtc_mpq`; application callbacks run on
-that worker and must not re-enter the RTC API.
-Video lifecycle and encoder control operations run on `control_mpq`; RTC callbacks only enqueue
-their notifications. Encoded frame submission stays on the encoder task.
-The Agora RTSA SDK owns
-additional internal threads whose stacks are vendor-managed.
+`src/media/mybot_media_pipeline.c`. Measure each worker's stack high-water mark on the target,
+including error and teardown paths, before tuning. Add platform encoder/driver tasks and RTSA's
+internal threads separately. Threading and borrowed-buffer contracts are defined in the
+[audio](../include/mybot/platform/mybot_audio.h) and
+[video](../include/mybot/platform/mybot_video.h) headers.
 
 ## Timing and real-time behavior
 
-- Audio format is fixed at 16 kHz, mono, signed 16-bit; ptime is 20 / 40 / 60 ms (default 60 ms,
-  i.e. 960 samples / 1920 bytes per frame).
-- The selected ptime must match the target RTSA package's `CONFIG_MINIMAL_TIMER_INTERVAL_MS`;
-  the bundled Linux package is the 60 ms variant.
-- During shutdown the SDK calls both platform `stop` hooks before waiting for audio workers.
-  Each hook must safely interrupt an in-flight `read` / `write`; bounded I/O timeouts remain a
-  fallback against driver failures (the Linux ALSA implementation polls with a 50 ms timeout).
-- The state machine ticks every 100 ms; device-service polling is server-driven, with each
-  `poll_after_seconds` hint clamped to 3..60 s. Runtime polling starts at a 30 s default until the
+- Audio timers use the configured ptime (20 / 40 / 60 ms; the bundled Linux RTSA uses 60 ms).
+  Package compatibility and I/O shutdown requirements are covered in [PORTING.md](PORTING.md).
+- The control timer requests a 100 ms interval; blocking control work can delay ticks.
+  Device-service polling is server-driven, with each `poll_after_seconds` hint clamped to 3..60 s.
+  Runtime polling starts at a 30 s default until the
   first binding-status response is received.
-- HTTP requests have a 5 s total deadline.
-- Device-service HTTP runs synchronously on `control_mpq`; a queued UI or control action may wait
-  up to that deadline behind an in-flight request, while the PCM data path continues independently.
-- `mybot_start()` and `mybot_stop()` are thread-safe. Because stop waits for workers and callbacks,
-  never call it from a platform or SDK callback.
+- The HTTP client checks a shared 5 s deadline for connect/send/receive. This is not an absolute
+  wall-clock bound: the plain TCP path calls `aosl_hal_gethostbyname()` without a timeout argument
+  before checking the remaining deadline. Include target DNS/transport blocking in measurements.
+- Device-service HTTP runs synchronously on `control_mpq`, delaying queued UI and video-control
+  actions. Audio workers are separate, but media sending and downlink dispatch share `rtc_mpq`;
+  they also compete for CPU and allocation services. Measure scheduling delay, audio underruns,
+  encoder-handler latency, and shutdown duration under the product workload.
 
 ## Power management
 
 Current status: the SDK has **no standby / low-power mode**. While `mybot_is_running()` is
 true, worker threads and timers keep running. The power levers belong to the integrator:
 
-- **Sleep**: call `mybot_stop()` before entering low power and `mybot_start()` on wake;
-  this releases workers, audio devices, TLS, RTC resources, and mybot's AOSL runtime reference.
-  RTSA finalization completes before mybot releases its application reference.
-- **Radio**: the Wi-Fi provisioning implementation owns the radio; implement the platform's low-power
-  policy there.
+- **Sleep and radio**: measure idle and stopped-device current separately. The platform owns
+  provisioning and radio power; use the network and start/stop procedure in
+  [PORTING.md](PORTING.md) when entering low power or provisioning again.
 - **Audio path**: gate the codec/amplifier in the audio implementations; the SDK owns volume control — a
   registered device-volume implementation (hardware hook) is the primary path, with a software media
   gain as fallback.
 - **Polling**: intervals are server-driven and clamped to 3..60 s (30 s initial runtime default);
   agree on relaxed intervals with the server if idle power matters.
 
-When `MYBOT_WAKE_WORDS=ON`, the platform local-ASR implementation runs on the capture MPQ and must be
-power-aware (it is the natural place to keep only the microphone path alive while idle).
+When `MYBOT_WAKE_WORDS=ON`, include the platform local-ASR workload on the capture MPQ in idle
+power and timing measurements; enabling it does not itself stop the playback or send workers.
 
 ## Logging
 
-- Logging comes from AOSL; set the runtime level with `aosl_set_log_level()` (debug through
-  error). The Linux reference prints to stdout.
-- The Agora RTC module initializes the RTSA SDK at its default NOTICE threshold; lower-priority
-  SDK informational logs are suppressed unless a platform port overrides the level.
-- Keep hot-path logging (audio timers) minimal — formatting happens per call.
-- Never log device tokens. The reference app logs the pairing code at INFO level; production
-  builds should redact it.
+- `mybot_start()` raises AOSL logging to at least `AOSL_LOG_NOTICE`; an existing INFO or DEBUG
+  level is preserved. A previously selected stricter threshold is therefore not preserved at start.
+- RTSA is initialized with `RTC_LOG_ERROR`. Its initialization changes global AOSL logging, so
+  the adapter saves and restores the AOSL level on both success and failure.
+- Routine RTM message/forwarding logs use `AOSL_LOG_DBG`; failures remain visible at warning/error
+  levels. Measure log formatting and transport cost when enabling DEBUG, especially for payloads.
+- Pairing codes currently appear at NOTICE in the core and announcement logs. Account for that
+  output in production log handling; do not add device tokens or other credentials to logs.
 
-See [PORTING.md](PORTING.md) for the full platform integration specification and acceptance
-checklist.
+These policies are implemented in [app startup](../src/core/mybot_app.c) and
+[the RTC adapter](../src/rtc/mybot_agora_rtc.c).
