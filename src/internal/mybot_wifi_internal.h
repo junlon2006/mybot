@@ -19,18 +19,18 @@ typedef struct {
 /**
  * SDK-internal Wi-Fi facade. The public mybot/platform/mybot_wifi.h only
  * exposes the platform contract (event and handler types, ops table and
- * mybot_platform_register()); the SDK core drives provisioning and state.
+ * mybot_platform_register()); the SDK consumes connectivity events, while the
+ * product owns provisioning and network credentials.
  */
 
 /**
- * Start the platform Wi-Fi workflow without waiting for the STA link.
- * A successful return means the implementation started; subsequent connectivity
- * results are reported through handler.
+ * Register the platform connectivity monitor. Initial usable connectivity and
+ * subsequent transitions are reported through handler.
  */
 int mybot_wifi_init(mybot_wifi_t *wifi, const char *device_id, mybot_wifi_event_handler_t handler,
                     void *user_data);
 
-/** Stop provisioning/link monitoring and release its resources. Idempotent. */
+/** Unregister connectivity notifications and wait for callbacks. Idempotent. */
 void mybot_wifi_deinit(mybot_wifi_t *wifi);
 
 #ifdef __cplusplus

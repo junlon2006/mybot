@@ -55,7 +55,7 @@ typedef enum {
 typedef enum {
     /** The device is powering up. */
     MYBOT_LCD_SCREEN_STARTING = 0,
-    /** The platform Wi-Fi provisioning/connection workflow is in progress. */
+    /** Waiting for initial usable network notification; the SDK does not run provisioning. */
     MYBOT_LCD_SCREEN_WIFI_PROVISIONING,
     /** The Wi-Fi link was lost at runtime. */
     MYBOT_LCD_SCREEN_WIFI_DISCONNECTED,

@@ -2,14 +2,15 @@
 
 > [English](PORTING.md) | [简体中文](PORTING.zh-CN.md)
 
-This document defines the cross-platform integration specification for mybot 1.2.0.
-Public APIs and ABI follow
-Semantic Versioning. Platform code must include only headers under `include/mybot` and link
-`mybot::sdk`.
+This guide describes how to integrate mybot 1.2.0 into a product. Public API contracts,
+including ownership and callback threading, are defined in
+[mybot.h](../include/mybot/mybot.h) and the
+[platform headers](../include/mybot/platform/). Public APIs and ABI follow Semantic Versioning.
+Platform code must include only headers under `include/mybot` and link `mybot::sdk`.
 
 mybot is designed to be portable to virtually any platform — Linux, an RTOS, or bare metal — as
 long as AOSL has a `CONFIG_PLATFORM` port for it and an Agora RTSA library exists for the target
-ABI. The specification below is identical regardless of the host operating system or silicon vendor.
+ABI. The integration flow below applies regardless of the host operating system or silicon vendor.
 
 ## Step 1: Verify prerequisites
 
@@ -54,12 +55,13 @@ reference implementation without duplicate MCU source trees.
 - [mybot-esp32](https://github.com/junlon2006/mybot-esp32) for ESP32.
 
 Use them to study target build integration, AOSL platform wiring, descriptor registration, and
-firmware lifecycle. The SDK public contract and ownership boundaries defined in this document remain
-authoritative when a reference project differs.
+firmware lifecycle. When a reference project differs, use the SDK public headers as the authority
+for interface contracts and ownership boundaries.
 
 ## Step 3: Implement the required platform operations
 
 Implement the operations tables below and expose them through the platform descriptor in Step 4.
+Use each public header for the complete callback, return-value, and lifetime contract.
 
 ### Audio
 
@@ -95,18 +97,19 @@ example from volume key events) take one of two paths:
 An init failure only disables device volume control; the SDK falls back to the software gain and
 playback keeps working.
 
-### Wi-Fi provisioning
+### Network connectivity
 
-Implement `mybot_wifi_ops_t`. `init` starts APSTA without waiting for the user.
-Emit connected, disconnected and failed events only on connectivity transitions. Emit connected
-only after the STA has an IP address and the network is ready for SDK traffic. Events may come from
-platform threads, but must be delivered serially and none may run after `destroy` returns. Destroy
-must stop the transport and wait for in-flight callbacks. The implementation must keep monitoring
-network connectivity after the first successful connection and report runtime disconnect and
-reconnect events; the SDK pauses device-service traffic while offline and resumes it after
-reconnect. Add the operations table to the platform descriptor.
+Implement [mybot_wifi_ops_t](../include/mybot/platform/mybot_wifi.h) as a listener on the
+product's existing network manager and add it to the platform descriptor. Product provisioning,
+credential storage, and connection establishment are independent of MyBot. `init` attaches the SDK
+listener and reports the current usable connection; `destroy` detaches that listener without
+shutting down the product's network. Follow the header for event ordering and callback lifetime.
 
-The Linux reference implementation reports connected immediately and is not a real APSTA reference.
+Keep reporting runtime link loss and recovery while MyBot is running. The SDK pauses device-service
+requests while offline and resumes them after reconnection; a lost conversation is ended locally.
+Entering provisioning is a separate product action and follows the stop/start sequence in Step 6.
+The Linux adapter assumes the host network is already available and reports connected immediately;
+it does not implement provisioning or monitor host link changes.
 
 ### Persistent key-value storage
 
@@ -150,7 +153,8 @@ source and wait for all handlers. Add the operations table to the platform descr
 For a single hardware toggle button, query the thread-safe `mybot_get_state()` when handling the
 button: emit `MYBOT_KEY_EVENT_CONVERSATION_START` only from `MYBOT_STATE_READY`, and emit
 `MYBOT_KEY_EVENT_CONVERSATION_STOP` only from `MYBOT_STATE_IN_CONVERSATION`. Ignore the toggle in
-pairing, provisioning, startup, disconnected, failed, and stopping states. `MYBOT_STATE_PAIRING`
+pairing, initial network confirmation (`MYBOT_STATE_WIFI_PROVISIONING`), startup, disconnected,
+failed, and stopping states. `MYBOT_STATE_PAIRING`
 covers the device-service `unprovisioned`, `pairing`, and `awaiting_claim` phases. Do not infer
 conversation state from the LCD or maintain a second platform-side state; runtime connectivity
 loss is reported as `MYBOT_STATE_WIFI_DISCONNECTED` and the SDK ends the conversation locally.
@@ -285,6 +289,20 @@ nested AOSL submodule (`git submodule update --init --recursive` in the mybot ch
 
 ## Step 6: Start and stop
 
+Run provisioning and SDK lifecycle control as separate product responsibilities:
+
+1. The product connects using saved credentials or completes its provisioning flow, then signals
+   that the network is usable to the product control task.
+2. The product control task calls `mybot_start()`. The Wi-Fi adapter reports the existing connection,
+   allowing MyBot to start device-service pairing, authentication, and conversations.
+3. Before entering provisioning again, the product control task calls `mybot_stop()` and waits
+   for it to finish before handing shared devices to the provisioning flow. Start MyBot again
+   after usable connectivity returns. Provisioning prompts belong to that product flow;
+   SDK pairing-code announcements belong to MyBot.
+
+For the lifecycle API contract, see [mybot.h](../include/mybot/mybot.h). The following example runs
+on the product control task after network connectivity is ready:
+
 ```c
 if (my_mcu_platform_register() < 0) fail_startup();
 
@@ -297,11 +315,12 @@ while (mybot_is_running()) platform_sleep_ms(100);
 mybot_stop();
 ```
 
-`server_base` must be an HTTPS URL and both fields must be non-empty NUL-terminated strings. Start
-checks the registered descriptor against the active configuration and fails before global
-initialization when a required ops table, such as the TLS transport, is absent. Start is non-blocking;
-services continue after Wi-Fi reports usable network connectivity. Do not call stop from a platform callback because
-it waits for workers and callbacks. `mybot_start()` acquires one application reference to the
+Set `server_base` to an HTTPS URL and `device_id` to a non-empty identifier, keeping both fields
+NUL-terminated. `mybot_start()` sets up the SDK control worker and network listener; device services
+start after the listener's first connected event. The historical `MYBOT_STATE_WIFI_PROVISIONING` and
+`MYBOT_LCD_SCREEN_WIFI_PROVISIONING` names identify this initial network-confirmation stage;
+they do not mean the SDK is running provisioning. Do not call stop from a platform callback
+because it waits for workers and callbacks. `mybot_start()` acquires one application reference to the
 process-wide AOSL runtime and `mybot_stop()` releases that reference last, after workers, buffers
 and the RTC callback queues have been torn down. MyBot serializes RTSA lifecycle, state, and
 vendor callback dispatch on a dedicated `rtc_mpq`; application callbacks must not re-enter the RTC
@@ -309,14 +328,14 @@ API. The RTSA lifecycle is managed through
 `agora_rtc_init()` / `agora_rtc_fini()`. A host that uses AOSL directly must pair its own
 `aosl_ctor()` and `aosl_dtor()` calls and keep that reference until all of its AOSL users have stopped.
 
-`mybot_get_state()` is the thread-safe application-level state query. It reports
-`MYBOT_STATE_PAIRING` while the device service is unprovisioned, requesting a pair code, or waiting
-for a claim; only the authenticated `runtime` phase reports `MYBOT_STATE_READY`. After the device
-service accepts a conversation it reports `MYBOT_STATE_IN_CONVERSATION` and returns to
-`MYBOT_STATE_READY` after normal teardown. If runtime connectivity is lost,
-`MYBOT_STATE_WIFI_DISCONNECTED` takes precedence until reconnect. The device-service lifecycle
-states (`unprovisioned`, `pairing`, `awaiting_claim`, `runtime`, and `in_conversation`) remain an
-internal state machine and must not be reconstructed by the platform.
+Use `mybot_get_state()` to decide which product actions are currently available; the returned
+states are defined in [mybot.h](../include/mybot/mybot.h). Do not reconstruct the SDK's private
+device-service state machine in the platform.
+
+For an ordinary temporary network outage, keep MyBot running and let the network manager reconnect
+with its existing credentials. The adapter reports the disconnect and subsequent usable connection;
+do not turn every link loss into a provisioning restart. The SDK ends the interrupted conversation
+and resumes device-service work after reconnect; starting a new conversation requires a new trigger.
 
 ### RTM account mapping
 
@@ -376,7 +395,10 @@ host must ensure its include and library paths refer to that package.
 
 - Public headers compile with warnings as errors and the host links only documented targets.
 - HTTPS rejects an untrusted CA, expired certificate, wrong hostname, missing SNI and handshake timeout.
-- Wi-Fi connected, disconnected and failure paths complete without deadlock.
+- An already-connected network is reported when the SDK listener attaches; runtime disconnect,
+  reconnect, and failure events complete without deadlock.
+- Entering provisioning waits for `mybot_stop()` to finish; the product restarts MyBot only after
+  network connectivity is usable again.
 - KV survives reset, handles not-found and overflow, and protects credentials.
 - Capture/playback pass 16 kHz mono S16 tests at each selected ptime with its matching RTSA package
   (the bundled Linux package covers 60 ms).

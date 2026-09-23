@@ -7,7 +7,7 @@
 
 `mybot` 是面向设备端的跨平台 **AI 多模态交互 SDK**：让智能设备通过声网 Agora RTC 将
 语音和可选的设备摄像头视频发送给云端 AI Agent，进行实时对话和视觉识别。平台/应用负责
-APSTA 配网和 Wi-Fi 凭据；SDK 消费网络
+配网流程和 Wi-Fi 凭据；SDK 消费网络
 连接事件，并负责设备配对与认证、会话状态机、全双工语音交互（Agora RTSA 与 Agora AI
 能力）、可选的设备视频上行、按键/LCD 工作流以及可选的本地唤醒词识别。平台相关能力通过一组小型 `ops` 接口注入，SDK 核心只依赖 C99 与 AOSL，理论上
 可移植到任意平台——Linux、RTOS 或裸机 MCU。
@@ -38,22 +38,19 @@ APSTA 配网和 Wi-Fi 凭据；SDK 消费网络
   视觉识别。支持 JPEG、H.264、H.265；视频仅上行，服务端不会向设备端发送视频。
 - **任意平台可移植**：核心只依赖 C99 与 AOSL，设备能力通过 `ops` 契约注入，不直接触碰
   任何 OS 或外设 API；理论上可移植到 Linux、RTOS、裸机等任意平台。
-- **APSTA 集成**：非阻塞启动，由平台拥有配网流程，并通过 Wi-Fi 事件驱动应用状态机推进。
+- **网络连接集成**：产品负责配网，SDK 监听可用网络及运行期间的断线、重连事件。
 - **配对与认证**：配对码 → 设备认领 → 长期凭证持久化，认证失效时自动重新配对。
 - **会话状态机**：`unprovisioned / pairing / awaiting_claim / runtime / in_conversation` 五态
   设备服务生命周期驱动设备服务端交互。
-- **应用生命周期状态**：`mybot_get_state()` 暴露启动、配对、网络、停止与会话状态。设备服务
-  处于未配网、配对或等待认领（`unprovisioned / pairing / awaiting_claim`）时返回
-  `MYBOT_STATE_PAIRING`，只有认证后的 runtime 才是 `MYBOT_STATE_READY`。设备服务接受会话后
-  返回 `MYBOT_STATE_IN_CONVERSATION`；正常拆除后回到 `MYBOT_STATE_READY`；网络丢失时
-  `MYBOT_STATE_WIFI_DISCONNECTED` 优先。
+- **应用生命周期状态**：`mybot_get_state()` 暴露启动、设备配对、网络、停止与会话状态，
+  各状态含义以 [mybot.h](include/mybot/mybot.h) 为准。
 - **全双工语音 · 支持打断**：上行与下行同时进行；AI 回复期间用户可随时说话打断，
   麦克风持续上行，云端 Agent 感知新输入并即时响应。
 - **全双工语音交互 · Agora AI 能力**：基于 Agora RTSA，支持云端 AEC 与 AI QoS。
 - **音量控制**：两个相互独立的层次——SDK 管理的媒体音量（对播放 PCM 做数字软件增益，
   所有平台可用）与可选的设备真实音量实现（Codec / 功放 / 混音器），由平台注册。
 - **可选的本地唤醒词**：默认关闭；唤醒行为与物理按键启动会话一致。
-- **按键与 LCD 工作流**：语义化屏幕状态（配网 / 配对 / 配对码 / 就绪 / 会话中），显示方式由
+- **按键与 LCD 工作流**：语义化屏幕状态（等待网络 / 配对 / 配对码 / 就绪 / 会话中），显示方式由
   平台决定。
 - **声纹注册状态**：对话过程中监听当前会话 RTM channel 的
   `message.sal_status` / `VP_REGISTER_SUCCESS` 消息，并通过
@@ -72,7 +69,7 @@ APSTA 配网和 Wi-Fi 凭据；SDK 消费网络
   只向云端发送一个主视频流。
 - RTC 实现专用于 Agora RTSA，不提供其他 RTC 协议适配层。
 - 本地 ASR 唤醒词为可选平台实现，默认关闭；开启时必须由平台注册实现。
-- APSTA 配网和凭据由平台/应用负责，SDK 的 Wi-Fi 接口只消费网络连接状态事件。
+- 配网流程和 Wi-Fi 凭据由平台/应用负责，SDK 的 Wi-Fi 接口只消费网络连接状态事件。
 - 设备服务端不属于本仓库；运行示例与联调需要兼容的服务端地址。
 
 ## 对话流程
@@ -173,27 +170,10 @@ target_link_libraries(device_firmware PRIVATE mybot::sdk)
 注册入口。完整实现顺序、最小代码、线程约束和验收清单见
 [docs/PORTING.md](docs/PORTING.md)。
 
-最小应用生命周期：
-
-```c
-/* 由宿主实现：填写并注册一个完整的平台描述符。 */
-my_mcu_platform_register();
-mybot_config_t config = {0};
-mybot_start(&config);
-while (mybot_is_running()) {
-    platform_sleep_ms(100);
-}
-mybot_stop();
-```
-
-`mybot_start()` 非阻塞：先启动配网，收到网络可用事件后才异步初始化存储、
-按键、音频和设备服务；RTC 仅在会话开始时按需初始化。`mybot_start()` 与 `mybot_stop()`
-是线程安全的，并通过应用生命周期 gate 与控制 owner 串行执行。`mybot_stop()` 会等待工作
-线程退出，因此不应从平台或 SDK 回调内部调用；若某个 worker 无法 join，SDK 会保留相关资源
-供后续 stop 尝试，调用方应在运行状态确认停止前视为关闭未完成。应用在 `mybot_start()` 内获取一份
-AOSL 引用，并在 `mybot_stop()` 末尾释放。RTSA 生命周期通过 `agora_rtc_init()` /
-`agora_rtc_fini()` 初始化和结束；宿主若直接使用 AOSL，必须自行配对 `aosl_ctor()` /
-`aosl_dtor()`。
+产品先完成配网，再启动 MyBot；重新进入配网前先停止 MyBot。SDK 负责的设备服务配对
+和会话与网络配网相互独立。集成顺序与代码示例见
+[PORTING：启动与停止](docs/PORTING.zh-CN.md#第-6-步启动与停止)，
+API 契约以 [mybot.h](include/mybot/mybot.h) 为准。
 
 仓库附带的 Linux RTSA 包是共享库。CMake 会为参考程序和测试设置构建目录运行路径；通过
 安装包集成的消费者必须自行部署 `libagora-rtc-sdk.so`，并通过安装 RPATH 或运行时加载器配置
@@ -351,22 +331,9 @@ flowchart TB
 
 ### 线程模型
 
-`mybot_start()` 在 AOSL 上创建 4 个核心工作线程（MPQ），职责严格隔离。会话开始时按需创建
-第 5 个 `rtc_mpq` 工作线程，所有 RTSA 生命周期调用与厂商回调均在该线程串行执行：
-
-| 线程 (MPQ) | 驱动 | 职责 |
-| --- | --- | --- |
-| `control_mpq` | 事件与 100 ms 定时器 | 负责应用状态、设备生命周期、阻塞式 HTTP / RTC 控制、UI / 音量动作和资源转换 |
-| `mybot_mpq` | ptime 定时器 | 按音频包长节奏发送上行音频（Agora RTSA） |
-| `cap_mpq` | ptime 定时器 | 麦克风采集 → 采集环形缓冲 →（可选）唤醒词 |
-| `pb_mpq` | ptime 定时器 | 播放环形缓冲 → 扬声器，同时生成 AEC 参考声道 |
-| `rtc_mpq` | RTC/RTM 回调与同步 RTC 命令 | 串行执行 RTSA 生命周期、厂商调用和应用回调；按需创建 |
-
-回调只执行有界工作：投递短控制事件或发布原子 mailbox。PCM 采集、RTC 上下行与播放保持
-数据面直达，不经过 `control_mpq`。实时音频定时器（cap / pb / send）相互独立，阻塞的
-控制面或设备服务工作不会拖垮音频节拍。
-启用视频时，帧采集和编码节奏由平台编码器任务负责，SDK 不增加视频 worker 或帧队列；
-每个编码帧仅在同步 RTC 发送调用期间借用。
+应用控制、RTC、音频采集、播放和发送分别由独立线程负责，可选的视频编码器任务由平台持有。
+线程与栈预算、动态分配和时序测量见 [EMBEDDED](docs/EMBEDDED.zh-CN.md)，平台回调契约以
+[公共头文件](include/mybot/platform/) 为准。
 
 ### 工作流
 
@@ -444,8 +411,9 @@ mybot/
 本仓库维护 SDK 核心与 Linux 参考实现。BK7258、BK7259 和 ESP32 的平台适配、板级配置与
 固件构建统一在以下独立工程中维护。
 
+- [公共头文件](include/mybot/) — API 与平台接口契约的权威定义；本 README 保留项目概览
 - [docs/PORTING.md](docs/PORTING.md)（[简体中文](docs/PORTING.zh-CN.md)）— 新平台移植指南
-  与验收清单
+  的集成流程与验收清单
 - [mybot-bk7258](https://github.com/junlon2006/mybot-bk7258) — BK7258 参考固件工程
 - [mybot-bk7259](https://github.com/junlon2006/mybot-bk7259) — BK7259 参考固件工程
 - [mybot-esp32](https://github.com/junlon2006/mybot-esp32) — ESP32 跨平台参考工程
