@@ -441,6 +441,9 @@ mybot/
 
 ## 文档
 
+本仓库维护 SDK 核心与 Linux 参考实现。BK7258、BK7259 和 ESP32 的平台适配、板级配置与
+固件构建统一在以下独立工程中维护。
+
 - [docs/PORTING.md](docs/PORTING.md)（[简体中文](docs/PORTING.zh-CN.md)）— 新平台移植指南
   与验收清单
 - [mybot-bk7258](https://github.com/junlon2006/mybot-bk7258) — BK7258 参考固件工程
@@ -464,8 +467,7 @@ find include src platforms/linux examples/linux tests -type f \
   -exec clang-format --dry-run --Werror {} +
 ```
 
-- 主机检查范围内的 C 代码遵循根目录 `.clang-format`；`third_party/` 保持上游内容，
-  BK725x Armino 源码使用其固件工具链的格式规则。
+- 自维护的 C 代码遵循根目录 `.clang-format`；`third_party/` 保持上游内容。
 - CI（[.github/workflows/ci.yml](.github/workflows/ci.yml)）在每个 push / PR 上执行
   构建、测试与格式检查，提交前请确保本地命令与 CI 一致。
 - CI 使用 GCC 与 Clang 双编译器分别在 ASan、UBSan 下构建，运行 cppcheck 与 clang-tidy

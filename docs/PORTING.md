@@ -22,7 +22,7 @@ Agora library is x86_64 Linux only and cannot be reused for another architecture
 
 ## Step 2: Create the platform layout
 
-Keep platform code outside `src/`:
+Implement MCU platform code in its independent firmware repository. A suggested layout there is:
 
 ```text
 platforms/my_mcu/
@@ -40,11 +40,14 @@ platforms/my_mcu/
   my_mcu_wake_words.c   # optional
 ```
 
-An out-of-tree firmware project may use the same layout without changing this repository.
+Integrate the SDK through its public platform operations without copying board-specific sources
+or resources into this repository.
 
 ## Reference port projects
 
-The following out-of-tree repositories provide working firmware references:
+The following independent repositories maintain the MCU adapters, board configuration, assets,
+and firmware builds. Use them directly for device integration; this SDK repository keeps the Linux
+reference implementation without duplicate MCU source trees.
 
 - [mybot-bk7258](https://github.com/junlon2006/mybot-bk7258) for BK7258;
 - [mybot-bk7259](https://github.com/junlon2006/mybot-bk7259) for BK7259;

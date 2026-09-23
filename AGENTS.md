@@ -181,6 +181,8 @@ Reference firmware projects: [BK7258](https://github.com/junlon2006/mybot-bk7258
 [BK7259](https://github.com/junlon2006/mybot-bk7259), and
 [ESP32](https://github.com/junlon2006/mybot-esp32). Inspect their actual revision and source when
 needed. SDK work does not implicitly authorize edits or synchronization in those repositories.
+Maintain MCU adapters and firmware in those independent projects; do not reintroduce copies into
+this SDK repository. Keep the Linux reference here for development and host validation.
 
 At handoff, state what changed and why, the checks actually run, and any remaining limitations.
 Report commit IDs or release URLs only for actions completed. For reviews, cite source locations

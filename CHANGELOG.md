@@ -13,6 +13,14 @@ This project follows Semantic Versioning.
 - Set RTSA logging to `RTC_LOG_ERROR` and restore the previous AOSL log level after
   RTSA initialization, including when initialization fails.
 
+### Removed
+
+- Remove the duplicated `examples/bk725x` firmware project and `platforms/bk725x` adapters.
+  BK platform code, board configuration, and firmware resources are maintained in the independent
+  [BK7258](https://github.com/junlon2006/mybot-bk7258) and
+  [BK7259](https://github.com/junlon2006/mybot-bk7259) projects. The SDK core and Linux reference
+  implementation remain in this repository.
+
 ## [1.2.0] - 2026-09-15
 
 ### Added

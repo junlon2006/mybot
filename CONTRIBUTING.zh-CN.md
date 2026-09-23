@@ -7,15 +7,15 @@
 ## 工作流程
 
 1. 涉及 API、平台、依赖或协议的大型改动，请先在 issue 中讨论。
-2. 平台代码保持在 `src/` 之外，并通过公共平台 ops 集成。
+2. 平台代码保持在 `src/` 之外，并通过公共平台 ops 集成。MCU 适配与固件在独立工程中维护；
+   本仓库保留 Linux 参考实现。
 3. 绝不提交凭据、设备 token、客户数据或未经批准的专有 SDK 包。仓库中已有的
    `third_party/agora_rtsa_sdk` 是明确声明的依赖；修改或替换它必须经过许可证与再分发审查。
 4. 自维护的 C 源码遵循仓库根目录 `.clang-format`，并为每个文件标注 SPDX 许可证头
    （`/* SPDX-License-Identifier: Apache-2.0 */`；cJSON 派生的 `mybot_json` 源码使用 `MIT`）。
    机械重命名或批量编辑后，提交前先执行
    `find include src platforms/linux examples/linux tests -type f \( -name '*.c' -o -name '*.h'
-   \) -exec clang-format -i {} +`。BK725x Armino 源码使用其固件工具链的格式规则，不属于
-   主机格式检查范围。
+   \) -exec clang-format -i {} +`。
 5. 提交 pull request 前先构建并测试（先初始化 AOSL submodule）：
 
        git submodule update --init --recursive
