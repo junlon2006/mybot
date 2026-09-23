@@ -6,6 +6,8 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- Share the device-service conversation response with the synchronous application callback,
+  removing a duplicate parameter type, allocation, and copy. Reuse one optional JSON string reader.
 - Compile unit tests with the SDK's exported feature definitions and preserve selected features
   and RTSA dependencies in source/install integration tests, with compile-time consumer checks.
 - Add video-enabled CI and video lifecycle tests for initialization/start failure, stop retry,

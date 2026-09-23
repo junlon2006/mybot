@@ -15,23 +15,18 @@
 extern "C" {
 #endif
 
-/* Conversation parameters (from server response) */
-typedef struct {
-    char conversation_id[MYBOT_DEVICE_CLIENT_MAX_ID];
-    char rtc_app_id[64];
-    char rtc_channel[128];
-    char rtc_uid[64];       /* string UID assigned by server */
-    char rtc_agent_uid[64]; /* string RTM peer UID assigned by server */
-    char rtc_token[MYBOT_DEVICE_CLIENT_MAX_RTC_TOKEN];
-} mybot_conversation_params_t;
-
 /* Callbacks invoked by the state machine onto the app layer */
 typedef struct {
     /** A pair code was obtained; present it through the device UI and/or speaker. */
     void (*on_pair_code)(const char *code, void *user_data);
 
-    /** Conversation should start — join RTC channel with given params. */
-    void (*on_conversation_start)(const mybot_conversation_params_t *params, void *user_data);
+    /**
+     * Start a conversation using the device-service response.
+     *
+     * Called synchronously. The response is borrowed until this callback returns;
+     * the lifecycle then frees it. Copy any fields needed after the callback.
+     */
+    void (*on_conversation_start)(const mybot_device_conversation_t *params, void *user_data);
 
     /** Conversation should stop — leave RTC channel. */
     void (*on_conversation_stop)(void *user_data);

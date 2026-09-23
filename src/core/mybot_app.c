@@ -487,7 +487,7 @@ static int dev_on_rtc_token_renewed(const char *token, void *user_data) {
     return mybot_agora_rtc_renew_token(token);
 }
 
-static void dev_on_conversation_start(const mybot_conversation_params_t *params, void *user_data) {
+static void dev_on_conversation_start(const mybot_device_conversation_t *params, void *user_data) {
     mybot_runtime_t *runtime = user_data;
     if (!runtime_is_running(runtime)) {
         mybot_device_lifecycle_notify_conversation_ended(&runtime->lifecycle);

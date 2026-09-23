@@ -966,7 +966,7 @@ void mybot_device_lifecycle_tick(mybot_device_lifecycle_t *lifecycle) {
     if (callbacks.on_state_changed) {
         callbacks.on_state_changed(MYBOT_DEVICE_STATE_IN_CONVERSATION, callbacks.user_data);
     }
-    mybot_conversation_params_t params;
+    mybot_device_conversation_t params;
     memset(&params, 0, sizeof(params));
     snprintf(params.conversation_id, sizeof(params.conversation_id), "%s", "conversation-1");
     snprintf(params.rtc_app_id, sizeof(params.rtc_app_id), "%s", "rtc-app");
@@ -1498,7 +1498,7 @@ int main(void) {
     assert(read_counter(&s_key_deinit_calls) == 1);
     assert(read_counter(&s_wifi_deinit_calls) == 1);
 
-    mybot_conversation_params_t late_params;
+    mybot_device_conversation_t late_params;
     memset(&late_params, 0, sizeof(late_params));
     int notifications_before_late = read_counter(&s_conversation_ended_notifications);
     s_device_callbacks.on_conversation_start(&late_params, s_device_callbacks.user_data);
