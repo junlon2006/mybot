@@ -83,6 +83,8 @@ through `control_mpq`, so blocking HTTP or control work cannot stall audio. Cont
 including wake-word callbacks, only enqueue short events or publish atomic mailboxes.
 RTSA callbacks copy borrowed payloads and enqueue them on `rtc_mpq`; application callbacks run on
 that worker and must not re-enter the RTC API.
+Video lifecycle and encoder control operations run on `control_mpq`; RTC callbacks only enqueue
+their notifications. Encoded frame submission stays on the encoder task.
 The Agora RTSA SDK owns
 additional internal threads whose stacks are vendor-managed.
 

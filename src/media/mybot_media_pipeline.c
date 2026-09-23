@@ -500,7 +500,8 @@ int mybot_media_pipeline_stop(mybot_media_pipeline_t *pipeline) {
         pipeline->pb_mpq = AOSL_MPQ_INVALID;
     }
 
-    mybot_announce_deinit(&pipeline->announce);
+    /* RTC callbacks may still query the prompt until the caller leaves RTC. */
+    mybot_announce_stop(&pipeline->announce);
 #if MYBOT_WAKE_WORDS
     mybot_wake_words_deinit(&pipeline->wake_words);
 #endif
@@ -526,6 +527,8 @@ int mybot_media_pipeline_destroy(mybot_media_pipeline_t *pipeline) {
         AOSL_LOG_ERR("cannot destroy media pipeline before workers stop");
         return -1;
     }
+    /* The caller has stopped RTC producers as well as the media workers. */
+    mybot_announce_deinit(&pipeline->announce);
     if (pipeline->cap_ringbuf) {
         mybot_ringbuf_destroy(pipeline->cap_ringbuf);
         pipeline->cap_ringbuf = NULL;

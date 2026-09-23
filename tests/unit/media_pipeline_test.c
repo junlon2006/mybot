@@ -19,6 +19,9 @@ static aosl_atomic_t s_send_calls;
 static aosl_atomic_t s_last_send_len;
 static int s_capture_mode;
 static int s_playback_mode;
+static bool s_capture_init_fail;
+static int s_announce_init_calls;
+static int s_announce_destroy_calls;
 #if MYBOT_WAKE_WORDS
 static mybot_wake_words_handler_t s_wake_handler;
 static void *s_wake_user_data;
@@ -72,6 +75,9 @@ enum {
 
 static int capture_init(void **ctx, int rate, int channels, int bits) {
     assert(rate == MYBOT_MEDIA_SAMPLE_RATE && channels == MYBOT_MEDIA_CHANNELS && bits == 16);
+    if (s_capture_init_fail) {
+        return -1;
+    }
     *ctx = &s_capture_ctx;
     return 0;
 }
@@ -132,6 +138,7 @@ static void playback_destroy(void *ctx) {
 }
 
 static int announce_init(void **ctx) {
+    s_announce_init_calls++;
     *ctx = &s_capture_ctx;
     return 0;
 }
@@ -153,6 +160,7 @@ static void announce_close(void *ctx, void *sound) {
 }
 static void announce_destroy(void *ctx) {
     assert(ctx == &s_capture_ctx);
+    s_announce_destroy_calls++;
 }
 
 static const mybot_audio_capture_ops_t s_capture_ops = {
@@ -313,8 +321,28 @@ int main(void) {
     mybot_media_pipeline_set_rtc_connected(&pipeline, false);
     mybot_media_pipeline_push_remote_audio(&pipeline, rtc_frame, sizeof(rtc_frame));
     assert(mybot_media_pipeline_flush_session(&pipeline) == 0);
+    assert(mybot_media_pipeline_play_prompt(&pipeline, MYBOT_PROMPT_PAIR_CODE, "1") == 0);
+    assert(mybot_media_pipeline_stop(&pipeline) == 0);
+    /* In-flight RTC callbacks can still query the initialized prompt after workers stop. */
+    assert(pipeline.announce.active && pipeline.announce.lock);
+    assert(!mybot_announce_is_active(&pipeline.announce));
+    assert(s_announce_init_calls == 1 && s_announce_destroy_calls == 0);
     assert(mybot_media_pipeline_stop(&pipeline) == 0);
     assert(mybot_media_pipeline_destroy(&pipeline) == 0);
+    assert(!pipeline.announce.active && !pipeline.announce.lock);
+    assert(s_announce_destroy_calls == 1);
+    assert(mybot_media_pipeline_destroy(&pipeline) == 0);
+    assert(s_announce_destroy_calls == 1);
+
+    /* A failed startup still frees the prompt through stop followed by destroy. */
+    mybot_media_pipeline_init(&pipeline);
+    s_capture_init_fail = true;
+    assert(mybot_media_pipeline_start(&pipeline, &callbacks) < 0);
+    assert(!pipeline.announce.active && !pipeline.announce.lock);
+    assert(s_announce_init_calls == 2 && s_announce_destroy_calls == 2);
+    assert(mybot_media_pipeline_stop(&pipeline) == 0);
+    assert(mybot_media_pipeline_destroy(&pipeline) == 0);
+    assert(s_announce_destroy_calls == 2);
     aosl_dtor();
     puts("media_pipeline_test: ok");
     return 0;

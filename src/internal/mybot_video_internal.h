@@ -23,6 +23,7 @@ typedef struct {
     aosl_atomic_t stopping;
 } mybot_video_t;
 
+/* Lifecycle and encoder control calls are serialized by the application control worker. */
 void mybot_video_init(mybot_video_t *video);
 int mybot_video_start(mybot_video_t *video);
 int mybot_video_stop(mybot_video_t *video);

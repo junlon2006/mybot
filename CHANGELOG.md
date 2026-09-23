@@ -4,6 +4,13 @@ This project follows Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- Serialize video startup and encoder control with shutdown on the application control worker,
+  discarding stale conversation notifications.
+- Retain announcement resources until RTC callbacks have stopped, preventing downlink audio
+  callbacks from accessing a destroyed announcement mutex during shutdown.
+
 ### Changed
 
 - Share the device-service conversation response with the synchronous application callback,
