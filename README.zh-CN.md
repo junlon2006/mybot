@@ -472,6 +472,8 @@ find include src platforms/linux examples/linux tests -type f \
   构建、测试与格式检查，提交前请确保本地命令与 CI 一致。
 - CI 使用 GCC 与 Clang 双编译器分别在 ASan、UBSan 下构建，运行 cppcheck 与 clang-tidy
   静态分析，并向 Codecov 发布 gcov/lcov 覆盖率。
+- 功能配置覆盖关闭云端 AEC、开启唤醒词和开启视频。单测及 CMake 源码/安装消费测试使用
+  当前选定的 SDK 功能参数；视频 CI 使用模拟平台编码器，硬件验证仍需在设备工程完成。
 - 提交信息遵循 Conventional Commits（见 `CONTRIBUTING.md`）。每个克隆执行一次
   `./scripts/setup-githooks.sh` 安装本地 `commit-msg` hook；CI 会校验每个 push / PR 的
   提交主题行。

@@ -5,21 +5,33 @@ set(MYBOT_TEST_COMMON_INCLUDES
 )
 set(MYBOT_TEST_SYSTEM_LIBS pthread dl rt m)
 
-set(MYBOT_TEST_FEATURE_DEFINITIONS
-    MYBOT_AUDIO_PTIME_MS=${MYBOT_AUDIO_PTIME_MS}
-    MYBOT_CLOUD_AEC=$<BOOL:${MYBOT_CLOUD_AEC}>
-    MYBOT_WAKE_WORDS=$<BOOL:${MYBOT_WAKE_WORDS}>
-    MYBOT_ENABLE_VIDEO=$<BOOL:${MYBOT_ENABLE_VIDEO}>
-    MYBOT_VIDEO_MAX_FRAME_BYTES=${MYBOT_VIDEO_MAX_FRAME_BYTES}
-    MYBOT_AI_QOS=$<BOOL:${MYBOT_AI_QOS}>
-    MYBOT_FAST_SEND_MULTIPLIER=${MYBOT_FAST_SEND_MULTIPLIER}
-    MYBOT_ENABLE_HTTPS=$<BOOL:${MYBOT_ENABLE_HTTPS}>
-    MYBOT_ALLOW_INSECURE_HTTP=$<BOOL:${MYBOT_ALLOW_INSECURE_HTTP}>
-)
+# Unit tests compile SDK sources directly, so inherit the SDK's feature contract.
+get_target_property(MYBOT_TEST_FEATURE_DEFINITIONS mybot_sdk INTERFACE_COMPILE_DEFINITIONS)
+
+# Nested builds use the same features and dependencies. Consumers independently
+# check the exported definitions against this outer build's expected values.
+set(MYBOT_TEST_CONFIG_DIR "${CMAKE_CURRENT_BINARY_DIR}/integration-config")
+file(MAKE_DIRECTORY "${MYBOT_TEST_CONFIG_DIR}")
+configure_file(integration/test_config.cmake.in "${MYBOT_TEST_CONFIG_DIR}/config.cmake" @ONLY)
+set(mybot_expected_config "#include <mybot/mybot_build_config.h>\n")
+foreach(definition IN LISTS MYBOT_TEST_FEATURE_DEFINITIONS)
+    if(NOT definition MATCHES "^([A-Z0-9_]+)=(.+)$")
+        message(FATAL_ERROR "Unsupported SDK feature definition: ${definition}")
+    endif()
+    set(feature "${CMAKE_MATCH_1}")
+    set(expected_value "${CMAKE_MATCH_2}")
+    file(APPEND "${MYBOT_TEST_CONFIG_DIR}/config.cmake"
+         "set(${feature} \"${${feature}}\" CACHE STRING \"\" FORCE)\n")
+    string(APPEND mybot_expected_config
+        "#if ${feature} != ${expected_value}\n#error \"${feature} does not match the parent build\"\n#endif\n")
+endforeach()
+file(GENERATE OUTPUT "${MYBOT_TEST_CONFIG_DIR}/mybot_expected_build_config.h"
+     CONTENT "${mybot_expected_config}")
 
 function(mybot_add_test target)
     add_executable(${target} ${ARGN})
     target_include_directories(${target} PRIVATE ${MYBOT_TEST_COMMON_INCLUDES})
+    target_compile_definitions(${target} PRIVATE ${MYBOT_TEST_FEATURE_DEFINITIONS})
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(${target} PRIVATE -UNDEBUG)
     endif()
@@ -109,19 +121,16 @@ mybot_add_test(mybot_media_pipeline_test
     unit/media_pipeline_test.c
     ../src/media/mybot_media_pipeline.c
     ../src/media/mybot_audio.c
+    ../src/media/mybot_wake_words.c
     ../src/platform/mybot_announce.c
     ../src/support/mybot_ringbuf.c
 )
-target_compile_definitions(mybot_media_pipeline_test PRIVATE
-    MYBOT_AUDIO_PTIME_MS=${MYBOT_AUDIO_PTIME_MS}
-    MYBOT_CLOUD_AEC=$<BOOL:${MYBOT_CLOUD_AEC}>
-    MYBOT_WAKE_WORDS=0)
 target_link_libraries(mybot_media_pipeline_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
 mybot_add_test(mybot_agora_rtc_test unit/agora_rtc_test.c ../src/rtc/mybot_agora_rtc.c)
 target_include_directories(mybot_agora_rtc_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/agora_rtsa_sdk/agora_sdk/include)
-target_compile_definitions(mybot_agora_rtc_test PRIVATE ${MYBOT_TEST_FEATURE_DEFINITIONS}
+    ${AGORA_SDK_DIR}/include)
+target_compile_definitions(mybot_agora_rtc_test PRIVATE
     MYBOT_RTM_LOGIN_TIMEOUT_MS=50 MYBOT_RTM_SUBSCRIBE_TIMEOUT_MS=50)
 target_link_libraries(mybot_agora_rtc_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
@@ -135,8 +144,12 @@ mybot_add_test(mybot_app_test
     ../src/support/mybot_json.c
     ../src/support/mybot_ringbuf.c
 )
-target_compile_definitions(mybot_app_test PRIVATE ${MYBOT_TEST_FEATURE_DEFINITIONS})
 target_link_libraries(mybot_app_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
+
+if(MYBOT_ENABLE_VIDEO)
+    mybot_add_test(mybot_video_test unit/video_test.c ../src/media/mybot_video.c)
+    target_link_libraries(mybot_video_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
+endif()
 
 mybot_add_test(mybot_public_headers_test integration/public_headers_test.c)
 target_link_libraries(mybot_public_headers_test PRIVATE mybot::sdk)
@@ -148,6 +161,7 @@ add_test(NAME mybot_cmake_host_integration
     COMMAND ${CMAKE_COMMAND}
         -DMYBOT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/..
         -DMYBOT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/cmake_host
+        -DMYBOT_TEST_CONFIG_DIR=${MYBOT_TEST_CONFIG_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/run_cmake_host.cmake
 )
 set_tests_properties(mybot_cmake_host_integration PROPERTIES TIMEOUT 60)
@@ -156,6 +170,7 @@ add_test(NAME mybot_install_consumer_check
     COMMAND ${CMAKE_COMMAND}
         -DMYBOT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/..
         -DMYBOT_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/..
+        -DMYBOT_TEST_CONFIG_DIR=${MYBOT_TEST_CONFIG_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/integration/run_cmake_install.cmake
 )
 set_tests_properties(mybot_install_consumer_check PROPERTIES TIMEOUT 60)

@@ -40,6 +40,11 @@ jobs:
             cxx: g++
             sanitizer: ASAN
             cmake_args: -DMYBOT_WAKE_WORDS=ON
+          - name: gcc-asan-video
+            cc: gcc
+            cxx: g++
+            sanitizer: ASAN
+            cmake_args: -DMYBOT_ENABLE_VIDEO=ON -DMYBOT_BUILD_LINUX_PLATFORM=OFF -DMYBOT_BUILD_EXAMPLES=OFF
     env:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
@@ -76,7 +81,19 @@ jobs:
       - name: Static analysis (clang-tidy)
         if: matrix.name == 'gcc-asan'
         run: |
-          clang-tidy -p build $(find src platforms/linux examples/linux tests -name '*.c' | sort)
+          clang-tidy -p build $(find src platforms/linux examples/linux tests -name '*.c' \
+            ! -path 'tests/integration/cmake_host/*' \
+            ! -path 'tests/integration/cmake_install_consumer/*' \
+            ! -path 'tests/unit/video_test.c' | sort)
+          clang-tidy -p build/tests/cmake_host \
+            tests/integration/cmake_host/main.c tests/integration/cmake_host/main.cpp
+          clang-tidy -p build/install-consumer tests/integration/cmake_install_consumer/main.c
+      - name: Static analysis (video)
+        if: matrix.name == 'gcc-asan-video'
+        run: |
+          clang-tidy -p build src/media/mybot_video.c src/core/mybot_app.c \
+            src/rtc/mybot_agora_rtc.c tests/unit/video_test.c \
+            tests/unit/app_test.c tests/unit/platform_registry_test.c
       - name: Validate commit messages
         if: matrix.name == 'gcc-asan'
         run: |

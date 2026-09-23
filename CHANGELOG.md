@@ -6,6 +6,10 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- Compile unit tests with the SDK's exported feature definitions and preserve selected features
+  and RTSA dependencies in source/install integration tests, with compile-time consumer checks.
+- Add video-enabled CI and video lifecycle tests for initialization/start failure, stop retry,
+  callback forwarding, and stopping while a frame is in flight.
 - Ensure `mybot_start()` raises an overly restrictive AOSL log level to `AOSL_LOG_NOTICE`
   while preserving existing `INFO` and `DEBUG` levels.
 - Move routine RTM events, message previews, and forwarding logs to debug level while

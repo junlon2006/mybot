@@ -1,5 +1,5 @@
-if(NOT MYBOT_SOURCE_DIR OR NOT MYBOT_BINARY_DIR)
-    message(FATAL_ERROR "MYBOT_SOURCE_DIR and MYBOT_BINARY_DIR are required")
+if(NOT MYBOT_SOURCE_DIR OR NOT MYBOT_BINARY_DIR OR NOT MYBOT_TEST_CONFIG_DIR)
+    message(FATAL_ERROR "MYBOT_SOURCE_DIR, MYBOT_BINARY_DIR and MYBOT_TEST_CONFIG_DIR are required")
 endif()
 
 set(source_build_dir "${MYBOT_BINARY_DIR}/install-source")
@@ -14,6 +14,7 @@ file(REMOVE_RECURSE "${consumer_dir}")
 # and sanitizer flags do not propagate through the installed package.
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -S "${MYBOT_SOURCE_DIR}" -B "${source_build_dir}"
+            -C "${MYBOT_TEST_CONFIG_DIR}/config.cmake"
             -DMYBOT_BUILD_LINUX_PLATFORM=OFF
             -DMYBOT_BUILD_EXAMPLES=OFF
             -DMYBOT_BUILD_TESTS=OFF
@@ -48,10 +49,9 @@ endforeach()
 
 execute_process(
     COMMAND "${CMAKE_COMMAND}" -S "${MYBOT_SOURCE_DIR}/tests/integration/cmake_install_consumer"
+            -C "${MYBOT_TEST_CONFIG_DIR}/config.cmake"
             -B "${consumer_dir}"
             -DCMAKE_PREFIX_PATH=${install_prefix}
-            -DMYBOT_AGORA_SDK_DIR=${MYBOT_SOURCE_DIR}/third_party/agora_rtsa_sdk/agora_sdk
-            -DMYBOT_AGORA_RTC_LIBRARY=${MYBOT_SOURCE_DIR}/third_party/agora_rtsa_sdk/agora_sdk/lib/x86_64/libagora-rtc-sdk.so
     RESULT_VARIABLE configure_result
 )
 if(NOT configure_result EQUAL 0)

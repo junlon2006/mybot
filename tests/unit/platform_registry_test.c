@@ -253,6 +253,9 @@ static mybot_platform_descriptor_t complete_descriptor(void) {
     descriptor.key = &s_key;
     descriptor.audio_capture = &s_capture;
     descriptor.audio_playback = &s_playback;
+#if MYBOT_ENABLE_VIDEO
+    descriptor.video = &s_video;
+#endif
     return descriptor;
 }
 
@@ -298,6 +301,10 @@ int main(void) {
     assert(mybot_platform_register(&descriptor) < 0);
 
 #if MYBOT_ENABLE_VIDEO
+    descriptor = complete_descriptor();
+    descriptor.video = NULL;
+    assert(mybot_platform_register(&descriptor) < 0);
+
     mybot_video_ops_t invalid_video = s_video;
     invalid_video.on_target_bitrate_changed = NULL;
     descriptor = complete_descriptor();
@@ -306,6 +313,12 @@ int main(void) {
 
     invalid_video = s_video;
     invalid_video.max_bps = 0;
+    descriptor = complete_descriptor();
+    descriptor.video = &invalid_video;
+    assert(mybot_platform_register(&descriptor) < 0);
+
+    invalid_video = s_video;
+    invalid_video.min_bps = invalid_video.max_bps + 1U;
     descriptor = complete_descriptor();
     descriptor.video = &invalid_video;
     assert(mybot_platform_register(&descriptor) < 0);
