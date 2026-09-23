@@ -12,8 +12,10 @@ AOSL includes `third_party/aosl/LICENSE`, which is based on Apache-2.0 and adds 
 conditions. Read that file before using, modifying, deploying, or redistributing AOSL. Do not label
 the combined repository or binary as uniformly Apache-2.0.
 
-Because AOSL is a git submodule, source archives of this repository do not include it
-automatically; initialize submodules after cloning with `git submodule update --init --recursive`.
+GitHub's automatic source archives omit AOSL. After a Git clone, initialize it with
+`git submodule update --init --recursive`; this command cannot populate an archive without `.git`.
+The source asset produced by `scripts/release.sh package TAG` includes the tag's pinned AOSL
+contents and license. See [the release guide](docs/RELEASING.md) for archive usage.
 
 ## Agora RTSA SDK
 

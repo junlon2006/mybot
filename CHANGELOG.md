@@ -4,6 +4,11 @@ This project follows Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Add a repeatable release script to package an explicit tag from main with its pinned AOSL
+  sources, generate SHA-256 checksums, and verify the corresponding GitHub Release assets.
+
 ### Fixed
 
 - Align public Wi-Fi comments and integration guides with product-owned provisioning, and
