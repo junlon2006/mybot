@@ -113,6 +113,10 @@ internal threads separately. Threading and borrowed-buffer contracts are defined
   actions. Audio workers are separate, but media sending and downlink dispatch share `rtc_mpq`;
   they also compete for CPU and allocation services. Measure scheduling delay, audio underruns,
   encoder-handler latency, and shutdown duration under the product workload.
+- `control_mpq` keeps a 1000-call queue limit and uses `SIGP_EVENT | NONBLOCK`. Submission does
+  not wait for queue capacity; an accepted synchronous MPQ call still waits for worker execution.
+  This prevents RTC callbacks from waiting for queue space while the control worker waits for RTC.
+  See [PORTING.md](PORTING.md) for notification drops and exit handling when the queue is full.
 
 ## Power management
 

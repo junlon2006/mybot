@@ -60,9 +60,8 @@ typedef enum {
      *  device-service traffic is paused and any active RTC conversation is
      *  ended locally. Returns to the corresponding online state on reconnect. */
     MYBOT_STATE_WIFI_DISCONNECTED,
-    /** Unrecoverable failure: initial network readiness, service bring-up, or a
-     *  runtime event queue failure. The application should report the error
-     *  and call mybot_stop(). */
+    /** Unrecoverable failure during initial network readiness or service bring-up.
+     *  The application should report the error and call mybot_stop(). */
     MYBOT_STATE_FAILED,
     /** mybot_stop() is in progress: worker threads, audio devices, TLS and
      *  RTC resources are being torn down. Ends in MYBOT_STATE_STOPPED. */
@@ -132,6 +131,8 @@ MYBOT_API int mybot_start(const mybot_config_t *cfg);
  *
  * @note Thread-safe (atomic read). The main loop should poll this and call
  *       mybot_stop() once it returns false.
+ * @note Failure to queue a required control event also clears the running flag.
+ *       Call mybot_stop() even if mybot_get_state() still reports an active state.
  */
 MYBOT_API bool mybot_is_running(void);
 

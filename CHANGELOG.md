@@ -11,6 +11,9 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
+- Reject control-event submissions without waiting when the queue is full, preventing an RTC
+  callback from blocking token renewal or shutdown. Request application exit if a video-start
+  event cannot be queued.
 - Complete local conversation cleanup before re-pairing when the device-service stop request
   fails or is waiting for a retry, and avoid duplicate pair-code requests after auth rejection.
 - Align public Wi-Fi comments and integration guides with product-owned provisioning, and

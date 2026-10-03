@@ -340,7 +340,11 @@ static void queue_video_control(mybot_runtime_t *runtime, video_control_event_t 
     if (aosl_mpq_queue(runtime->control_mpq, AOSL_MPQ_INVALID, AOSL_REF_INVALID,
                        "handle_video_control", handle_video_control, 4, (uintptr_t)runtime,
                        generation, (uintptr_t)event, (uintptr_t)target_bps) < 0) {
-        AOSL_LOG_WRN("failed to queue video control event (%d)", (int)event);
+        if (event == VIDEO_CONTROL_START) {
+            fail_control_queue(runtime, "video start");
+        } else {
+            AOSL_LOG_WRN("failed to queue video control event (%d)", (int)event);
+        }
     }
 }
 #endif
@@ -1033,15 +1037,6 @@ fail:
     runtime_publish_exit(runtime);
 }
 
-static void handle_control_stop(const aosl_ts_t *queued_ts, aosl_refobj_t robj, uintptr_t argc,
-                                uintptr_t argv[]) {
-    (void)queued_ts;
-    (void)robj;
-    if (argc == 1) {
-        control_stop_runtime((mybot_runtime_t *)argv[0]);
-    }
-}
-
 static void control_worker_fini(void *arg) {
     control_stop_runtime(arg);
 }
@@ -1096,9 +1091,10 @@ int mybot_start(const mybot_config_t *cfg) {
     }
     aosl_atomic_set(&runtime->aosl_ref_held, true);
 
-    runtime->control_mpq = aosl_mpq_create_flags(AOSL_MPQ_FLAG_SIGP_EVENT, AOSL_THRD_PRI_NORMAL,
-                                                 CONTROL_MPQ_STACK_SIZE, 1000, "control_mpq", NULL,
-                                                 control_worker_fini, runtime);
+    /* Callbacks must not wait for space while this worker synchronously waits for RTC. */
+    runtime->control_mpq = aosl_mpq_create_flags(AOSL_MPQ_FLAG_SIGP_EVENT | AOSL_MPQ_FLAG_NONBLOCK,
+                                                 AOSL_THRD_PRI_NORMAL, CONTROL_MPQ_STACK_SIZE, 1000,
+                                                 "control_mpq", NULL, control_worker_fini, runtime);
     if (aosl_mpq_invalid(runtime->control_mpq)) {
         AOSL_LOG_ERR("failed to create application control queue");
         goto fail;
@@ -1116,12 +1112,7 @@ int mybot_start(const mybot_config_t *cfg) {
 
 fail:
     runtime_publish_exit(runtime);
-    if (!aosl_mpq_invalid(runtime->control_mpq)) {
-        if (aosl_mpq_call(runtime->control_mpq, AOSL_REF_INVALID, "handle_control_stop",
-                          handle_control_stop, 1, (uintptr_t)runtime) < 0) {
-            AOSL_LOG_ERR("failed to run application control cleanup");
-        }
-    }
+    /* Queue destruction runs cleanup on the control worker, even when its queue is full. */
     if (destroy_control_queue(runtime)) {
         aosl_dtor();
         aosl_atomic_set(&runtime->aosl_ref_held, false);
@@ -1147,12 +1138,7 @@ void mybot_stop(void) {
     }
 
     runtime_publish_exit(runtime);
-    if (!aosl_mpq_invalid(runtime->control_mpq)) {
-        if (aosl_mpq_call(runtime->control_mpq, AOSL_REF_INVALID, "handle_control_stop",
-                          handle_control_stop, 1, (uintptr_t)runtime) < 0) {
-            AOSL_LOG_ERR("failed to run application control shutdown");
-        }
-    }
+    /* Cleanup belongs to the control finalizer; it needs no separate queue admission. */
     if (destroy_control_queue(runtime)) {
         aosl_dtor();
         aosl_atomic_set(&runtime->aosl_ref_held, false);
