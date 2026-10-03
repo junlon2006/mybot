@@ -11,6 +11,10 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
+- Reject Linux announcement assets when seeking back to the PCM data fails.
+- Discard software-buffered PCM from replaced or stopped pairing announcements, including
+  unfinished short writes. Commit replacements only after asset loading succeeds, preserving
+  the previous prompt if loading fails.
 - Reject control-event submissions without waiting when the queue is full, preventing an RTC
   callback from blocking token renewal or shutdown. Request application exit if a video-start
   event cannot be queued.

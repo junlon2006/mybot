@@ -78,6 +78,8 @@ typedef struct {
     int pb_pending_offset;
     int pb_pending_frames;
     mybot_pb_source_t pb_pending_source;
+    /* Last observed announcement generation; also tags any pending PCM. */
+    uint32_t pb_pending_generation;
     int16_t announce_frame[MYBOT_MEDIA_FRAME_SAMPLES];
     bool stop_complete;
 

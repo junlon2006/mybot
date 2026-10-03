@@ -107,7 +107,10 @@ static void *file_open(void *ctx, mybot_announce_sound_t sound) {
         fclose(f);
         return NULL;
     }
-    rewind(f);
+    if (fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return NULL;
+    }
 
     sound_handle_t *h = (sound_handle_t *)malloc(sizeof(*h));
     if (!h) {

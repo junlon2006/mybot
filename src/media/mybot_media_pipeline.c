@@ -113,6 +113,12 @@ static void capture_worker_fini(void *arg) {
     }
 }
 
+static void discard_pending_playback(mybot_media_pipeline_t *pipeline) {
+    pipeline->pb_pending_offset = 0;
+    pipeline->pb_pending_frames = 0;
+    pipeline->pb_pending_source = MYBOT_PB_SOURCE_NONE;
+}
+
 static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc,
                            uintptr_t argv[]) {
     (void)id;
@@ -126,14 +132,15 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
         return;
     }
 
-    if (aosl_atomic_cmpxchg(&pipeline->announce_clear_pb, true, false)) {
+    uint32_t generation = mybot_announce_get_generation(&pipeline->announce);
+    if (aosl_atomic_cmpxchg(&pipeline->announce_clear_pb, true, false) ||
+        pipeline->pb_pending_generation != generation) {
         /* Drain as the SPSC consumer instead of resetting head/tail while the
          * RTC callback may still be publishing audio. */
         drain_ringbuf(pipeline->pb_ringbuf, (char *)pipeline->pb_pending,
                       sizeof(pipeline->pb_pending));
-        pipeline->pb_pending_offset = 0;
-        pipeline->pb_pending_frames = 0;
-        pipeline->pb_pending_source = MYBOT_PB_SOURCE_NONE;
+        discard_pending_playback(pipeline);
+        pipeline->pb_pending_generation = generation;
     }
 
     bool announce_active = mybot_announce_is_active(&pipeline->announce);
@@ -146,9 +153,7 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
     /* A new announcement always wins over any already-buffered RTC audio. */
     if (announce_active && pipeline->pb_pending_frames > 0 &&
         pipeline->pb_pending_source != MYBOT_PB_SOURCE_ANNOUNCE) {
-        pipeline->pb_pending_offset = 0;
-        pipeline->pb_pending_frames = 0;
-        pipeline->pb_pending_source = MYBOT_PB_SOURCE_NONE;
+        discard_pending_playback(pipeline);
     }
 
     const mybot_audio_playback_ops_t *ops = pipeline->audio.playback_ops;
@@ -157,21 +162,12 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
         bool announce_source = announce_active;
         if (announce_source) {
             memset(pipeline->pb_pending, 0, sizeof(pipeline->pb_pending));
-            while (frames < MYBOT_MEDIA_FRAME_SAMPLES) {
-                int read_frames =
-                    mybot_announce_read_pcm(&pipeline->announce, pipeline->announce_frame,
-                                            MYBOT_MEDIA_FRAME_SAMPLES - frames);
-                if (read_frames <= 0) {
-                    break;
-                }
-                if (read_frames > MYBOT_MEDIA_FRAME_SAMPLES - frames) {
-                    AOSL_LOG_ERR("announcement returned invalid frame count: %d", read_frames);
-                    frames = 0;
-                    break;
-                }
-                memcpy(pipeline->pb_pending + frames, pipeline->announce_frame,
-                       (size_t)read_frames * sizeof(int16_t));
-                frames += read_frames;
+            frames = mybot_announce_read_pcm(&pipeline->announce, pipeline->pb_pending,
+                                             MYBOT_MEDIA_FRAME_SAMPLES,
+                                             &pipeline->pb_pending_generation);
+            if (frames > MYBOT_MEDIA_FRAME_SAMPLES) {
+                AOSL_LOG_ERR("announcement returned invalid frame count: %d", frames);
+                return;
             }
         } else {
             if (mybot_ringbuf_get_data_size(pipeline->pb_ringbuf) < MYBOT_MEDIA_FRAME_BYTES) {
@@ -182,6 +178,7 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
                 return;
             }
             frames = MYBOT_MEDIA_FRAME_SAMPLES;
+            pipeline->pb_pending_generation = generation;
         }
         if (frames <= 0) {
             return;
@@ -205,6 +202,12 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
         return;
     }
 #endif
+    /* Authorize this write against the published source. Do not hold the
+     * announcement lock across device I/O: stop must be able to unblock it. */
+    if (mybot_announce_get_generation(&pipeline->announce) != pipeline->pb_pending_generation) {
+        discard_pending_playback(pipeline);
+        return;
+    }
     int written =
         ops->write(pipeline->pb_ctx,
                    (const char *)pipeline->pb_pending + pipeline->pb_pending_offset * frame_bytes,
@@ -212,18 +215,13 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
     if (written < 0 || written > pipeline->pb_pending_frames) {
         AOSL_LOG_ERR("playback write failed, dropping %d pending frames",
                      pipeline->pb_pending_frames);
-        pipeline->pb_pending_offset = 0;
-        pipeline->pb_pending_frames = 0;
-        pipeline->pb_pending_source = MYBOT_PB_SOURCE_NONE;
-        return;
-    }
-    if (written == 0) {
+        discard_pending_playback(pipeline);
         return;
     }
 
     pipeline->pb_pending_offset += written;
 #if MYBOT_CLOUD_AEC
-    if (pipeline->pb_pending_source == MYBOT_PB_SOURCE_RTC) {
+    if (written > 0 && pipeline->pb_pending_source == MYBOT_PB_SOURCE_RTC) {
         int ref_bytes = written * frame_bytes;
         const char *ref_data = (const char *)pipeline->pb_pending +
                                (pipeline->pb_pending_offset - written) * frame_bytes;
@@ -234,9 +232,9 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
     }
 #endif
     pipeline->pb_pending_frames -= written;
-    if (pipeline->pb_pending_frames == 0) {
-        pipeline->pb_pending_offset = 0;
-        pipeline->pb_pending_source = MYBOT_PB_SOURCE_NONE;
+    if (pipeline->pb_pending_frames == 0 ||
+        mybot_announce_get_generation(&pipeline->announce) != pipeline->pb_pending_generation) {
+        discard_pending_playback(pipeline);
     }
 }
 
@@ -247,9 +245,8 @@ static void flush_playback_cb(const aosl_ts_t *ts, aosl_refobj_t ref, uintptr_t 
     (void)argc;
     mybot_media_pipeline_t *pipeline = (mybot_media_pipeline_t *)argv[0];
     drain_ringbuf_dynamic(pipeline->pb_ringbuf, MYBOT_MEDIA_FRAME_BYTES);
-    pipeline->pb_pending_offset = 0;
-    pipeline->pb_pending_frames = 0;
-    pipeline->pb_pending_source = MYBOT_PB_SOURCE_NONE;
+    discard_pending_playback(pipeline);
+    pipeline->pb_pending_generation = mybot_announce_get_generation(&pipeline->announce);
     aosl_atomic_set(&pipeline->announce_clear_pb, false);
 }
 
@@ -626,8 +623,6 @@ int mybot_media_pipeline_play_prompt(mybot_media_pipeline_t *pipeline, mybot_pro
 
     switch (type) {
     case MYBOT_PROMPT_PAIR_CODE:
-        /* Make the new prompt replace buffered RTC audio and any old prompt. */
-        aosl_atomic_set(&pipeline->announce_clear_pb, true);
         return mybot_announce_play_pair_code(&pipeline->announce, (const char *)args);
     }
     return -1;
@@ -638,7 +633,6 @@ void mybot_media_pipeline_stop_prompt(mybot_media_pipeline_t *pipeline) {
         return;
     }
     mybot_announce_stop(&pipeline->announce);
-    aosl_atomic_set(&pipeline->announce_clear_pb, true);
 }
 
 void mybot_media_pipeline_adjust_volume(mybot_media_pipeline_t *pipeline, int delta) {

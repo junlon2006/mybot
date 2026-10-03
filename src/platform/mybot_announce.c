@@ -122,6 +122,7 @@ int mybot_announce_play_pair_code(mybot_announce_t *announce, const char *code) 
     memcpy(announce->handles, handles, (size_t)len * sizeof(handles[0]));
     announce->queue_len = len;
     announce->queue_pos = 0;
+    announce->generation++;
     aosl_hal_mutex_unlock(announce->lock);
 
     AOSL_LOG_NTC("announce: pair code=%s queued, %d sound(s)", code, len);
@@ -142,6 +143,7 @@ void mybot_announce_stop(mybot_announce_t *announce) {
     }
     announce->queue_len = 0;
     announce->queue_pos = 0;
+    announce->generation++;
     aosl_hal_mutex_unlock(announce->lock);
 }
 
@@ -155,19 +157,41 @@ bool mybot_announce_is_active(mybot_announce_t *announce) {
     return active;
 }
 
-int mybot_announce_read_pcm(mybot_announce_t *announce, int16_t *dst, int max_frames) {
+uint32_t mybot_announce_get_generation(mybot_announce_t *announce) {
+    uint32_t generation = 0;
+    if (announce && announce->active) {
+        aosl_hal_mutex_lock(announce->lock);
+        generation = announce->generation;
+        aosl_hal_mutex_unlock(announce->lock);
+    }
+    return generation;
+}
+
+int mybot_announce_read_pcm(mybot_announce_t *announce, int16_t *dst, int max_frames,
+                            uint32_t *generation) {
+    if (generation) {
+        *generation = 0;
+    }
     if (!announce || !dst || max_frames <= 0 || !announce->ops || !announce->active) {
         return 0;
     }
 
     aosl_hal_mutex_lock(announce->lock);
+    if (generation) {
+        *generation = announce->generation;
+    }
     int total = 0;
     while (total < max_frames && announce->queue_pos < announce->queue_len) {
         int n = announce->ops->read(announce->ops_ctx, announce->handles[announce->queue_pos],
                                     dst + total, max_frames - total);
+        if (n > max_frames - total) {
+            AOSL_LOG_ERR("announce: invalid frame count: %d > %d", n, max_frames - total);
+            total = 0;
+            break;
+        }
         if (n > 0) {
             total += n;
-            break;
+            continue;
         }
         /* End (or error) of the current sound: advance to the next one. */
         announce->ops->close(announce->ops_ctx, announce->handles[announce->queue_pos]);

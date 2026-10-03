@@ -659,11 +659,17 @@ void mybot_announce_deinit(mybot_announce_t *announce) {
 int mybot_announce_play_pair_code(mybot_announce_t *announce, const char *code) {
     assert(announce != NULL);
     (void)code;
+    mock_lock();
+    announce->generation++;
+    mock_unlock();
     return 0;
 }
 
 void mybot_announce_stop(mybot_announce_t *announce) {
     assert(announce != NULL);
+    mock_lock();
+    announce->generation++;
+    mock_unlock();
 }
 
 bool mybot_announce_is_active(mybot_announce_t *announce) {
@@ -675,10 +681,22 @@ bool mybot_announce_is_active(mybot_announce_t *announce) {
     return active;
 }
 
-int mybot_announce_read_pcm(mybot_announce_t *announce, int16_t *dst, int max_frames) {
+uint32_t mybot_announce_get_generation(mybot_announce_t *announce) {
+    assert(announce != NULL);
+    mock_lock();
+    uint32_t generation = announce->generation;
+    mock_unlock();
+    return generation;
+}
+
+int mybot_announce_read_pcm(mybot_announce_t *announce, int16_t *dst, int max_frames,
+                            uint32_t *generation) {
     assert(announce != NULL);
     (void)dst;
     (void)max_frames;
+    if (generation) {
+        *generation = mybot_announce_get_generation(announce);
+    }
     return 0;
 }
 
