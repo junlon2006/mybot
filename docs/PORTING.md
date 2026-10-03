@@ -332,6 +332,12 @@ Use `mybot_get_state()` to decide which product actions are currently available;
 states are defined in [mybot.h](../include/mybot/mybot.h). Do not reconstruct the SDK's private
 device-service state machine in the platform.
 
+Control-event submission does not wait for free queue capacity. If the 1000-call control queue
+is full, RTM LCD indicators and video bitrate/key-frame notifications are logged and discarded.
+Failure to queue a key, Wi-Fi, wake-word, or video-start event publishes an exit request:
+`mybot_is_running()` becomes false, and the product control task must call `mybot_stop()`.
+The callback does not tear down resources.
+
 For an ordinary temporary network outage, keep MyBot running and let the network manager reconnect
 with its existing credentials. The adapter reports the disconnect and subsequent usable connection;
 do not turn every link loss into a provisioning restart. The SDK ends the interrupted conversation

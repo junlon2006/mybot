@@ -22,6 +22,7 @@
 
 #include <api/aosl.h>
 #include <api/aosl_log.h>
+#include <api/aosl_mpq.h>
 #include <hal/aosl_hal_time.h>
 
 #include <assert.h>
@@ -72,6 +73,11 @@ static bool s_device_stop_requested;
 static bool s_device_pair_requested;
 static bool s_device_token_renewal_requested;
 static bool s_device_network_available = true;
+static bool s_block_device_tick;
+static bool s_device_tick_entered;
+static bool s_rtc_flood_returned;
+static aosl_mpq_t s_test_rtc_mpq = AOSL_MPQ_INVALID;
+static aosl_mpq_t s_test_control_mpq = AOSL_MPQ_INVALID;
 static bool s_announce_active;
 static bool s_wifi_init_fails;
 static bool s_wifi_emit_connected_on_init;
@@ -984,6 +990,16 @@ void mybot_device_lifecycle_tick(mybot_device_lifecycle_t *lifecycle) {
     } action = DEVICE_TICK_IDLE;
 
     mock_lock();
+    if (s_block_device_tick) {
+        s_test_control_mpq = aosl_mpq_this();
+        s_device_tick_entered = true;
+        struct timespec deadline;
+        assert(clock_gettime(CLOCK_REALTIME, &deadline) == 0);
+        deadline.tv_sec += 5;
+        while (s_block_device_tick) {
+            assert(pthread_cond_timedwait(&s_io_cond, &s_lock, &deadline) == 0);
+        }
+    }
     if (s_device_pair_requested && s_device_state == MYBOT_DEVICE_STATE_RUNTIME) {
         s_device_pair_requested = false;
         callbacks = s_device_callbacks;
@@ -1275,8 +1291,7 @@ int mybot_agora_rtc_send_video(const mybot_video_frame_t *frame) {
 }
 #endif
 
-int mybot_agora_rtc_renew_token(const char *token) {
-    observe_control_thread(CONTROL_OBS_RTC_RENEW);
+static int record_renewed_token(const char *token) {
     mock_lock();
     if (!s_rtc_joined || !token || !token[0]) {
         mock_unlock();
@@ -1286,6 +1301,220 @@ int mybot_agora_rtc_renew_token(const char *token) {
     s_rtc_renew_calls++;
     mock_unlock();
     return 0;
+}
+
+static void renew_token_on_rtc(const aosl_ts_t *queued_ts, aosl_refobj_t robj, uintptr_t argc,
+                               uintptr_t argv[]) {
+    (void)queued_ts;
+    (void)robj;
+    assert(argc == 2);
+    assert(aosl_mpq_this() == s_test_rtc_mpq);
+    *(int *)argv[1] = record_renewed_token((const char *)argv[0]);
+}
+
+int mybot_agora_rtc_renew_token(const char *token) {
+    observe_control_thread(CONTROL_OBS_RTC_RENEW);
+    if (aosl_mpq_invalid(s_test_rtc_mpq)) {
+        return record_renewed_token(token);
+    }
+    int result = -1;
+    if (aosl_mpq_call(s_test_rtc_mpq, AOSL_REF_INVALID, "renew_token_on_rtc", renew_token_on_rtc, 2,
+                      (uintptr_t)token, (uintptr_t)&result) < 0) {
+        return -1;
+    }
+    return result;
+}
+
+typedef enum {
+    RTC_FLOOD_LCD,
+    RTC_FLOOD_KEY,
+    RTC_FLOOD_WIFI,
+#if MYBOT_ENABLE_VIDEO
+    RTC_FLOOD_VIDEO_START,
+    RTC_FLOOD_VIDEO_OPTIONAL,
+#endif
+} rtc_flood_t;
+
+static void flood_control_from_rtc(const aosl_ts_t *queued_ts, aosl_refobj_t robj, uintptr_t argc,
+                                   uintptr_t argv[]) {
+    (void)queued_ts;
+    (void)robj;
+    assert(argc == 1);
+    assert(aosl_mpq_this() == s_test_rtc_mpq);
+    const char message[] = "{\"event_type\":\"state.listening\",\"payload\":{\"value\":true}}";
+    /* Control is paused in simulated service I/O, so the 1001st callback must
+     * return even though the 1000-event queue cannot consume any events. */
+    for (int i = 0; i < 1001; i++) {
+        emit_rtm_subscribe_data("rtc-channel", "agent-uid", message, sizeof(message) - 1U);
+    }
+    switch ((rtc_flood_t)argv[0]) {
+    case RTC_FLOOD_LCD:
+        break;
+    case RTC_FLOOD_KEY:
+        emit_key_event(MYBOT_KEY_EVENT_CONVERSATION_STOP);
+        break;
+    case RTC_FLOOD_WIFI:
+        emit_wifi_event(MYBOT_WIFI_EVENT_STA_DISCONNECTED);
+        break;
+#if MYBOT_ENABLE_VIDEO
+    case RTC_FLOOD_VIDEO_START:
+        s_rtc_callbacks.on_state_changed(MYBOT_RTC_STATE_CONNECTED, s_rtc_callbacks.user_data);
+        break;
+    case RTC_FLOOD_VIDEO_OPTIONAL:
+        s_rtc_callbacks.on_video_key_frame_requested(s_rtc_callbacks.user_data);
+        s_rtc_callbacks.on_video_target_bitrate_changed(96000U, s_rtc_callbacks.user_data);
+        break;
+#endif
+    }
+    mock_lock();
+    s_rtc_flood_returned = true;
+    mock_unlock();
+}
+
+static void pause_control_for_queue_test(const mybot_config_t *config) {
+    assert(mybot_start(config) == 0);
+    emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
+    assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
+#if MYBOT_ENABLE_VIDEO
+    intptr_t video_starts_before = aosl_atomic_read(&s_video_start_calls);
+#endif
+    int joins_before = read_counter(&s_rtc_join_calls);
+    emit_key_event(MYBOT_KEY_EVENT_CONVERSATION_START);
+    assert(wait_for_counter(&s_rtc_join_calls, joins_before + 1, 1000));
+    assert(wait_for_app_state(MYBOT_STATE_IN_CONVERSATION, 1000));
+#if MYBOT_ENABLE_VIDEO
+    assert(wait_for_video_counter(&s_video_start_calls, video_starts_before + 1));
+#endif
+    mock_lock();
+    s_block_device_tick = true;
+    s_device_tick_entered = false;
+    s_rtc_flood_returned = false;
+    mock_unlock();
+    assert(wait_for_flag(&s_device_tick_entered, 1000));
+}
+
+static void resume_control_after_queue_test(void) {
+    mock_lock();
+    s_block_device_tick = false;
+    assert(pthread_cond_broadcast(&s_io_cond) == 0);
+    mock_unlock();
+}
+
+static void saturate_control_queue(rtc_flood_t event) {
+    assert(aosl_mpq_queue(s_test_rtc_mpq, AOSL_MPQ_INVALID, AOSL_REF_INVALID,
+                          "flood_control_from_rtc", flood_control_from_rtc, 1,
+                          (uintptr_t)event) == 0);
+    assert(wait_for_flag(&s_rtc_flood_returned, 1000));
+}
+
+static void wait_for_control_queue_empty(void) {
+    for (int elapsed = 0; elapsed < 1000; elapsed++) {
+        if (aosl_mpq_queued_count(s_test_control_mpq) == 0) {
+            return;
+        }
+        aosl_hal_msleep(1);
+    }
+    assert(!"control queue did not drain");
+}
+
+static void test_control_queue_saturation(const mybot_config_t *config) {
+    int previous_log_level = aosl_get_log_level();
+    aosl_set_log_level(AOSL_LOG_NOTICE);
+    /* Own an AOSL reference while the test RTC queue outlives each SDK run. */
+    aosl_ctor();
+    s_test_rtc_mpq = aosl_mpq_create_flags(AOSL_MPQ_FLAG_SIGP_EVENT | AOSL_MPQ_FLAG_NONBLOCK,
+                                           AOSL_THRD_PRI_NORMAL, 64 * 1024, 16, "test_rtc_mpq",
+                                           NULL, NULL, NULL);
+    assert(!aosl_mpq_invalid(s_test_rtc_mpq));
+
+    pause_control_for_queue_test(config);
+    int renewals_before = read_counter(&s_rtc_renew_calls);
+    s_rtc_callbacks.on_token_will_expire(s_rtc_callbacks.user_data);
+    saturate_control_queue(RTC_FLOOD_LCD);
+    assert(mybot_is_running());
+    assert(read_counter(&s_rtc_renew_calls) == renewals_before);
+    resume_control_after_queue_test();
+    /* The resumed control worker synchronously calls the same RTC queue whose
+     * callbacks previously saturated control; both workers must progress. */
+    assert(wait_for_counter(&s_rtc_renew_calls, renewals_before + 1, 1000));
+    assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_LISTENING, 1000));
+    assert(mybot_is_running());
+    wait_for_control_queue_empty();
+    mybot_stop();
+    assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+
+    pause_control_for_queue_test(config);
+    saturate_control_queue(RTC_FLOOD_LCD);
+    mock_lock();
+    s_stop_thread_entered = false;
+    s_stop_thread_returned = false;
+    int shutdowns_before = s_device_shutdown_calls;
+    int leaves_before = s_rtc_leave_calls;
+    int rtc_finis_before = s_rtc_fini_calls;
+    int captures_before = s_capture_destroy_calls;
+    int playbacks_before = s_playback_destroy_calls;
+    mock_unlock();
+    pthread_t stop_tid;
+    int thread_result = pthread_create(&stop_tid, NULL, stop_thread, NULL);
+    assert(thread_result == 0);
+    assert(wait_for_flag(&s_stop_thread_entered, 1000));
+    for (int elapsed = 0; elapsed < 1000 && mybot_is_running(); elapsed++) {
+        aosl_hal_msleep(1);
+    }
+    assert(!mybot_is_running());
+    assert(!read_bool(&s_stop_thread_returned));
+    assert(read_counter(&s_device_shutdown_calls) == shutdowns_before);
+    resume_control_after_queue_test();
+    assert(wait_for_flag(&s_stop_thread_returned, 1000));
+    assert(pthread_join(stop_tid, NULL) == 0);
+    assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+    assert(read_counter(&s_device_shutdown_calls) == shutdowns_before + 1);
+    assert(read_counter(&s_rtc_leave_calls) == leaves_before + 1);
+    assert(read_counter(&s_rtc_fini_calls) == rtc_finis_before + 1);
+    assert(read_counter(&s_capture_destroy_calls) == captures_before + 1);
+    assert(read_counter(&s_playback_destroy_calls) == playbacks_before + 1);
+    mybot_stop();
+    assert(read_counter(&s_device_shutdown_calls) == shutdowns_before + 1);
+
+    const rtc_flood_t critical_events[] = {
+        RTC_FLOOD_KEY,
+        RTC_FLOOD_WIFI,
+#if MYBOT_ENABLE_VIDEO
+        RTC_FLOOD_VIDEO_START,
+#endif
+    };
+    for (size_t i = 0; i < sizeof(critical_events) / sizeof(critical_events[0]); i++) {
+        pause_control_for_queue_test(config);
+        saturate_control_queue(critical_events[i]);
+        assert(!mybot_is_running());
+        resume_control_after_queue_test();
+        mybot_stop();
+        assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+    }
+
+#if MYBOT_ENABLE_VIDEO
+    pause_control_for_queue_test(config);
+    intptr_t key_frames_before = aosl_atomic_read(&s_video_key_frame_calls);
+    intptr_t bitrates_before = aosl_atomic_read(&s_video_bitrate_calls);
+    saturate_control_queue(RTC_FLOOD_VIDEO_OPTIONAL);
+    assert(mybot_is_running());
+    resume_control_after_queue_test();
+    assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_LISTENING, 1000));
+    wait_for_control_queue_empty();
+    wait_for_control_events();
+    assert(aosl_atomic_read(&s_video_key_frame_calls) == key_frames_before);
+    assert(aosl_atomic_read(&s_video_bitrate_calls) == bitrates_before);
+    mybot_stop();
+#endif
+
+    assert(mybot_start(config) == 0);
+    emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
+    assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
+    mybot_stop();
+    assert(aosl_mpq_destroy_wait(s_test_rtc_mpq) == 0);
+    s_test_rtc_mpq = AOSL_MPQ_INVALID;
+    aosl_dtor();
+    aosl_set_log_level(previous_log_level);
 }
 
 int main(void) {
@@ -1790,6 +2019,8 @@ int main(void) {
     assert(aosl_atomic_read(&s_video_stop_calls) == video_stops_before + 1);
     assert(aosl_atomic_read(&s_video_destroy_calls) == video_destroys_before + 1);
 #endif
+
+    test_control_queue_saturation(&config);
 
     puts("app_test: ok");
     return 0;
