@@ -34,7 +34,7 @@ static int read_all(int16_t *out, int max_frames) {
     int16_t chunk[64];
     while (total < max_frames) {
         int want = max_frames - total < 64 ? max_frames - total : 64;
-        int n = mybot_announce_read_pcm(&s_announce, chunk, want);
+        int n = mybot_announce_read_pcm(&s_announce, chunk, want, NULL);
         if (n == 0) {
             break;
         }

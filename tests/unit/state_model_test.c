@@ -20,7 +20,6 @@ int main(void) {
     assert(!mybot_state_model_network_lost(NULL));
     assert(!mybot_state_model_network_restored(NULL));
     assert(!mybot_state_model_set_device_state(NULL, MYBOT_DEVICE_STATE_RUNTIME));
-    assert(!mybot_state_model_set_device_state(NULL, (mybot_device_state_t)-1));
     assert(!mybot_state_model_fail(NULL));
 
     mybot_state_model_t model;

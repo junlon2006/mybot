@@ -192,8 +192,14 @@ digit and plays the queue **once** through the normal playback path. Prompt PCM 
 playback worker and kept separate from the RTC playback ring; a final partial prompt frame is
 zero-padded. RTC downlink data is discarded while the announcement is active. The announcement stops when
 the device leaves `awaiting_claim` (claimed, re-pairing, or offline). A missing prompt sound
-skips the whole announcement; a missing digit sound skips just that digit — pairing never blocks
+skips the new announcement; a missing digit sound skips just that digit — pairing never blocks
 on the audio.
+
+A replacement becomes current only after its assets finish loading and the SDK swaps the sound
+source; the previous prompt can continue during loading and remains current if loading fails.
+Replacement and stop discard stale prompt PCM buffered in the SDK, including any remainder from a
+short playback write. A device write authorized before the replacement or stop may still finish;
+PCM already accepted by the device cannot be withdrawn.
 
 Ops interface: `init` allocates the implementation; `open` opens one logical sound
 (`MYBOT_ANNOUNCE_SOUND_PROMPT`, `MYBOT_ANNOUNCE_SOUND_DIGIT_0`..`9`) and may do I/O; `read`
