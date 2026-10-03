@@ -69,7 +69,8 @@ typedef struct {
     bool conversation_requested;
     aosl_atomic_t stop_request;
     /* Device-service stop is retried for transient transport/5xx failures
-     * before local teardown proceeds.  These fields are owned by the control
+     * before local teardown proceeds. Re-pairing and shutdown complete local
+     * teardown without waiting for these retries. These fields are owned by the control
      * tick thread and therefore need no additional synchronization. */
     unsigned stop_retry_attempts;
     unsigned stop_retry_ticks_remaining;

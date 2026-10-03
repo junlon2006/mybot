@@ -652,10 +652,16 @@ void mybot_device_lifecycle_tick(mybot_device_lifecycle_t *lifecycle) {
      * conversation is active, end it first so the RTC connection is torn down
      * before the device is rebound. */
     if (lifecycle->pairing_requested) {
-        lifecycle->pairing_requested = false;
         if (current_state(lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
             action_stop_conversation(lifecycle, MYBOT_CONVERSATION_STOP_REASON_USER_REQUESTED);
+            /* Re-pairing discards the old credential, so its stop retries cannot continue. */
+            if (current_state(lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
+                AOSL_LOG_WRN("re-pair completing conversation locally after deferred stop");
+                complete_conversation_locally(lifecycle);
+            }
         }
+        /* Auth rejection during stop may request pairing again; this flow consumes it too. */
+        lifecycle->pairing_requested = false;
         clear_device_auth(lifecycle);
         lifecycle->conversation_id[0] = '\0';
         set_state(lifecycle, MYBOT_DEVICE_STATE_PAIRING);

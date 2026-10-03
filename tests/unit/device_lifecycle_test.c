@@ -55,6 +55,8 @@ static bool s_disconnect_during_stop;
 static char s_last_stop_reason[32];
 static int s_conversation_start_count;
 static int s_conversation_stop_count;
+static bool s_expect_repair_cleanup;
+static int s_expected_repair_stop_count;
 static char s_last_conversation_agent_uid[64];
 static int s_pair_code_callback_count;
 static int s_state_change_count;
@@ -105,6 +107,9 @@ static int mock_kv_store_set(void *ctx, const char *key, const void *value, size
 static int mock_kv_store_erase(void *ctx, const char *key) {
     (void)ctx;
     (void)key;
+    if (s_expect_repair_cleanup) {
+        assert(s_conversation_stop_count == s_expected_repair_stop_count);
+    }
     if (s_kv_store_erase_fails) {
         return -1;
     }
@@ -135,6 +140,11 @@ int mybot_device_client_create_pair_code(const char *base_url, const char *devic
     (void)device_id;
     (void)firmware_ver;
     (void)hw_model;
+    if (s_expect_repair_cleanup) {
+        assert(s_conversation_stop_count == s_expected_repair_stop_count);
+        assert(s_lifecycle.device_token[0] == '\0');
+        assert(!s_kv_store_present);
+    }
     s_pair_call_count++;
     if (s_disconnect_during_pair) {
         mybot_device_lifecycle_set_network_available(&s_lifecycle, false);
@@ -280,6 +290,11 @@ static void on_conversation_start(const mybot_device_conversation_t *params, voi
 
 static void on_conversation_stop(void *user_data) {
     assert(user_data == &s_lifecycle);
+    if (s_expect_repair_cleanup) {
+        assert(s_conversation_stop_count == s_expected_repair_stop_count - 1);
+        assert(strcmp(s_lifecycle.device_token, "device-token") == 0);
+        assert(s_kv_store_present);
+    }
     s_conversation_stop_count++;
 }
 
@@ -359,6 +374,76 @@ static void start_conversation(void) {
     mybot_device_lifecycle_request_start(&s_lifecycle);
     mybot_device_lifecycle_tick(&s_lifecycle);
     assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION);
+}
+
+static void test_repair_active_conversation(const mybot_device_lifecycle_callbacks_t *callbacks,
+                                            int stop_result, bool disconnect, bool stop_backoff) {
+    provision_runtime(callbacks);
+    start_conversation();
+
+    /* A pending renewal retry and queued RTC requests belong to the old
+     * conversation and must not survive the pairing boundary. */
+    s_renew_result = -1;
+    mybot_device_lifecycle_request_rtc_token_renewal(&s_lifecycle);
+    mybot_device_lifecycle_tick(&s_lifecycle);
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION);
+    s_stop_result = stop_result;
+    if (stop_backoff) {
+        mybot_device_lifecycle_request_stop(&s_lifecycle);
+        mybot_device_lifecycle_tick(&s_lifecycle);
+        assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION);
+    }
+
+    int stop_calls = s_stop_call_count;
+    int stop_callbacks = s_conversation_stop_count;
+    int pair_calls = s_pair_call_count;
+    int pair_callbacks = s_pair_code_callback_count;
+    int renew_calls = s_renew_call_count;
+    s_disconnect_during_stop = disconnect;
+    s_expected_repair_stop_count = stop_callbacks + 1;
+    s_expect_repair_cleanup = true;
+    mybot_device_lifecycle_notify_conversation_ended(&s_lifecycle);
+    mybot_device_lifecycle_request_rtc_token_renewal(&s_lifecycle);
+    mybot_device_lifecycle_request_pair(&s_lifecycle);
+    mybot_device_lifecycle_tick(&s_lifecycle);
+    s_expect_repair_cleanup = false;
+    s_disconnect_during_stop = false;
+
+    int expected_stop_calls = stop_calls + (stop_backoff ? 0 : 1);
+    assert(s_stop_call_count == expected_stop_calls);
+    if (!stop_backoff) {
+        assert(strcmp(s_last_stop_reason, MYBOT_CONVERSATION_STOP_REASON_USER_REQUESTED) == 0);
+    }
+    assert(s_conversation_stop_count == stop_callbacks + 1);
+    assert(s_pair_call_count == pair_calls + 1);
+    assert(s_pair_code_callback_count == pair_callbacks + 1);
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
+    assert(s_lifecycle.device_token[0] == '\0');
+    assert(!s_kv_store_present);
+
+    /* Authentication rejection may schedule pairing internally, and a network
+     * edge may still be pending. Neither may repeat teardown or replace the
+     * freshly obtained code on the following ticks. */
+    tick_many(2);
+    assert(s_conversation_stop_count == stop_callbacks + 1);
+    assert(s_pair_call_count == pair_calls + 1);
+    assert(s_pair_code_callback_count == pair_callbacks + 1);
+    assert(s_renew_call_count == renew_calls);
+
+    mybot_device_lifecycle_notify_conversation_ended(&s_lifecycle);
+    mybot_device_lifecycle_request_rtc_token_renewal(&s_lifecycle);
+    tick_many(30);
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_RUNTIME);
+    start_conversation();
+    tick_many(40);
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION);
+    assert(s_stop_call_count == expected_stop_calls);
+    assert(s_conversation_stop_count == stop_callbacks + 1);
+    assert(s_renew_call_count == renew_calls);
+    assert(s_pair_call_count == pair_calls + 1);
+
+    s_stop_result = 0;
+    mybot_device_lifecycle_shutdown(&s_lifecycle);
 }
 
 int main(void) {
@@ -658,6 +743,15 @@ int main(void) {
     assert(s_start_call_count == extra_start_calls);
     assert(s_stop_call_count == extra_stop_calls);
     assert(s_renew_call_count == extra_renew_calls);
+
+    /* Re-pairing tears down RTC before forgetting credentials or obtaining a
+     * new code, even when the remote stop fails or requests are already queued. */
+    const int repair_stop_results[] = {-1, 408, 429, 503, 0, 401, 403, 409};
+    for (size_t i = 0; i < sizeof(repair_stop_results) / sizeof(repair_stop_results[0]); ++i) {
+        test_repair_active_conversation(&callbacks, repair_stop_results[i], false, false);
+    }
+    test_repair_active_conversation(&callbacks, 0, true, false);
+    test_repair_active_conversation(&callbacks, 503, false, true);
 
     /* Pair-code retries use bounded exponential backoff and still notify all
      * registered observers after recovery. */

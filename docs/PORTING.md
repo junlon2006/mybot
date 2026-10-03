@@ -337,6 +337,12 @@ with its existing credentials. The adapter reports the disconnect and subsequent
 do not turn every link loss into a provisioning restart. The SDK ends the interrupted conversation
 and resumes device-service work after reconnect; starting a new conversation requires a new trigger.
 
+Re-pairing during a conversation performs local conversation cleanup before clearing the device
+credential and requesting a new pair code, even if the device-service stop request fails or is
+already waiting for a retry. This clears the old conversation's stop and token-renewal requests.
+The device-service stop is best effort in this path; a failed request does not confirm that the
+server has ended the conversation. Ordinary conversation stops retain their bounded retry policy.
+
 ### RTM account mapping
 
 The Agora RTM integration follows the xiaozhi reference flow. The device-service conversation
