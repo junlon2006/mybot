@@ -473,9 +473,13 @@ static void action_stop_conversation(mybot_device_lifecycle_t *lifecycle, const 
         return;
     }
 
+    const mybot_stop_request_t request =
+        (reason && strcmp(reason, MYBOT_CONVERSATION_STOP_REASON_DEVICE_HANGUP) == 0)
+            ? MYBOT_STOP_REQUEST_DEVICE_HANGUP
+            : MYBOT_STOP_REQUEST_ERROR;
     if (lifecycle->stop_retry_ticks_remaining > 0) {
         lifecycle->stop_retry_ticks_remaining--;
-        aosl_atomic_set(&lifecycle->stop_request, MYBOT_STOP_REQUEST_ERROR);
+        aosl_atomic_set(&lifecycle->stop_request, request);
         return;
     }
 
@@ -507,11 +511,7 @@ static void action_stop_conversation(mybot_device_lifecycle_t *lifecycle, const 
             lifecycle->stop_retry_ticks_remaining = MYBOT_STOP_RETRY_DELAY_TICKS;
             /* Re-arm the control mailbox so the next eligible tick performs
              * the retry after the delay. */
-            aosl_atomic_set(
-                &lifecycle->stop_request,
-                (reason && strcmp(reason, MYBOT_CONVERSATION_STOP_REASON_DEVICE_HANGUP) == 0)
-                    ? MYBOT_STOP_REQUEST_DEVICE_HANGUP
-                    : MYBOT_STOP_REQUEST_ERROR);
+            aosl_atomic_set(&lifecycle->stop_request, request);
             AOSL_LOG_WRN("stop conversation transient failure (%d), retry %u/%u", ret,
                          lifecycle->stop_retry_attempts, MYBOT_STOP_RETRY_MAX_ATTEMPTS);
             return;

@@ -53,6 +53,7 @@ static int s_stop_result;
 static int s_stop_call_count;
 static bool s_disconnect_during_stop;
 static char s_last_stop_reason[32];
+static const char *s_expected_stop_reason;
 static int s_conversation_start_count;
 static int s_conversation_stop_count;
 static bool s_expect_repair_cleanup;
@@ -251,6 +252,9 @@ int mybot_device_client_stop_conversation(const char *base_url, const char *devi
     (void)device_id;
     (void)device_token;
     assert(strcmp(conversation_id, "conversation-1") == 0);
+    if (s_expected_stop_reason) {
+        assert(reason != NULL && strcmp(reason, s_expected_stop_reason) == 0);
+    }
     snprintf(s_last_stop_reason, sizeof(s_last_stop_reason), "%s", reason ? reason : "");
     s_stop_call_count++;
     if (s_disconnect_during_stop) {
@@ -374,6 +378,65 @@ static void start_conversation(void) {
     mybot_device_lifecycle_request_start(&s_lifecycle);
     mybot_device_lifecycle_tick(&s_lifecycle);
     assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION);
+}
+
+static void test_stop_retry_reason(const mybot_device_lifecycle_callbacks_t *callbacks,
+                                   int stop_result, bool exhaust_retries, bool user_stop) {
+    provision_runtime(callbacks);
+    start_conversation();
+    int stop_calls = s_stop_call_count;
+    int stop_callbacks = s_conversation_stop_count;
+    s_stop_result = stop_result;
+    s_expected_stop_reason = user_stop ? MYBOT_CONVERSATION_STOP_REASON_DEVICE_HANGUP
+                                       : MYBOT_CONVERSATION_STOP_REASON_ERROR;
+    if (user_stop) {
+        mybot_device_lifecycle_request_stop(&s_lifecycle);
+    } else {
+        mybot_device_lifecycle_notify_conversation_ended(&s_lifecycle);
+    }
+    mybot_device_lifecycle_tick(&s_lifecycle);
+    assert(s_stop_call_count == stop_calls + 1);
+    assert(s_conversation_stop_count == stop_callbacks);
+    int retries = exhaust_retries ? 3 : 1;
+    for (int retry = 1; retry <= retries; ++retry) {
+        assert(s_lifecycle.stop_retry_attempts == (unsigned)retry);
+        assert(s_lifecycle.stop_retry_ticks_remaining == 10);
+        for (unsigned remaining = 10; remaining > 0; --remaining) {
+            if (user_stop && (remaining == 7 || remaining == 3)) {
+                mybot_device_lifecycle_request_stop(&s_lifecycle);
+                assert(s_lifecycle.stop_retry_attempts == (unsigned)retry);
+                assert(s_lifecycle.stop_retry_ticks_remaining == remaining);
+            }
+            mybot_device_lifecycle_tick(&s_lifecycle);
+            assert(s_lifecycle.stop_retry_ticks_remaining == remaining - 1);
+            assert(s_lifecycle.stop_retry_attempts == (unsigned)retry);
+            assert(s_stop_call_count == stop_calls + retry);
+            assert(s_conversation_stop_count == stop_callbacks);
+            assert(aosl_atomic_read(&s_lifecycle.stop_request) != 0);
+            assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION);
+        }
+        if (!exhaust_retries) {
+            s_stop_result = 0;
+        }
+        /* Ten wait ticks only decrement the delay; the eleventh performs HTTP. */
+        mybot_device_lifecycle_tick(&s_lifecycle);
+        assert(s_stop_call_count == stop_calls + retry + 1);
+    }
+    assert(s_stop_call_count == stop_calls + (exhaust_retries ? 4 : 2));
+    assert(s_conversation_stop_count == stop_callbacks + 1);
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_RUNTIME);
+    assert(s_lifecycle.conversation_id[0] == '\0');
+    assert(s_lifecycle.stop_retry_attempts == 0);
+    assert(s_lifecycle.stop_retry_ticks_remaining == 0);
+    assert(aosl_atomic_read(&s_lifecycle.stop_request) == 0);
+    s_expected_stop_reason = NULL;
+    s_stop_result = 0;
+    start_conversation();
+    tick_many(35);
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION);
+    assert(s_stop_call_count == stop_calls + (exhaust_retries ? 4 : 2));
+    assert(s_conversation_stop_count == stop_callbacks + 1);
+    mybot_device_lifecycle_shutdown(&s_lifecycle);
 }
 
 static void test_repair_active_conversation(const mybot_device_lifecycle_callbacks_t *callbacks,
@@ -752,6 +815,15 @@ int main(void) {
     }
     test_repair_active_conversation(&callbacks, 0, true, false);
     test_repair_active_conversation(&callbacks, 503, false, true);
+
+    /* Every retry preserves its original reason, delay and bounded attempt budget. */
+    const int transient_stop_results[] = {-1, 408, 429, 503};
+    for (size_t i = 0; i < sizeof(transient_stop_results) / sizeof(transient_stop_results[0]);
+         ++i) {
+        test_stop_retry_reason(&callbacks, transient_stop_results[i], false, true);
+        test_stop_retry_reason(&callbacks, transient_stop_results[i], true, true);
+    }
+    test_stop_retry_reason(&callbacks, -1, true, false);
 
     /* Pair-code retries use bounded exponential backoff and still notify all
      * registered observers after recovery. */
