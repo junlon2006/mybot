@@ -1789,7 +1789,7 @@ int mybot_agora_rtc_init(const char *app_id, const mybot_agora_rtc_callbacks_t *
     aosl_mpq_t q = (aosl_mpq_t)aosl_atomic_read(&s_rtc_mpq_id);
     if (q == AOSL_MPQ_INVALID) {
         q = aosl_mpq_create_flags(AOSL_MPQ_FLAG_SIGP_EVENT | AOSL_MPQ_FLAG_NONBLOCK,
-                                  AOSL_THRD_PRI_NORMAL, 8192, 64, "mybot_rtc", NULL, NULL, NULL);
+                                  AOSL_THRD_PRI_NORMAL, 8192, 1000, "mybot_rtc", NULL, NULL, NULL);
         if (q == AOSL_MPQ_INVALID)
             return -1;
         aosl_atomic_set(&s_rtc_mpq_id, q);

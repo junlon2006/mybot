@@ -25,6 +25,8 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- Increase the RTC queue capacity from 64 to 1000 pending calls while retaining nonblocking
+  submission and the existing event handling.
 - Share RTM-to-LCD event queuing, session validation, and rendering for voiceprint and server-state
   indicators while preserving their independent and mutually exclusive display semantics.
 - Share the device-service conversation response with the synchronous application callback,
