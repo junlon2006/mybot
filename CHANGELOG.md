@@ -11,6 +11,8 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
+- Complete local conversation cleanup before re-pairing when the device-service stop request
+  fails or is waiting for a retry, and avoid duplicate pair-code requests after auth rejection.
 - Align public Wi-Fi comments and integration guides with product-owned provisioning, and
   correct the embedded notes on RTSA logging and per-frame heap allocations.
 - Serialize video startup and encoder control with shutdown on the application control worker,
