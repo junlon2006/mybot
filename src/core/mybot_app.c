@@ -151,11 +151,10 @@ static bool rtm_data_get_lcd_indicator(const void *data, size_t len,
     memcpy(message, data, len);
     message[len] = '\0';
 
+    bool matched = false;
     mybot_json_t *root = mybot_json_parse(message);
     if (!root || root->type != MYBOT_JSON_OBJECT) {
-        mybot_json_delete(root);
-        aosl_hal_free(message);
-        return false;
+        goto done;
     }
 
     const char *object = mybot_json_get_string(json_get_exact_object_item(root, "object"));
@@ -164,9 +163,8 @@ static bool rtm_data_get_lcd_indicator(const void *data, size_t len,
         strcmp(status, k_rtm_vp_status_success) == 0) {
         *indicator = MYBOT_LCD_INDICATOR_VP_REGISTERED;
         *active = true;
-        mybot_json_delete(root);
-        aosl_hal_free(message);
-        return true;
+        matched = true;
+        goto done;
     }
 
     const char *event_type = mybot_json_get_string(json_get_exact_object_item(root, "event_type"));
@@ -174,9 +172,7 @@ static bool rtm_data_get_lcd_indicator(const void *data, size_t len,
     const mybot_json_t *value = payload ? json_get_exact_object_item(payload, "value") : NULL;
     if (!event_type || !value ||
         (value->type != MYBOT_JSON_TRUE && value->type != MYBOT_JSON_FALSE)) {
-        mybot_json_delete(root);
-        aosl_hal_free(message);
-        return false;
+        goto done;
     }
 
     if (strcmp(event_type, k_rtm_state_listening) == 0) {
@@ -186,15 +182,16 @@ static bool rtm_data_get_lcd_indicator(const void *data, size_t len,
     } else if (strcmp(event_type, k_rtm_state_speaking) == 0) {
         *indicator = MYBOT_LCD_INDICATOR_SPEAKING;
     } else {
-        mybot_json_delete(root);
-        aosl_hal_free(message);
-        return false;
+        goto done;
     }
 
     *active = value->type == MYBOT_JSON_TRUE;
+    matched = true;
+
+done:
     mybot_json_delete(root);
     aosl_hal_free(message);
-    return true;
+    return matched;
 }
 
 static void handle_lcd_indicator(const aosl_ts_t *queued_ts, aosl_refobj_t robj, uintptr_t argc,
