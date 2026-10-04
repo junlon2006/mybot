@@ -251,6 +251,55 @@ static void test_response_boundaries(void) {
     expect_failure("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nFFFFFFFFFFFFFFFFF\r\n", 1);
 }
 
+static void test_content_length_consistency(void) {
+    const struct {
+        const char *headers;
+        const char *body;
+        const char *expected_body;
+    } cases[] = {
+        {"Content-Length: 5\r\n", "hello", "hello"},
+        {"cOnTeNt-LeNgTh:\t 5 \t\r\n", "hello", "hello"},
+        {"Content-Length: 0005\r\nContent-Length: 5\r\n", "helloignored", "hello"},
+        {"Content-Length: 0\r\n", "", ""},
+        {"Content-Length: 5\r\nContent-Length: 6\r\n", "hello", NULL},
+        {"Content-Length:\r\n", "hello", NULL},
+        {"Content-Length: \t \r\n", "hello", NULL},
+        {"Content-Length: x\r\n", "hello", NULL},
+        {"Content-Length: 5x\r\n", "hello", NULL},
+        {"Content-Length: -5\r\n", "hello", NULL},
+        {"Content-Length: 9999999999999999999999999999999999999999\r\n", "hello", NULL},
+        {"Content-Length: 5\r\r\n", "hello", NULL},
+        {"Content-Length: 6\r\n", "hello", NULL},
+        {"Content-Length: 5\r\nX-Incomplete: header", "", NULL},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        char raw[256];
+        int written = snprintf(raw, sizeof(raw), "HTTP/1.1 200 OK\r\n%s\r\n%s", cases[i].headers,
+                               cases[i].body);
+        assert(written > 0 && (size_t)written < sizeof(raw));
+        assert(response_content_length_complete(raw, (size_t)written) ==
+               (cases[i].expected_body != NULL));
+        for (int closed = 0; closed <= 1; ++closed) {
+            mybot_http_client_response_t response;
+            int ret = parse_response(raw, (size_t)written, closed, &response);
+            if (cases[i].expected_body) {
+                assert(ret == 0 && response.status_code == 200);
+                size_t expected_length = strlen(cases[i].expected_body);
+                assert(response.body_len == expected_length);
+                if (expected_length == 0) {
+                    assert(response.body == NULL);
+                } else {
+                    assert(response.body != NULL);
+                    assert(strcmp(response.body, cases[i].expected_body) == 0);
+                }
+            } else {
+                assert(ret < 0 && response.body == NULL);
+            }
+            mybot_http_client_response_free(&response);
+        }
+    }
+}
+
 /* ---- deterministic parser fuzz ---- */
 static uint32_t s_http_rng = 0xdeadbeefu;
 
@@ -660,6 +709,7 @@ int main(void) {
     mybot_http_client_response_free(&response);
 
     test_response_boundaries();
+    test_content_length_consistency();
     test_tls_transport_and_requests();
     test_receive_capacity_boundaries();
     test_receive_capacity_failures();
