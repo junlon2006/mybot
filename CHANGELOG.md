@@ -11,6 +11,8 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
+- Discard pending conversation-start requests when re-pairing begins. Starting a conversation
+  after the new binding is claimed requires a fresh trigger, even after pair-code retries.
 - Use all available HTTP receive-buffer space at the 32 KiB allocation limit, avoiding early
   rejection of responses split across receive calls. Check full-buffer closure or overflow with
   a one-byte receive probe under the existing request deadline.
