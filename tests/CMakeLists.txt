@@ -54,6 +54,11 @@ mybot_add_test(mybot_device_client_test
     ../src/support/mybot_json.c
 )
 target_link_libraries(mybot_device_client_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_definitions(mybot_device_client_test PRIVATE MYBOT_TEST_WRAP_DEVICE_HEADERS=1)
+    target_link_options(mybot_device_client_test PRIVATE
+        -Wl,--wrap=aosl_hal_malloc,--wrap=aosl_hal_free)
+endif()
 
 mybot_add_test(mybot_http_client_test
     unit/http_client_test.c

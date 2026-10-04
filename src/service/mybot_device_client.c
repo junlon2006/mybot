@@ -72,6 +72,22 @@ static int build_authorization_header(const char *scheme, const char *credential
     return written >= 0 && (size_t)written < header_size ? 0 : -1;
 }
 
+/* Own only the temporary header; URL/body are borrowed and raw belongs to the caller. */
+static int post_device_json(const char *url, const char *device_token, const char *body,
+                            mybot_http_client_response_t *raw) {
+    size_t header_size = MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32U;
+    char *headers = (char *)aosl_hal_malloc(header_size);
+    if (!headers) {
+        return -1;
+    }
+    int ret = build_authorization_header("Device ", device_token, headers, header_size);
+    if (ret == 0) {
+        ret = mybot_http_client_post_ex(url, "application/json", body, headers, raw);
+    }
+    aosl_hal_free(headers);
+    return ret;
+}
+
 static int copy_optional_json_string(const mybot_json_t *object, const char *name,
                                      char *destination, size_t destination_size) {
     mybot_json_t *item = mybot_json_get_object_item(object, name);
@@ -469,31 +485,17 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
         }
     }
 
-    char *extra_hdrs = (char *)aosl_hal_malloc(MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32U);
-    if (!extra_hdrs) {
-        mybot_json_free_string(generated_body);
-        return -1;
-    }
-    if (build_authorization_header("Device ", device_token, extra_hdrs,
-                                   MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32U) < 0) {
-        aosl_hal_free(extra_hdrs);
-        mybot_json_free_string(generated_body);
-        return -1;
-    }
-
     AOSL_LOG_NTC("POST %s request body length=%zu", url, strlen(body));
 
     mybot_http_client_response_t raw;
     memset(&raw, 0, sizeof(raw));
 
-    if (mybot_http_client_post_ex(url, "application/json", body, extra_hdrs, &raw) < 0) {
+    int ret = post_device_json(url, device_token, body, &raw);
+    mybot_json_free_string(generated_body);
+    if (ret < 0) {
         AOSL_LOG_ERR("POST %s failed (http)", url);
-        aosl_hal_free(extra_hdrs);
-        mybot_json_free_string(generated_body);
         return -1;
     }
-    aosl_hal_free(extra_hdrs);
-    mybot_json_free_string(generated_body);
 
     AOSL_LOG_NTC("POST %s -> status=%d response body length=%zu", url, raw.status_code,
                  raw.body_len);
@@ -562,24 +564,11 @@ int mybot_device_client_renew_rtc_token(const char *base_url, const char *device
         return -1;
     }
 
-    char *extra_hdrs = (char *)aosl_hal_malloc(MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32U);
-    if (!extra_hdrs) {
-        mybot_json_free_string(body);
-        return -1;
-    }
-    if (build_authorization_header("Device ", device_token, extra_hdrs,
-                                   MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32U) < 0) {
-        aosl_hal_free(extra_hdrs);
-        mybot_json_free_string(body);
-        return -1;
-    }
-
     AOSL_LOG_NTC("POST %s", url);
 
     mybot_http_client_response_t raw;
     memset(&raw, 0, sizeof(raw));
-    int ret = mybot_http_client_post_ex(url, "application/json", body, extra_hdrs, &raw);
-    aosl_hal_free(extra_hdrs);
+    int ret = post_device_json(url, device_token, body, &raw);
     mybot_json_free_string(body);
     if (ret < 0) {
         AOSL_LOG_ERR("POST %s failed (http)", url);
@@ -634,25 +623,12 @@ int mybot_device_client_stop_conversation(const char *base_url, const char *devi
         return -1;
     }
 
-    char *extra_hdrs = (char *)aosl_hal_malloc(MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32U);
-    if (!extra_hdrs) {
-        mybot_json_free_string(body);
-        return -1;
-    }
-    if (build_authorization_header("Device ", device_token, extra_hdrs,
-                                   MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32U) < 0) {
-        aosl_hal_free(extra_hdrs);
-        mybot_json_free_string(body);
-        return -1;
-    }
-
     AOSL_LOG_NTC("POST %s request body length=%zu", url, strlen(body));
 
     mybot_http_client_response_t raw;
     memset(&raw, 0, sizeof(raw));
 
-    int ret = mybot_http_client_post_ex(url, "application/json", body, extra_hdrs, &raw);
-    aosl_hal_free(extra_hdrs);
+    int ret = post_device_json(url, device_token, body, &raw);
     mybot_json_free_string(body);
 
     if (ret == 0) {
