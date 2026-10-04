@@ -651,6 +651,8 @@ void mybot_device_lifecycle_tick(mybot_device_lifecycle_t *lifecycle) {
      * conversation is active, end it first so the RTC connection is torn down
      * before the device is rebound. */
     if (lifecycle->pairing_requested) {
+        /* Pending start requests belong to the previous binding. */
+        lifecycle->conversation_requested = false;
         if (current_state(lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
             action_stop_conversation(lifecycle, MYBOT_CONVERSATION_STOP_REASON_USER_REQUESTED);
             /* Re-pairing discards the old credential, so its stop retries cannot continue. */

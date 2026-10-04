@@ -357,6 +357,10 @@ with its existing credentials. The adapter reports the disconnect and subsequent
 do not turn every link loss into a provisioning restart. The SDK ends the interrupted conversation
 and resumes device-service work after reconnect; starting a new conversation requires a new trigger.
 
+Re-pairing also discards pending conversation-start requests, including requests received after
+the pair request but before the next control tick. Once the new binding is claimed, starting a
+conversation requires a fresh trigger, even if the pair-code request needed retries.
+
 Re-pairing during a conversation performs local conversation cleanup before clearing the device
 credential and requesting a new pair code, even if the device-service stop request fails or is
 already waiting for a retry. This clears the old conversation's stop and token-renewal requests.

@@ -380,6 +380,56 @@ static void start_conversation(void) {
     assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION);
 }
 
+static void test_repair_pending_start(const mybot_device_lifecycle_callbacks_t *callbacks,
+                                      bool pair_first, int pair_result) {
+    provision_runtime(callbacks);
+    int start_calls = s_start_call_count;
+    int start_callbacks = s_conversation_start_count;
+    int pair_calls = s_pair_call_count;
+    s_pair_result = pair_result;
+
+    /* Both requests are handled while ready, before the next lifecycle tick. */
+    if (pair_first) {
+        mybot_device_lifecycle_request_pair(&s_lifecycle);
+        mybot_device_lifecycle_request_start(&s_lifecycle);
+    } else {
+        mybot_device_lifecycle_request_start(&s_lifecycle);
+        mybot_device_lifecycle_request_pair(&s_lifecycle);
+    }
+    mybot_device_lifecycle_tick(&s_lifecycle);
+    assert(s_pair_call_count == pair_calls + 1);
+    assert(s_start_call_count == start_calls);
+    assert(s_conversation_start_count == start_callbacks);
+
+    if (pair_result != 0) {
+        assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_UNPROVISIONED);
+        tick_many(29);
+        assert(s_pair_call_count == pair_calls + 1);
+        assert(s_start_call_count == start_calls);
+        s_pair_result = 0;
+        mybot_device_lifecycle_tick(&s_lifecycle);
+        assert(s_pair_call_count == pair_calls + 2);
+    }
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
+    assert(s_lifecycle.device_token[0] == '\0');
+    assert(!s_kv_store_present);
+
+    /* A different binding must stay idle until it receives a fresh start request. */
+    strcpy(s_binding_token, "rebound-token");
+    tick_many(30);
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_RUNTIME);
+    assert(strcmp(s_lifecycle.device_token, "rebound-token") == 0);
+    tick_many(35);
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_RUNTIME);
+    assert(s_start_call_count == start_calls);
+    assert(s_conversation_start_count == start_callbacks);
+
+    start_conversation();
+    assert(s_start_call_count == start_calls + 1);
+    assert(s_conversation_start_count == start_callbacks + 1);
+    mybot_device_lifecycle_shutdown(&s_lifecycle);
+}
+
 static void test_stop_retry_reason(const mybot_device_lifecycle_callbacks_t *callbacks,
                                    int stop_result, bool exhaust_retries, bool user_stop) {
     provision_runtime(callbacks);
@@ -806,6 +856,13 @@ int main(void) {
     assert(s_start_call_count == extra_start_calls);
     assert(s_stop_call_count == extra_stop_calls);
     assert(s_renew_call_count == extra_renew_calls);
+
+    /* Re-pairing consumes pending starts regardless of request order, including
+     * when obtaining the replacement pair code first needs a transient retry. */
+    test_repair_pending_start(&callbacks, false, 0);
+    test_repair_pending_start(&callbacks, true, 0);
+    test_repair_pending_start(&callbacks, false, 503);
+    test_repair_pending_start(&callbacks, true, 503);
 
     /* Re-pairing tears down RTC before forgetting credentials or obtaining a
      * new code, even when the remote stop fails or requests are already queued. */
