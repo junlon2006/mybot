@@ -138,6 +138,10 @@ target_include_directories(mybot_agora_rtc_test PRIVATE
 target_compile_definitions(mybot_agora_rtc_test PRIVATE
     MYBOT_RTM_LOGIN_TIMEOUT_MS=50 MYBOT_RTM_SUBSCRIBE_TIMEOUT_MS=50)
 target_link_libraries(mybot_agora_rtc_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_definitions(mybot_agora_rtc_test PRIVATE MYBOT_TEST_WRAP_RTC_ALLOC=1)
+    target_link_options(mybot_agora_rtc_test PRIVATE -Wl,--wrap=aosl_hal_malloc)
+endif()
 
 mybot_add_test(mybot_app_test
     unit/app_test.c

@@ -96,6 +96,9 @@ static char s_last_rtm_send_uid[AGORA_RTM_UID_MAX_LEN];
 static uint32_t s_last_rtm_result_msg_id;
 static size_t s_last_rtm_data_len;
 static char s_last_rtm_custom_type[64];
+static unsigned char s_last_rtm_data[AGORA_RTM_DATA_MAX_LEN];
+static unsigned char s_last_rtm_subscribe_data[AGORA_RTM_DATA_MAX_LEN];
+static unsigned char s_last_remote_audio[RTC_REMOTE_PCM_FRAME_BYTES];
 static char s_last_rtm_subscribe_channel[AGORA_RTC_CHANNEL_NAME_MAX_LEN + 1];
 static char s_last_rtm_subscribe_uid[AGORA_RTM_UID_MAX_LEN];
 static size_t s_last_rtm_subscribe_data_len;
@@ -129,6 +132,29 @@ static aosl_atomic_t s_leave_started;
 static aosl_atomic_t s_leave_returned;
 static aosl_atomic_t s_probe_fini_callback;
 static aosl_atomic_t s_fini_callback_returned;
+
+#ifdef MYBOT_TEST_WRAP_RTC_ALLOC
+typedef struct {
+    unsigned calls;
+    unsigned fail_at;
+    bool failed;
+} callback_allocation_fault_t;
+
+static pthread_key_t s_allocation_fault_key;
+static bool s_allocation_fault_key_ready;
+
+void *__real_aosl_hal_malloc(size_t size);
+
+void *__wrap_aosl_hal_malloc(size_t size) {
+    callback_allocation_fault_t *fault =
+        s_allocation_fault_key_ready ? pthread_getspecific(s_allocation_fault_key) : NULL;
+    if (fault && ++fault->calls == fault->fail_at) {
+        fault->failed = true;
+        return NULL;
+    }
+    return __real_aosl_hal_malloc(size);
+}
+#endif
 
 const char *agora_rtc_get_version(void) {
     return "stub";
@@ -374,6 +400,7 @@ static void on_remote_audio(uint32_t uid, const void *data, size_t len, void *us
     assert(uid == 7);
     assert(data != NULL);
     assert(len == RTC_REMOTE_PCM_FRAME_BYTES);
+    memcpy(s_last_remote_audio, data, len);
     s_remote_audio_calls++;
 }
 
@@ -411,6 +438,10 @@ static void on_rtm_data(const char *rtm_uid, const void *data, size_t len, const
     assert(data != NULL || len == 0);
     s_rtm_data_calls++;
     s_last_rtm_data_len = len;
+    assert(len <= sizeof(s_last_rtm_data));
+    if (len) {
+        memcpy(s_last_rtm_data, data, len);
+    }
     snprintf(s_last_rtm_data_uid, sizeof(s_last_rtm_data_uid), "%s", rtm_uid);
     snprintf(s_last_rtm_custom_type, sizeof(s_last_rtm_custom_type), "%s",
              custom_type ? custom_type : "");
@@ -442,6 +473,10 @@ static void on_rtm_subscribe_data(const char *channel, const char *rtm_uid, cons
     assert(data != NULL || len == 0);
     s_rtm_subscribe_data_calls++;
     s_last_rtm_subscribe_data_len = len;
+    assert(len <= sizeof(s_last_rtm_subscribe_data));
+    if (len) {
+        memcpy(s_last_rtm_subscribe_data, data, len);
+    }
     snprintf(s_last_rtm_subscribe_channel, sizeof(s_last_rtm_subscribe_channel), "%s", channel);
     snprintf(s_last_rtm_subscribe_uid, sizeof(s_last_rtm_subscribe_uid), "%s", rtm_uid);
     snprintf(s_last_rtm_custom_type, sizeof(s_last_rtm_custom_type), "%s",
@@ -479,7 +514,134 @@ static void *error_callback_thread(void *arg) {
     return NULL;
 }
 
+typedef enum { PAYLOAD_RTM, PAYLOAD_CHANNEL, PAYLOAD_PCM } callback_payload_t;
+
+static void synchronize_rtc(void) {
+    assert(mybot_agora_rtc_is_rtm_logged_in());
+}
+
+static void block_payload_owner(connection_id_t conn) {
+    s_handler.on_join_channel_success(conn, 42, 0);
+    synchronize_rtc();
+    aosl_atomic_set(&s_block_state_callback, true);
+    aosl_atomic_set(&s_state_callback_entered, false);
+    aosl_atomic_set(&s_release_state_callback, false);
+    s_handler.on_reconnecting(conn);
+    assert(wait_for_atomic(&s_state_callback_entered, true, 1000));
+    /* Restore CONNECTED on the owner before it delivers the queued payloads. */
+    s_handler.on_rejoin_channel_success(conn, 42, 0);
+}
+
+static void post_borrowed_payload(callback_payload_t type, connection_id_t conn, char *uid,
+                                  char *channel, char *custom, void *data, size_t len,
+                                  const audio_frame_info_t *info) {
+    switch (type) {
+    case PAYLOAD_RTM:
+        s_rtm_handler.on_rtm_data(uid, data, len, RTM_MESSAGE_TYPE_BINARY, custom);
+        break;
+    case PAYLOAD_CHANNEL:
+        s_rtm_handler.on_rtm_subscribe_data(channel, uid, data, len, RTM_MESSAGE_TYPE_STRING,
+                                            custom);
+        break;
+    case PAYLOAD_PCM:
+        s_handler.on_audio_data(conn, 7, 0, data, len, info);
+        break;
+    }
+}
+
+static int payload_callback_count(callback_payload_t type) {
+    return type == PAYLOAD_RTM       ? s_rtm_data_calls
+           : type == PAYLOAD_CHANNEL ? s_rtm_subscribe_data_calls
+                                     : s_remote_audio_calls;
+}
+
+static void expect_copied_payload(callback_payload_t type, const void *expected, size_t len) {
+    if (type == PAYLOAD_PCM) {
+        assert(memcmp(s_last_remote_audio, expected, len) == 0);
+        return;
+    }
+    if (type == PAYLOAD_RTM) {
+        assert(s_last_rtm_data_len == len);
+        assert(memcmp(s_last_rtm_data, expected, len) == 0);
+        assert(strcmp(s_last_rtm_data_uid, "original-peer") == 0);
+    } else {
+        assert(s_last_rtm_subscribe_data_len == len);
+        assert(memcmp(s_last_rtm_subscribe_data, expected, len) == 0);
+        assert(strcmp(s_last_rtm_subscribe_channel, "payload-room") == 0);
+        assert(strcmp(s_last_rtm_subscribe_uid, "original-peer") == 0);
+    }
+    assert(strcmp(s_last_rtm_custom_type, "original-type") == 0);
+}
+
+static void test_callback_payload_ownership(const mybot_agora_rtc_callbacks_t *callbacks) {
+    assert(mybot_agora_rtc_init("payload-app", callbacks) == 0);
+    assert(mybot_agora_rtc_join("payload-room", "token", "user") == 0);
+    connection_id_t conn = s_last_conn;
+    join_rtm_login_thread();
+    join_rtm_subscribe_thread();
+    static unsigned char expected[RTC_REMOTE_PCM_FRAME_BYTES];
+    static unsigned char payload[RTC_REMOTE_PCM_FRAME_BYTES];
+    for (size_t i = 0; i < sizeof(expected); ++i) {
+        expected[i] = (unsigned char)(i * 17U + 3U);
+    }
+    for (int type = PAYLOAD_RTM; type <= PAYLOAD_PCM; ++type) {
+        size_t len = type == PAYLOAD_PCM ? sizeof(payload) : 16;
+        char uid[] = "original-peer";
+        char channel[] = "payload-room";
+        char custom[] = "original-type";
+        audio_frame_info_t info = {.data_type = AUDIO_DATA_TYPE_PCM};
+        memcpy(payload, expected, len);
+        block_payload_owner(conn);
+        int callbacks_before = payload_callback_count((callback_payload_t)type);
+        post_borrowed_payload((callback_payload_t)type, conn, uid, channel, custom, payload, len,
+                              &info);
+        memset(payload, 0xee, len);
+        memset(uid, 'x', sizeof(uid) - 1);
+        memset(channel, 'x', sizeof(channel) - 1);
+        memset(custom, 'x', sizeof(custom) - 1);
+        info.data_type = AUDIO_DATA_TYPE_G722;
+        aosl_atomic_set(&s_release_state_callback, true);
+        synchronize_rtc();
+        assert(payload_callback_count((callback_payload_t)type) == callbacks_before + 1);
+        expect_copied_payload((callback_payload_t)type, expected, len);
+
+#ifdef MYBOT_TEST_WRAP_RTC_ALLOC
+        for (unsigned fail_at = 1; fail_at <= 2; ++fail_at) {
+            memcpy(uid, "original-peer", sizeof(uid));
+            memcpy(channel, "payload-room", sizeof(channel));
+            memcpy(custom, "original-type", sizeof(custom));
+            memcpy(payload, expected, len);
+            info.data_type = AUDIO_DATA_TYPE_PCM;
+            block_payload_owner(conn);
+            callbacks_before = payload_callback_count((callback_payload_t)type);
+            callback_allocation_fault_t fault = {.fail_at = fail_at};
+            int ret = pthread_setspecific(s_allocation_fault_key, &fault);
+            assert(ret == 0);
+            post_borrowed_payload((callback_payload_t)type, conn, uid, channel, custom, payload,
+                                  len, &info);
+            ret = pthread_setspecific(s_allocation_fault_key, NULL);
+            assert(ret == 0 && fault.failed);
+            aosl_atomic_set(&s_release_state_callback, true);
+            synchronize_rtc();
+            assert(payload_callback_count((callback_payload_t)type) == callbacks_before);
+            post_borrowed_payload((callback_payload_t)type, conn, uid, channel, custom, payload,
+                                  len, &info);
+            synchronize_rtc();
+            assert(payload_callback_count((callback_payload_t)type) == callbacks_before + 1);
+            expect_copied_payload((callback_payload_t)type, expected, len);
+        }
+#endif
+    }
+    assert(mybot_agora_rtc_leave() == 0);
+    assert(mybot_agora_rtc_fini() == 0);
+}
+
 int main(void) {
+#ifdef MYBOT_TEST_WRAP_RTC_ALLOC
+    int key_ret = pthread_key_create(&s_allocation_fault_key, NULL);
+    assert(key_ret == 0);
+    s_allocation_fault_key_ready = true;
+#endif
     aosl_ctor();
 
     unsigned char pcm_frame[RTC_PCM_FRAME_BYTES] = {0};
@@ -1032,9 +1194,16 @@ int main(void) {
     mybot_agora_rtc_fini();
     assert(s_fini_calls == fini_calls_before_retry + 1);
 
+    test_callback_payload_ownership(&callbacks);
+
     join_rtm_login_thread();
     join_rtm_subscribe_thread();
     aosl_dtor();
+#ifdef MYBOT_TEST_WRAP_RTC_ALLOC
+    s_allocation_fault_key_ready = false;
+    key_ret = pthread_key_delete(s_allocation_fault_key);
+    assert(key_ret == 0);
+#endif
     puts("agora_rtc_test: ok");
     return 0;
 }
