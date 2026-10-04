@@ -11,6 +11,8 @@ This project follows Semantic Versioning.
 
 ### Fixed
 
+- Preserve the current conversation-stop reason during retry delays and rescheduling, so a
+  transport failure or HTTP 5xx does not by itself change `device_hangup` to `error`.
 - Reject Linux announcement assets when seeking back to the PCM data fails.
 - Discard software-buffered PCM from replaced or stopped pairing announcements, including
   unfinished short writes. Commit replacements only after asset loading succeeds, preserving

@@ -354,6 +354,8 @@ credential and requesting a new pair code, even if the device-service stop reque
 already waiting for a retry. This clears the old conversation's stop and token-renewal requests.
 The device-service stop is best effort in this path; a failed request does not confirm that the
 server has ended the conversation. Ordinary conversation stops retain their bounded retry policy.
+Retry countdown and rescheduling preserve the current `device_hangup` or `error` stop reason;
+a transport failure or HTTP 5xx does not by itself change `device_hangup` to `error`.
 
 ### RTM account mapping
 
