@@ -88,6 +88,13 @@ static int clamp_poll_interval(int seconds) {
     return seconds;
 }
 
+static int next_retry_delay_ticks(int current, int initial, int maximum) {
+    if (current == 0) {
+        return initial;
+    }
+    return current < maximum / 2 ? current * 2 : maximum;
+}
+
 static int persist_device_auth(mybot_device_lifecycle_t *lifecycle) {
     mybot_device_auth_record_t *record =
         (mybot_device_auth_record_t *)aosl_hal_malloc(sizeof(*record));
@@ -176,13 +183,9 @@ static void action_create_pair_code(mybot_device_lifecycle_t *lifecycle) {
         return;
     }
     if (ret != 0) {
-        if (lifecycle->pair_retry_delay_ticks == 0) {
-            lifecycle->pair_retry_delay_ticks = MYBOT_PAIR_RETRY_INITIAL_TICKS;
-        } else if (lifecycle->pair_retry_delay_ticks < MYBOT_PAIR_RETRY_MAX_TICKS / 2) {
-            lifecycle->pair_retry_delay_ticks *= 2;
-        } else {
-            lifecycle->pair_retry_delay_ticks = MYBOT_PAIR_RETRY_MAX_TICKS;
-        }
+        lifecycle->pair_retry_delay_ticks =
+            next_retry_delay_ticks(lifecycle->pair_retry_delay_ticks,
+                                   MYBOT_PAIR_RETRY_INITIAL_TICKS, MYBOT_PAIR_RETRY_MAX_TICKS);
         lifecycle->pair_retry_ticks_remaining = lifecycle->pair_retry_delay_ticks;
         AOSL_LOG_ERR("pair-code request failed, retrying in %d seconds",
                      lifecycle->pair_retry_delay_ticks / 10);
@@ -371,13 +374,9 @@ static void clear_rtc_token_renewal(mybot_device_lifecycle_t *lifecycle) {
 }
 
 static void schedule_rtc_token_retry(mybot_device_lifecycle_t *lifecycle) {
-    if (lifecycle->rtc_token_retry_delay_ticks == 0) {
-        lifecycle->rtc_token_retry_delay_ticks = MYBOT_RTC_TOKEN_RETRY_INITIAL_TICKS;
-    } else if (lifecycle->rtc_token_retry_delay_ticks < MYBOT_RTC_TOKEN_RETRY_MAX_TICKS / 2) {
-        lifecycle->rtc_token_retry_delay_ticks *= 2;
-    } else {
-        lifecycle->rtc_token_retry_delay_ticks = MYBOT_RTC_TOKEN_RETRY_MAX_TICKS;
-    }
+    lifecycle->rtc_token_retry_delay_ticks = next_retry_delay_ticks(
+        lifecycle->rtc_token_retry_delay_ticks, MYBOT_RTC_TOKEN_RETRY_INITIAL_TICKS,
+        MYBOT_RTC_TOKEN_RETRY_MAX_TICKS);
     lifecycle->rtc_token_retry_ticks_remaining = lifecycle->rtc_token_retry_delay_ticks;
     AOSL_LOG_WRN("RTC-token renewal failed, retrying in %d ms",
                  lifecycle->rtc_token_retry_delay_ticks * 100);
