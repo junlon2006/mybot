@@ -937,24 +937,6 @@ static bool platform_requirements_are_met(const mybot_config_t *cfg) {
     return true;
 }
 
-static bool server_scheme_is_supported(const char *server_base) {
-    if (strncmp(server_base, "https://", 8) == 0) {
-#if MYBOT_ENABLE_HTTPS
-        return true;
-#else
-        return false;
-#endif
-    }
-    if (strncmp(server_base, "http://", 7) == 0) {
-#if MYBOT_ALLOW_INSECURE_HTTP
-        return true;
-#else
-        return false;
-#endif
-    }
-    return false;
-}
-
 static void control_stop_runtime(mybot_runtime_t *runtime) {
     if (runtime_get_state(runtime) == MYBOT_STATE_STOPPED) {
         return;
@@ -1068,12 +1050,6 @@ int mybot_start(const mybot_config_t *cfg) {
         lifecycle_unlock();
         return -1;
     }
-    if (!server_scheme_is_supported(cfg->server_base)) {
-        AOSL_LOG_ERR("application start rejected: unsupported server URL scheme");
-        lifecycle_unlock();
-        return -1;
-    }
-
     if (!platform_requirements_are_met(cfg)) {
         lifecycle_unlock();
         return -1;
