@@ -61,8 +61,8 @@ Preallocated PCM arrays do **not** make the end-to-end audio path allocation-fre
   for waiting; their resource cost depends on the HAL. It borrows the PCM until the call returns.
   Video submission uses the same synchronous MPQ path; having no SDK video ring does not
   imply zero per-frame allocation.
-- **Session flush:** consumer workers temporarily allocate one frame of drain scratch per ring
-  being drained. The normal capture/playback timers reuse their fixed arrays.
+- **Session flush:** consumer workers reuse their fixed playback and send arrays to drain rings,
+  without allocating additional scratch. Synchronous queue calls still allocate AOSL call objects.
 - **Control and RTM:** service responses, request headers, JSON nodes, and RTM message copies have
   additional transient allocations. [HTTP](../src/support/mybot_http_client.c) allocates a 2 KiB
   request buffer and a receive buffer growing from 4 KiB to 32 KiB. The receive allocation reserves

@@ -34,6 +34,7 @@ This project follows Semantic Versioning.
 
 ### Changed
 
+- Reuse consumer-owned PCM buffers during session flush, removing temporary drain allocations.
 - Increase the RTC queue capacity from 64 to 1000 pending calls while retaining nonblocking
   submission and the existing event handling.
 - Share RTM-to-LCD event queuing, session validation, and rendering for voiceprint and server-state
