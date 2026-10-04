@@ -106,7 +106,8 @@ static const char *parse_number_u64(mybot_json_t *item, const char *num) {
     // double n=0,sign=1,scale=0;int subscale=0,signsubscale=1;
     unsigned long long n = 0;
     double f = 0;
-    int sign = 1, scale = 0;
+    int sign = 1;
+    int64_t scale = 0;
     int subscale = 0, signsubscale = 1;
     unsigned char is_float = 0;
 
@@ -140,6 +141,9 @@ static const char *parse_number_u64(mybot_json_t *item, const char *num) {
 
         do {
             f = (f * 10.0) + (*num - '0');
+            if (scale == INT64_MIN) {
+                return 0;
+            }
             scale--;
             num++;
         } while (*num >= '0' && *num <= '9');
@@ -181,10 +185,9 @@ static const char *parse_number_u64(mybot_json_t *item, const char *num) {
         }
         item->valuedouble = (double)item->valueint;
     } else {
-        f = sign * f *
-            pow(10.0,
-                (scale +
-                 subscale * signsubscale)); /* number = +/- number.fraction * 10^+/- exponent */
+        /* Combine the scale in floating point so a large negative exponent
+         * cannot overflow the fractional-digit counter. */
+        f = sign * f * pow(10.0, (double)scale + (double)subscale * signsubscale);
         if (!isfinite(f)) {
             return 0;
         }
@@ -206,7 +209,7 @@ static const char *parse_number_u64(mybot_json_t *item, const char *num) {
 static char *print_number(mybot_json_t *item) {
     char *str;
     double d = item->valuedouble;
-    if (fabs(((double)item->valueint) - d) <= DBL_EPSILON && d <= INT_MAX && d >= INT_MIN) {
+    if ((double)item->valueint == d) {
         str = (char *)mybot_json_malloc_fn(21); /* 2^64+1 can be represented in 21 chars. */
         if (str)
             sprintf(str, "%lld", item->valueint);
@@ -970,6 +973,9 @@ mybot_json_t *mybot_json_create_bool(int b) {
     return item;
 }
 mybot_json_t *mybot_json_create_number(double num) {
+    if (!isfinite(num) || num < -9223372036854775808.0 || num >= 9223372036854775808.0) {
+        return NULL;
+    }
     mybot_json_t *item = mybot_json_new_item();
     if (item) {
         item->type = MYBOT_JSON_NUMBER;

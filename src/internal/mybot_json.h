@@ -91,6 +91,7 @@ extern bool mybot_json_get_integer(const mybot_json_t *value, int64_t *result);
 
 /* These calls create a mybot_json_t item of the appropriate type. */
 extern mybot_json_t *mybot_json_create_bool(int b);
+/* Finite numbers in [-2^63, 2^63); return NULL for invalid values or allocation failure. */
 extern mybot_json_t *mybot_json_create_number(double num);
 extern mybot_json_t *mybot_json_create_string(const char *string);
 extern mybot_json_t *mybot_json_create_object(void);

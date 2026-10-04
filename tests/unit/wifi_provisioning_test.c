@@ -25,6 +25,7 @@ static pthread_t s_emit_thread;
 static bool s_emit_async;
 static bool s_emit_thread_active;
 static int s_init_count;
+static int s_init_result;
 static int s_destroy_count;
 static aosl_atomic_t s_event_count;
 static aosl_atomic_t s_last_event;
@@ -39,10 +40,14 @@ static void *emit_initial_event(void *arg) {
 static int fake_init(void **ctx, const char *device_id, mybot_wifi_event_handler_t emit,
                      void *user_data) {
     assert(strcmp(device_id, "device-001") == 0);
+    s_init_count++;
+    if (s_init_result < 0) {
+        *ctx = NULL;
+        return s_init_result;
+    }
     s_fake.emit = emit;
     s_fake.user_data = user_data;
     *ctx = &s_fake;
-    s_init_count++;
     if (s_emit_async) {
         int rc = pthread_create(&s_emit_thread, NULL, emit_initial_event, NULL);
         assert(rc == 0);
@@ -78,17 +83,36 @@ int main(void) {
     };
 
     aosl_ctor();
+    assert(mybot_wifi_init(NULL, "device-001", on_event, &s_event_count) == -1);
+    assert(mybot_wifi_init(&wifi, "device-001", on_event, &s_event_count) == -1);
+    mybot_wifi_deinit(NULL);
+    mybot_wifi_deinit(&wifi);
+    assert(s_init_count == 0);
+    assert(s_destroy_count == 0);
     mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
     descriptor.wifi = &fake_ops;
     assert(mybot_platform_register(&descriptor) == 0);
     assert(mybot_wifi_init(&wifi, NULL, on_event, &s_event_count) < 0);
+    assert(mybot_wifi_init(&wifi, "", on_event, &s_event_count) < 0);
     assert(mybot_wifi_init(&wifi, "device-001", NULL, &s_event_count) < 0);
+
+    s_init_result = -1;
+    assert(mybot_wifi_init(&wifi, "device-001", on_event, &s_event_count) == -1);
+    assert(!wifi.active);
+    assert(wifi.ctx == NULL);
+    assert(aosl_atomic_read(&s_event_count) == 0);
+    mybot_wifi_deinit(&wifi);
+    assert(s_destroy_count == 0);
+    s_init_result = 0;
 
     s_initial_event = MYBOT_WIFI_EVENT_STA_CONNECTED;
     assert(mybot_wifi_init(&wifi, "device-001", on_event, &s_event_count) == 0);
-    assert(s_init_count == 1);
+    assert(s_init_count == 2);
     assert(aosl_atomic_read(&s_event_count) == 1);
     assert(aosl_atomic_read(&s_last_event) == MYBOT_WIFI_EVENT_STA_CONNECTED);
+    assert(mybot_wifi_init(&wifi, "device-001", on_event, &s_event_count) == -1);
+    assert(s_init_count == 2);
+    assert(aosl_atomic_read(&s_event_count) == 1);
 
     s_fake.emit(MYBOT_WIFI_EVENT_STA_DISCONNECTED, s_fake.user_data);
     assert(aosl_atomic_read(&s_event_count) == 2);
@@ -100,12 +124,14 @@ int main(void) {
     mybot_wifi_deinit(&wifi);
     mybot_wifi_deinit(&wifi);
     assert(s_destroy_count == 1);
+    assert(wifi.ctx == NULL);
+    assert(!wifi.active);
 
     s_initial_event = MYBOT_WIFI_EVENT_FAILED;
     s_emit_async = true;
     intptr_t previous_event_count = aosl_atomic_read(&s_event_count);
     assert(mybot_wifi_init(&wifi, "device-001", on_event, &s_event_count) == 0);
-    assert(s_init_count == 2);
+    assert(s_init_count == 3);
 
     for (int i = 0; i < 1000 && aosl_atomic_read(&s_event_count) == previous_event_count; ++i) {
         aosl_hal_msleep(1);

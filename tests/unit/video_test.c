@@ -3,6 +3,8 @@
 #include "mybot_platform_registry.h"
 #include "mybot_agora_rtc.h"
 
+#include <mybot/mybot_build_config.h>
+
 #include <api/aosl.h>
 #include <hal/aosl_hal_time.h>
 
@@ -15,6 +17,11 @@ static int s_init_result;
 static int s_start_result;
 static int s_stop_result;
 static int s_send_result;
+static int s_init_calls;
+static int s_start_calls;
+static int s_stop_calls;
+static int s_registry_calls;
+static bool s_platform_missing;
 static int s_destroy_calls;
 static int s_key_requests;
 static uint32_t s_target_bps;
@@ -44,6 +51,7 @@ static bool wait_for_flag(aosl_atomic_t *flag) {
 
 static int video_init(void **ctx, mybot_video_frame_handler_t handler, void *user_data) {
     assert(handler != NULL && user_data != NULL);
+    s_init_calls++;
     if (s_init_result < 0) {
         return s_init_result;
     }
@@ -55,11 +63,13 @@ static int video_init(void **ctx, mybot_video_frame_handler_t handler, void *use
 
 static int video_start(void *ctx) {
     assert(ctx == &s_context);
+    s_start_calls++;
     return s_start_result;
 }
 
 static int video_stop(void *ctx) {
     assert(ctx == &s_context);
+    s_stop_calls++;
     aosl_atomic_set(&s_stop_entered, true);
     if (s_stop_result < 0) {
         return s_stop_result;
@@ -101,7 +111,8 @@ static mybot_video_ops_t s_ops = {
 static mybot_platform_descriptor_t s_platform = {.video = &s_ops};
 
 const mybot_platform_descriptor_t *mybot_platform_registry_get(void) {
-    return &s_platform;
+    s_registry_calls++;
+    return s_platform_missing ? NULL : &s_platform;
 }
 
 int mybot_agora_rtc_send_video(const mybot_video_frame_t *frame) {
@@ -114,6 +125,7 @@ int mybot_agora_rtc_send_video(const mybot_video_frame_t *frame) {
     return s_send_result;
 }
 
+#if MYBOT_ENABLE_VIDEO
 static void *encode_one_frame(void *arg) {
     (void)arg;
     assert(s_handler(&s_frame, s_user_data) == 0);
@@ -125,10 +137,40 @@ static void *stop_video(void *arg) {
     aosl_atomic_set(&s_stop_finished, true);
     return NULL;
 }
+#endif
 
 int main(void) {
     aosl_ctor();
     mybot_video_t video = {0};
+#if MYBOT_ENABLE_VIDEO
+    mybot_video_init(NULL);
+    assert(mybot_video_start(NULL) < 0);
+    assert(mybot_video_stop(NULL) == 0);
+    assert(mybot_video_destroy(NULL) < 0);
+    mybot_video_request_key_frame(NULL);
+    mybot_video_set_target_bitrate(NULL, 64000);
+    assert(s_registry_calls == 0);
+
+    s_platform_missing = true;
+    mybot_video_init(&video);
+    assert(!video.initialized && video.ops == NULL && video.ctx == NULL);
+    assert(mybot_video_start(&video) < 0);
+    assert(mybot_video_stop(&video) == 0);
+    s_platform_missing = false;
+    s_platform.video = NULL;
+    mybot_video_init(&video);
+    assert(!video.initialized && video.ops == NULL && video.ctx == NULL);
+    s_platform.video = &s_ops;
+
+    s_ops.max_bps = 0;
+    mybot_video_init(&video);
+    assert(!video.initialized && video.ops == NULL);
+    s_ops.max_bps = s_ops.min_bps - 1;
+    mybot_video_init(&video);
+    assert(!video.initialized && video.ops == NULL);
+    assert(s_init_calls == 0);
+    s_ops.max_bps = 256000;
+
     s_init_result = -1;
     mybot_video_init(&video);
     assert(!video.initialized);
@@ -139,6 +181,11 @@ int main(void) {
     mybot_video_init(&video);
     assert(video.initialized);
     assert(video.min_bps == s_ops.min_bps && video.max_bps == s_ops.max_bps);
+    int inits_before = s_init_calls;
+    int registry_calls_before = s_registry_calls;
+    mybot_video_init(&video);
+    assert(video.initialized && video.ctx == &s_context && video.ops == &s_ops);
+    assert(s_init_calls == inits_before && s_registry_calls == registry_calls_before);
     assert(s_handler(&s_frame, s_user_data) < 0);
     assert(aosl_atomic_read(&s_send_calls) == 0);
 
@@ -149,6 +196,14 @@ int main(void) {
     assert(s_key_requests == 0);
     s_start_result = 0;
     assert(mybot_video_start(&video) == 0);
+    int starts_before = s_start_calls;
+    assert(mybot_video_start(&video) == 0);
+    assert(s_start_calls == starts_before);
+    assert(mybot_video_destroy(&video) < 0 && s_destroy_calls == 0);
+    assert(video.initialized && video.ctx == &s_context && video.ops == &s_ops);
+    assert(s_handler(NULL, s_user_data) < 0);
+    assert(s_handler(&s_frame, NULL) < 0);
+    assert(aosl_atomic_read(&s_send_calls) == 0);
     mybot_video_set_target_bitrate(&video, 128000);
     mybot_video_request_key_frame(&video);
     assert(s_target_bps == 128000 && s_key_requests == 1);
@@ -169,6 +224,9 @@ int main(void) {
     assert(s_target_bps == 128000 && s_key_requests == 1);
     s_stop_result = 0;
     assert(mybot_video_stop(&video) == 0);
+    int stops_before = s_stop_calls;
+    assert(mybot_video_stop(&video) == 0);
+    assert(s_stop_calls == stops_before);
     assert(mybot_video_start(&video) == 0);
 
     /* Stop while the encoder is inside the SDK's synchronous send handler. */
@@ -189,15 +247,52 @@ int main(void) {
     assert(aosl_atomic_read(&s_stop_finished));
     assert(mybot_video_destroy(&video) == 0 && s_destroy_calls == 1);
     assert(mybot_video_destroy(&video) == 0 && s_destroy_calls == 1);
+    assert(!video.initialized && video.ctx == NULL && video.ops == NULL);
+    mybot_video_request_key_frame(&video);
+    mybot_video_set_target_bitrate(&video, 64000);
+    assert(s_target_bps == 128000 && s_key_requests == 1);
+    assert(s_handler(&s_frame, s_user_data) < 0);
 
     /* A new session may omit the optional key-frame callback. */
     s_ops.on_key_frame_request = NULL;
+    s_ops.min_bps = 0;
     mybot_video_init(&video);
+    assert(video.initialized && video.min_bps == 0 && video.max_bps == s_ops.max_bps);
     assert(mybot_video_start(&video) == 0);
     mybot_video_request_key_frame(&video);
     assert(s_key_requests == 1);
     assert(mybot_video_stop(&video) == 0);
     assert(mybot_video_destroy(&video) == 0 && s_destroy_calls == 2);
+#else
+    /* Disabled video clears initialization state and never queries the platform. */
+    video.ops = &s_ops;
+    video.ctx = &s_context;
+    video.min_bps = 32000;
+    video.max_bps = 256000;
+    aosl_atomic_set(&video.active, true);
+    aosl_atomic_set(&video.stopping, true);
+    mybot_video_init(&video);
+    assert(!video.initialized && video.ops == NULL && video.ctx == NULL);
+    assert(video.min_bps == 0 && video.max_bps == 0);
+    assert(!aosl_atomic_read(&video.active) && !aosl_atomic_read(&video.stopping));
+    assert(mybot_video_start(&video) == 0);
+    assert(mybot_video_stop(&video) == 0);
+    assert(mybot_video_destroy(&video) == 0);
+    mybot_video_request_key_frame(&video);
+    mybot_video_set_target_bitrate(&video, 64000);
+    mybot_video_init(NULL);
+    assert(mybot_video_start(NULL) == 0);
+    assert(mybot_video_stop(NULL) == 0);
+    assert(mybot_video_destroy(NULL) == 0);
+    mybot_video_request_key_frame(NULL);
+    mybot_video_set_target_bitrate(NULL, 64000);
+    assert(!video.initialized && !aosl_atomic_read(&video.active));
+    assert(s_registry_calls == 0);
+    assert(s_init_calls == 0 && s_start_calls == 0 && s_stop_calls == 0 && s_destroy_calls == 0);
+    assert(s_key_requests == 0 && s_target_bps == 0);
+    assert(s_handler == NULL && s_user_data == NULL);
+    assert(aosl_atomic_read(&s_send_calls) == 0);
+#endif
     aosl_dtor();
     puts("video_test: ok");
     return 0;

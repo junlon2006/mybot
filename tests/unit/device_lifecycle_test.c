@@ -32,6 +32,7 @@ static int s_pair_result;
 static int s_pair_call_count;
 static int s_pair_poll_after_seconds = 3;
 static bool s_disconnect_during_pair;
+static bool s_disconnect_on_pairing;
 static int s_start_result;
 static int s_binding_poll_after_seconds = 1;
 static bool s_disconnect_during_binding;
@@ -274,6 +275,9 @@ static void on_state_changed(mybot_device_state_t state, void *user_data) {
     assert(user_data == &s_lifecycle);
     s_last_state = state;
     s_state_change_count++;
+    if (s_disconnect_on_pairing && state == MYBOT_DEVICE_STATE_PAIRING) {
+        mybot_device_lifecycle_set_network_available(&s_lifecycle, false);
+    }
 }
 
 static void on_conversation_start(const mybot_device_conversation_t *params, void *user_data) {
@@ -348,6 +352,7 @@ static void provision_runtime(const mybot_device_lifecycle_callbacks_t *callback
     s_pair_result = 0;
     s_pair_poll_after_seconds = 3;
     s_disconnect_during_pair = false;
+    s_disconnect_on_pairing = false;
     s_binding_result = 0;
     strcpy(s_binding_status, "bound");
     strcpy(s_binding_token, "device-token");
@@ -557,6 +562,208 @@ static void test_repair_active_conversation(const mybot_device_lifecycle_callbac
 
     s_stop_result = 0;
     mybot_device_lifecycle_shutdown(&s_lifecycle);
+}
+
+static void test_init_config_boundaries(void) {
+    char server_base[sizeof(s_lifecycle.server_base)];
+    char device_id[sizeof(s_lifecycle.device_id)];
+    char firmware_ver[sizeof(s_lifecycle.firmware_ver)];
+    char hw_model[sizeof(s_lifecycle.hw_model)];
+    memset(server_base, 's', sizeof(server_base));
+    memset(device_id, 'd', sizeof(device_id));
+    memset(firmware_ver, 'f', sizeof(firmware_ver));
+    memset(hw_model, 'h', sizeof(hw_model));
+
+    const char *invalid_config[][4] = {
+        {"", "device-1", NULL, NULL},
+        {"http://server", "", NULL, NULL},
+        {server_base, "device-1", NULL, NULL},
+        {"http://server", device_id, NULL, NULL},
+        {"http://server", "device-1", firmware_ver, NULL},
+        {"http://server", "device-1", NULL, hw_model},
+    };
+    provision_runtime(NULL);
+    for (size_t i = 0; i < sizeof(invalid_config) / sizeof(invalid_config[0]); ++i) {
+        assert(mybot_device_lifecycle_init(&s_lifecycle, &s_kv_store, invalid_config[i][0],
+                                           invalid_config[i][1], invalid_config[i][2],
+                                           invalid_config[i][3], NULL) == -1);
+        /* Rejected configuration must not erase an existing binding or partially
+         * replace the caller-owned context. */
+        assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_RUNTIME);
+        assert(strcmp(s_lifecycle.server_base, "http://server") == 0);
+        assert(strcmp(s_lifecycle.device_id, "device-1") == 0);
+        assert(strcmp(s_lifecycle.device_token, "device-token") == 0);
+        assert(s_kv_store_present);
+    }
+
+    /* The largest NUL-terminated values fit without truncation. Optional
+     * firmware/model fields also accept empty strings. */
+    server_base[sizeof(server_base) - 1] = '\0';
+    device_id[sizeof(device_id) - 1] = '\0';
+    firmware_ver[sizeof(firmware_ver) - 1] = '\0';
+    hw_model[sizeof(hw_model) - 1] = '\0';
+    s_kv_store_present = false;
+    assert(mybot_device_lifecycle_init(&s_lifecycle, &s_kv_store, server_base, device_id,
+                                       firmware_ver, hw_model, NULL) == 0);
+    assert(strcmp(s_lifecycle.server_base, server_base) == 0);
+    assert(strcmp(s_lifecycle.device_id, device_id) == 0);
+    assert(strcmp(s_lifecycle.firmware_ver, firmware_ver) == 0);
+    assert(strcmp(s_lifecycle.hw_model, hw_model) == 0);
+    assert(mybot_device_lifecycle_init(&s_lifecycle, &s_kv_store, "http://server", "device-1", "",
+                                       "", NULL) == 0);
+    assert(s_lifecycle.firmware_ver[0] == '\0');
+    assert(s_lifecycle.hw_model[0] == '\0');
+}
+
+static void test_stop_http_rejection(const mybot_device_lifecycle_callbacks_t *callbacks) {
+    const int stop_results[] = {400, 404};
+    for (size_t i = 0; i < sizeof(stop_results) / sizeof(stop_results[0]); ++i) {
+        provision_runtime(callbacks);
+        start_conversation();
+        int stop_calls = s_stop_call_count;
+        int stop_callbacks = s_conversation_stop_count;
+        s_stop_result = stop_results[i];
+        mybot_device_lifecycle_request_stop(&s_lifecycle);
+        mybot_device_lifecycle_tick(&s_lifecycle);
+        assert(s_stop_call_count == stop_calls + 1);
+        assert(s_conversation_stop_count == stop_callbacks + 1);
+        assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_RUNTIME);
+        assert(s_lifecycle.conversation_id[0] == '\0');
+        assert(s_lifecycle.stop_retry_attempts == 0);
+        assert(s_lifecycle.stop_retry_ticks_remaining == 0);
+        assert(strcmp(s_lifecycle.device_token, "device-token") == 0);
+        assert(s_kv_store_present);
+
+        /* A terminal rejection completes local teardown while preserving the
+         * binding, and leaves no deferred stop for the next conversation. */
+        s_stop_result = 0;
+        start_conversation();
+        mybot_device_lifecycle_tick(&s_lifecycle);
+        assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION);
+        assert(s_stop_call_count == stop_calls + 1);
+        mybot_device_lifecycle_shutdown(&s_lifecycle);
+    }
+}
+
+static void test_renewal_without_callback(const mybot_device_lifecycle_callbacks_t *callbacks) {
+    mybot_device_lifecycle_callbacks_t without_renewal = *callbacks;
+    without_renewal.on_rtc_token_renewed = NULL;
+    provision_runtime(&without_renewal);
+    start_conversation();
+    int renew_calls = s_renew_call_count;
+    int renew_callbacks = s_sdk_renew_call_count;
+    int stop_calls = s_stop_call_count;
+    mybot_device_lifecycle_request_rtc_token_renewal(&s_lifecycle);
+    mybot_device_lifecycle_tick(&s_lifecycle);
+    assert(s_renew_call_count == renew_calls + 1);
+    assert(s_sdk_renew_call_count == renew_callbacks);
+    assert(s_lifecycle.rtc_token_renewal_pending);
+    assert(s_lifecycle.rtc_token_retry_ticks_remaining == 10);
+    tick_many(9);
+    assert(s_renew_call_count == renew_calls + 1);
+    mybot_device_lifecycle_tick(&s_lifecycle);
+    assert(s_renew_call_count == renew_calls + 2);
+    assert(s_lifecycle.rtc_token_retry_ticks_remaining == 20);
+
+    /* Stop takes precedence over a renewed request and the pending retry. */
+    mybot_device_lifecycle_request_rtc_token_renewal(&s_lifecycle);
+    mybot_device_lifecycle_request_stop(&s_lifecycle);
+    mybot_device_lifecycle_tick(&s_lifecycle);
+    assert(s_stop_call_count == stop_calls + 1);
+    assert(s_renew_call_count == renew_calls + 2);
+    assert(s_sdk_renew_call_count == renew_callbacks);
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_RUNTIME);
+    assert(!s_lifecycle.rtc_token_renewal_pending);
+    assert(aosl_atomic_read(&s_lifecycle.rtc_token_renewal_requested) == 0);
+    assert(s_lifecycle.rtc_token_retry_delay_ticks == 0);
+    assert(s_lifecycle.rtc_token_retry_ticks_remaining == 0);
+    assert(s_lifecycle.rtc_channel[0] == '\0');
+    assert(s_lifecycle.rtc_uid[0] == '\0');
+    assert(s_lifecycle.rtc_agent_uid[0] == '\0');
+
+    start_conversation();
+    tick_many(20);
+    assert(s_renew_call_count == renew_calls + 2);
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION);
+    mybot_device_lifecycle_shutdown(&s_lifecycle);
+}
+
+static void
+test_network_loss_before_pair_request(const mybot_device_lifecycle_callbacks_t *callbacks) {
+    provision_runtime(callbacks);
+    int pair_calls = s_pair_call_count;
+    int pair_callbacks = s_pair_code_callback_count;
+    s_disconnect_on_pairing = true;
+    mybot_device_lifecycle_request_pair(&s_lifecycle);
+    mybot_device_lifecycle_tick(&s_lifecycle);
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_UNPROVISIONED);
+    assert(s_lifecycle.pairing_requested);
+    assert(s_pair_call_count == pair_calls);
+    assert(s_pair_code_callback_count == pair_callbacks);
+    mybot_device_lifecycle_tick(&s_lifecycle);
+    tick_many(60);
+    assert(s_pair_call_count == pair_calls);
+
+    s_disconnect_on_pairing = false;
+    mybot_device_lifecycle_set_network_available(&s_lifecycle, true);
+    mybot_device_lifecycle_tick(&s_lifecycle);
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_AWAITING_CLAIM);
+    assert(s_pair_call_count == pair_calls + 1);
+    assert(s_pair_code_callback_count == pair_callbacks + 1);
+    tick_many(30);
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_RUNTIME);
+}
+
+static void test_shutdown_deferred_stop(const mybot_device_lifecycle_callbacks_t *callbacks,
+                                        bool pending_retry) {
+    provision_runtime(callbacks);
+    start_conversation();
+    int stop_calls = s_stop_call_count;
+    int stop_callbacks = s_conversation_stop_count;
+    s_stop_result = 503;
+    if (pending_retry) {
+        mybot_device_lifecycle_request_stop(&s_lifecycle);
+        mybot_device_lifecycle_tick(&s_lifecycle);
+        assert(s_lifecycle.stop_retry_ticks_remaining == 10);
+    }
+    mybot_device_lifecycle_request_rtc_token_renewal(&s_lifecycle);
+    mybot_device_lifecycle_shutdown(&s_lifecycle);
+    assert(s_stop_call_count == stop_calls + 1);
+    assert(s_conversation_stop_count == stop_callbacks + 1);
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_RUNTIME);
+    assert(s_lifecycle.conversation_id[0] == '\0');
+    assert(s_lifecycle.stop_retry_attempts == 0);
+    assert(s_lifecycle.stop_retry_ticks_remaining == 0);
+    assert(aosl_atomic_read(&s_lifecycle.stop_request) == 0);
+    assert(aosl_atomic_read(&s_lifecycle.rtc_token_renewal_requested) == 0);
+    tick_many(20);
+    mybot_device_lifecycle_shutdown(&s_lifecycle);
+    assert(s_stop_call_count == stop_calls + 1);
+    assert(s_conversation_stop_count == stop_callbacks + 1);
+}
+
+static void test_shutdown_after_network_flap(const mybot_device_lifecycle_callbacks_t *callbacks) {
+    provision_runtime(callbacks);
+    start_conversation();
+    int stop_calls = s_stop_call_count;
+    int renew_calls = s_renew_call_count;
+    int stop_callbacks = s_conversation_stop_count;
+    intptr_t generation = aosl_atomic_read(&s_lifecycle.network_generation);
+    mybot_device_lifecycle_set_network_available(&s_lifecycle, false);
+    mybot_device_lifecycle_set_network_available(&s_lifecycle, false);
+    assert(aosl_atomic_read(&s_lifecycle.network_generation) == generation + 1);
+    mybot_device_lifecycle_request_rtc_token_renewal(&s_lifecycle);
+    assert(aosl_atomic_read(&s_lifecycle.rtc_token_renewal_requested) == 0);
+    mybot_device_lifecycle_set_network_available(&s_lifecycle, true);
+    mybot_device_lifecycle_set_network_available(&s_lifecycle, true);
+    assert(aosl_atomic_read(&s_lifecycle.network_generation) == generation + 1);
+
+    /* The unconsumed loss still invalidates HTTP stop after immediate reconnect. */
+    mybot_device_lifecycle_shutdown(&s_lifecycle);
+    assert(s_stop_call_count == stop_calls);
+    assert(s_renew_call_count == renew_calls);
+    assert(s_conversation_stop_count == stop_callbacks + 1);
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_RUNTIME);
 }
 
 int main(void) {
@@ -1143,6 +1350,16 @@ int main(void) {
 
     provision_runtime(&callbacks);
     start_conversation();
+    int missing_uid_renew_calls = s_renew_call_count;
+    s_lifecycle.rtc_uid[0] = '\0';
+    mybot_device_lifecycle_request_rtc_token_renewal(&s_lifecycle);
+    mybot_device_lifecycle_tick(&s_lifecycle);
+    assert(s_renew_call_count == missing_uid_renew_calls);
+    assert(strcmp(s_last_stop_reason, MYBOT_CONVERSATION_STOP_REASON_ERROR) == 0);
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_RUNTIME);
+
+    provision_runtime(&callbacks);
+    start_conversation();
     s_renew_result = 400;
     mybot_device_lifecycle_request_rtc_token_renewal(&s_lifecycle);
     mybot_device_lifecycle_tick(&s_lifecycle);
@@ -1224,6 +1441,14 @@ int main(void) {
     mybot_device_lifecycle_tick(&s_lifecycle);
     assert(s_start_call_count + s_stop_call_count + s_renew_call_count ==
            calls_before_shutdown + 1);
+
+    test_init_config_boundaries();
+    test_stop_http_rejection(&callbacks);
+    test_renewal_without_callback(&callbacks);
+    test_network_loss_before_pair_request(&callbacks);
+    test_shutdown_deferred_stop(&callbacks, false);
+    test_shutdown_deferred_stop(&callbacks, true);
+    test_shutdown_after_network_flap(&callbacks);
 
     /* Separate caller-owned contexts no longer share lifecycle state. */
     mybot_device_lifecycle_t first = {0};

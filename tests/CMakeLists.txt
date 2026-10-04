@@ -101,6 +101,12 @@ mybot_add_test(mybot_platform_registry_test
     ../src/platform/mybot_platform.c
 )
 
+mybot_add_test(mybot_kv_store_test
+    unit/kv_store_test.c
+    ../src/platform/mybot_kv_store.c
+    ../src/platform/mybot_platform.c
+)
+
 mybot_add_test(mybot_wifi_test
     unit/wifi_provisioning_test.c
     ../src/platform/mybot_wifi.c
@@ -154,11 +160,14 @@ mybot_add_test(mybot_app_test
     ../src/support/mybot_ringbuf.c
 )
 target_link_libraries(mybot_app_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
-
-if(MYBOT_ENABLE_VIDEO)
-    mybot_add_test(mybot_video_test unit/video_test.c ../src/media/mybot_video.c)
-    target_link_libraries(mybot_video_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_definitions(mybot_app_test PRIVATE MYBOT_TEST_WRAP_APP_MPQ=1)
+    target_link_options(mybot_app_test PRIVATE
+        -Wl,--wrap=aosl_mpq_create_flags,--wrap=aosl_mpq_call,--wrap=aosl_mpq_destroy_wait)
 endif()
+
+mybot_add_test(mybot_video_test unit/video_test.c ../src/media/mybot_video.c)
+target_link_libraries(mybot_video_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 
 mybot_add_test(mybot_public_headers_test integration/public_headers_test.c)
 target_link_libraries(mybot_public_headers_test PRIVATE mybot::sdk)

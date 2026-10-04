@@ -132,6 +132,7 @@ static aosl_atomic_t s_leave_started;
 static aosl_atomic_t s_leave_returned;
 static aosl_atomic_t s_probe_fini_callback;
 static aosl_atomic_t s_fini_callback_returned;
+static aosl_atomic_t s_rtm_data_delivered;
 
 #ifdef MYBOT_TEST_WRAP_RTC_ALLOC
 typedef struct {
@@ -445,6 +446,7 @@ static void on_rtm_data(const char *rtm_uid, const void *data, size_t len, const
     snprintf(s_last_rtm_data_uid, sizeof(s_last_rtm_data_uid), "%s", rtm_uid);
     snprintf(s_last_rtm_custom_type, sizeof(s_last_rtm_custom_type), "%s",
              custom_type ? custom_type : "");
+    aosl_atomic_inc(&s_rtm_data_delivered);
 }
 
 static void on_rtm_send_data_result(const char *rtm_uid, uint32_t msg_id,
@@ -517,6 +519,9 @@ static void *error_callback_thread(void *arg) {
 typedef enum { PAYLOAD_RTM, PAYLOAD_CHANNEL, PAYLOAD_PCM } callback_payload_t;
 
 static void synchronize_rtc(void) {
+    /* The synchronous MPQ query runs after already queued vendor events and
+     * application callbacks, so their ordinary observation fields are safe
+     * to read after it returns. Producers must finish posting before this. */
     assert(mybot_agora_rtc_is_rtm_logged_in());
 }
 
@@ -635,6 +640,489 @@ static void test_callback_payload_ownership(const mybot_agora_rtc_callbacks_t *c
     assert(mybot_agora_rtc_leave() == 0);
     assert(mybot_agora_rtc_fini() == 0);
 }
+
+static void test_rtm_callback_boundaries(const mybot_agora_rtc_callbacks_t *callbacks) {
+    assert(mybot_agora_rtc_init("boundary-app", callbacks) == 0);
+    assert(mybot_agora_rtc_join("boundary-room", "token", "user") == 0);
+    join_rtm_login_thread();
+    join_rtm_subscribe_thread();
+    synchronize_rtc();
+
+    char max_uid[MYBOT_RTM_UID_MAX_LEN];
+    char oversized_uid[MYBOT_RTM_UID_MAX_LEN + 1];
+    char max_custom[33];
+    char oversized_custom[34];
+    static unsigned char payload[AGORA_RTM_DATA_MAX_LEN + 1];
+    memset(max_uid, 'u', sizeof(max_uid) - 1);
+    max_uid[sizeof(max_uid) - 1] = '\0';
+    memset(oversized_uid, 'u', sizeof(oversized_uid) - 1);
+    oversized_uid[sizeof(oversized_uid) - 1] = '\0';
+    memset(max_custom, 'c', sizeof(max_custom) - 1);
+    max_custom[sizeof(max_custom) - 1] = '\0';
+    memset(oversized_custom, 'c', sizeof(oversized_custom) - 1);
+    oversized_custom[sizeof(oversized_custom) - 1] = '\0';
+    memset(payload, 'p', sizeof(payload));
+
+    /* Both send and receive accept the complete documented limits. */
+    int sends_before = s_rtm_send_calls;
+    assert(mybot_agora_rtc_send_rtm_data(max_uid, payload, AGORA_RTM_DATA_MAX_LEN, UINT32_MAX,
+                                         max_custom) == 0);
+    assert(s_rtm_send_calls == sends_before + 1);
+    assert(s_rtm_msg_len == AGORA_RTM_DATA_MAX_LEN);
+    assert(s_rtm_msg_id == UINT32_MAX);
+    assert(strcmp(s_rtm_peer_uid, max_uid) == 0);
+    assert(strcmp(s_rtm_custom_type, max_custom) == 0);
+
+    int data_before = s_rtm_data_calls;
+    int channel_data_before = s_rtm_subscribe_data_calls;
+    s_rtm_handler.on_rtm_data(max_uid, payload, AGORA_RTM_DATA_MAX_LEN, RTM_MESSAGE_TYPE_STRING,
+                              max_custom);
+    s_rtm_handler.on_rtm_subscribe_data("boundary-room", max_uid, payload, AGORA_RTM_DATA_MAX_LEN,
+                                        RTM_MESSAGE_TYPE_STRING, max_custom);
+    synchronize_rtc();
+    assert(s_rtm_data_calls == data_before + 1);
+    assert(s_last_rtm_data_len == AGORA_RTM_DATA_MAX_LEN);
+    assert(memcmp(s_last_rtm_data, payload, AGORA_RTM_DATA_MAX_LEN) == 0);
+    assert(strcmp(s_last_rtm_data_uid, max_uid) == 0);
+    assert(s_rtm_subscribe_data_calls == channel_data_before + 1);
+    assert(s_last_rtm_subscribe_data_len == AGORA_RTM_DATA_MAX_LEN);
+    assert(memcmp(s_last_rtm_subscribe_data, payload, AGORA_RTM_DATA_MAX_LEN) == 0);
+    assert(strcmp(s_last_rtm_subscribe_uid, max_uid) == 0);
+    assert(strcmp(s_last_rtm_custom_type, max_custom) == 0);
+
+    /* Reject malformed borrowed fields without forwarding partial messages. */
+    data_before = s_rtm_data_calls;
+    channel_data_before = s_rtm_subscribe_data_calls;
+    int results_before = s_rtm_send_result_calls;
+    int events_before = s_rtm_event_calls;
+    s_rtm_handler.on_rtm_data(NULL, payload, 1, RTM_MESSAGE_TYPE_BINARY, NULL);
+    s_rtm_handler.on_rtm_data(max_uid, NULL, 1, RTM_MESSAGE_TYPE_BINARY, NULL);
+    s_rtm_handler.on_rtm_data(max_uid, payload, sizeof(payload), RTM_MESSAGE_TYPE_BINARY, NULL);
+    s_rtm_handler.on_rtm_data(oversized_uid, payload, 1, RTM_MESSAGE_TYPE_BINARY, NULL);
+    s_rtm_handler.on_rtm_data(max_uid, payload, 1, RTM_MESSAGE_TYPE_BINARY, oversized_custom);
+    s_rtm_handler.on_rtm_subscribe_data(NULL, max_uid, payload, 1, RTM_MESSAGE_TYPE_STRING, NULL);
+    s_rtm_handler.on_rtm_subscribe_data("boundary-room", NULL, payload, 1, RTM_MESSAGE_TYPE_STRING,
+                                        NULL);
+    s_rtm_handler.on_rtm_subscribe_data("boundary-room", max_uid, NULL, 1, RTM_MESSAGE_TYPE_STRING,
+                                        NULL);
+    s_rtm_handler.on_rtm_subscribe_data("boundary-room", max_uid, payload, sizeof(payload),
+                                        RTM_MESSAGE_TYPE_STRING, NULL);
+    s_rtm_handler.on_rtm_subscribe_data("boundary-room", oversized_uid, payload, 1,
+                                        RTM_MESSAGE_TYPE_STRING, NULL);
+    s_rtm_handler.on_rtm_subscribe_data("boundary-room", max_uid, payload, 1,
+                                        RTM_MESSAGE_TYPE_STRING, oversized_custom);
+    s_rtm_handler.on_rtm_subscribe_data("boundary-room", max_uid, payload, 1,
+                                        RTM_MESSAGE_TYPE_BINARY, NULL);
+    s_rtm_handler.on_rtm_send_data_result(NULL, 1, RTM_MSG_STATE_RECEIVED);
+    s_rtm_handler.on_rtm_send_data_result(oversized_uid, 1, RTM_MSG_STATE_RECEIVED);
+    s_rtm_handler.on_rtm_event(NULL, RTM_EVENT_TYPE_LOGIN, ERR_RTM_OK);
+    s_rtm_handler.on_rtm_event(NULL, RTM_EVENT_TYPE_EXIT, ERR_RTM_OK);
+    s_rtm_handler.on_rtm_event(oversized_uid, RTM_EVENT_TYPE_EXIT, ERR_RTM_OK);
+    s_rtm_handler.on_rtm_event("other-user", RTM_EVENT_TYPE_KICKOFF, ERR_RTM_FAILED);
+    /* Deliberately inject an unknown vendor event to verify it is discarded. */
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+    s_rtm_handler.on_rtm_event("user", (rtm_event_type_e)99, ERR_RTM_FAILED);
+    s_rtm_handler.on_rtm_subscribe_result(NULL, ERR_RTM_OK);
+    s_rtm_handler.on_rtm_subscribe_result("other-room", ERR_RTM_OK);
+    synchronize_rtc();
+    assert(s_rtm_data_calls == data_before);
+    assert(s_rtm_subscribe_data_calls == channel_data_before);
+    assert(s_rtm_send_result_calls == results_before);
+    assert(s_rtm_event_calls == events_before);
+
+    static const rtm_msg_state_e states[] = {RTM_MSG_STATE_INIT, RTM_MSG_STATE_UNREACHABLE,
+                                             RTM_MSG_STATE_TIMEOUT};
+    for (size_t i = 0; i < sizeof(states) / sizeof(states[0]); ++i) {
+        s_rtm_handler.on_rtm_send_data_result(max_uid, (uint32_t)i, states[i]);
+        synchronize_rtc();
+        assert(s_rtm_send_result_calls == results_before + (int)i + 1);
+        assert(s_last_rtm_message_state == (mybot_rtm_message_state_t)states[i]);
+        assert(s_last_rtm_result_msg_id == (uint32_t)i);
+        assert(strcmp(s_last_rtm_send_uid, max_uid) == 0);
+    }
+    s_rtm_handler.on_rtm_data(max_uid, payload, 1, RTM_MESSAGE_TYPE_BINARY, NULL);
+    s_rtm_handler.on_rtm_subscribe_data("boundary-room", max_uid, payload, 1,
+                                        RTM_MESSAGE_TYPE_STRING, NULL);
+    synchronize_rtc();
+    assert(s_rtm_data_calls == data_before + 1);
+    assert(s_rtm_subscribe_data_calls == channel_data_before + 1);
+    assert(s_last_rtm_custom_type[0] == '\0');
+    assert(mybot_agora_rtc_leave() == 0);
+    assert(mybot_agora_rtc_fini() == 0);
+}
+
+static void test_callback_queue_saturation(const mybot_agora_rtc_callbacks_t *callbacks) {
+    assert(mybot_agora_rtc_init("queue-app", callbacks) == 0);
+    assert(mybot_agora_rtc_join("queue-room", "token", "user") == 0);
+    join_rtm_login_thread();
+    join_rtm_subscribe_thread();
+    connection_id_t conn = s_last_conn;
+    block_payload_owner(conn);
+    int callbacks_before = s_rtm_data_calls;
+    intptr_t delivered_before = aosl_atomic_read(&s_rtm_data_delivered);
+    char payload[] = "borrowed payload";
+    const char expected[] = "borrowed payload";
+    /* The forwarding queue holds at most 1000 pending events. The owner stays
+     * blocked while borrowed payloads overflow it, so callbacks must return. */
+    const int posted = 1100;
+    for (int i = 0; i < posted; ++i) {
+        s_rtm_handler.on_rtm_data("peer", payload, sizeof(payload), RTM_MESSAGE_TYPE_BINARY, NULL);
+    }
+    memset(payload, 'x', sizeof(payload));
+    aosl_atomic_set(&s_release_state_callback, true);
+    /* Wait for two deliveries so the NONBLOCK queue has room for a barrier. */
+    for (int elapsed = 0;
+         elapsed < 1000 && aosl_atomic_read(&s_rtm_data_delivered) < delivered_before + 2;
+         ++elapsed) {
+        aosl_hal_msleep(1);
+    }
+    assert(aosl_atomic_read(&s_rtm_data_delivered) >= delivered_before + 2);
+    synchronize_rtc();
+    int accepted = s_rtm_data_calls - callbacks_before;
+    assert(accepted > 0 && accepted < posted);
+    assert(s_last_rtm_data_len == sizeof(expected));
+    assert(memcmp(s_last_rtm_data, expected, sizeof(expected)) == 0);
+    /* Dropping overflow events releases their storage and permits later work. */
+    s_rtm_handler.on_rtm_data("peer", expected, sizeof(expected), RTM_MESSAGE_TYPE_BINARY, NULL);
+    synchronize_rtc();
+    assert(s_rtm_data_calls == callbacks_before + accepted + 1);
+    assert(memcmp(s_last_rtm_data, expected, sizeof(expected)) == 0);
+    assert(mybot_agora_rtc_leave() == 0);
+    assert(mybot_agora_rtc_fini() == 0);
+}
+
+static void test_optional_callbacks(void) {
+    int states_before = s_state_calls;
+    int audio_before = s_remote_audio_calls;
+    int events_before = s_rtm_event_calls;
+    int data_before = s_rtm_data_calls;
+    int channel_data_before = s_rtm_subscribe_data_calls;
+    int subscribe_results_before = s_rtm_subscribe_result_calls;
+    int send_results_before = s_rtm_send_result_calls;
+    int token_expiries_before = s_token_expiry_calls;
+    assert(mybot_agora_rtc_init("optional-app", NULL) == 0);
+    assert(mybot_agora_rtc_login_rtm("user", NULL) == 0);
+    join_rtm_login_thread();
+    synchronize_rtc();
+    assert(s_rtm_token[0] == '\0');
+    static const char payload[] = "test";
+    s_rtm_handler.on_rtm_data("peer", payload, sizeof(payload), RTM_MESSAGE_TYPE_STRING, NULL);
+    s_rtm_handler.on_rtm_data("peer", payload, 0, RTM_MESSAGE_TYPE_STRING, NULL);
+    /* Deliberately inject an unknown wire message type. */
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+    s_rtm_handler.on_rtm_data("peer", payload, sizeof(payload), (rtm_message_type_e)99, NULL);
+    s_rtm_handler.on_rtm_send_data_result("peer", 1, RTM_MSG_STATE_RECEIVED);
+    synchronize_rtc();
+    assert(mybot_agora_rtc_join("optional-room", "", "user") == 0);
+    join_rtm_subscribe_thread();
+    synchronize_rtc();
+    connection_id_t conn = s_last_conn;
+    s_handler.on_join_channel_success(conn, 42, 0);
+    static unsigned char audio[RTC_REMOTE_PCM_FRAME_BYTES];
+    const audio_frame_info_t info = {.data_type = AUDIO_DATA_TYPE_PCM};
+    s_handler.on_audio_data(conn, 7, 0, audio, sizeof(audio), &info);
+    s_handler.on_token_privilege_will_expire(conn, NULL);
+    s_rtm_handler.on_rtm_subscribe_data("optional-room", "peer", payload, sizeof(payload),
+                                        RTM_MESSAGE_TYPE_STRING, NULL);
+    s_rtm_handler.on_rtm_subscribe_data("optional-room", "peer", payload, 0,
+                                        RTM_MESSAGE_TYPE_STRING, NULL);
+#if MYBOT_ENABLE_VIDEO
+    s_handler.on_target_bitrate_changed(conn, 96000);
+    s_handler.on_key_frame_gen_req(conn, 7, VIDEO_STREAM_HIGH);
+#endif
+    synchronize_rtc();
+    /* A failed subscription event disables channel delivery until success. */
+    s_rtm_handler.on_rtm_subscribe_result("optional-room", ERR_RTM_FAILED);
+    synchronize_rtc();
+    s_rtm_handler.on_rtm_subscribe_data("optional-room", "peer", payload, sizeof(payload),
+                                        RTM_MESSAGE_TYPE_STRING, NULL);
+    synchronize_rtc();
+    s_rtm_handler.on_rtm_subscribe_result("optional-room", ERR_RTM_OK);
+    synchronize_rtc();
+    int logouts_before = s_rtm_logout_calls;
+    assert(mybot_agora_rtc_leave() == 0);
+    /* Explicit login survives RTC leave and still accepts point-to-point sends. */
+    synchronize_rtc();
+    assert(s_rtm_logout_calls == logouts_before);
+    assert(mybot_agora_rtc_send_rtm_data("peer", payload, sizeof(payload), 1, NULL) == 0);
+
+    s_rtm_handler.on_rtm_event("user", RTM_EVENT_TYPE_EXIT, ERR_RTM_FAILED);
+    assert(!mybot_agora_rtc_is_rtm_logged_in());
+    assert(mybot_agora_rtc_login_rtm("user", "") == 0);
+    join_rtm_login_thread();
+    synchronize_rtc();
+    assert(s_rtm_token[0] == '\0');
+    s_rtm_handler.on_rtm_event("user", RTM_EVENT_TYPE_EXIT, ERR_RTM_OK);
+    assert(!mybot_agora_rtc_is_rtm_logged_in());
+    assert(s_state_calls == states_before);
+    assert(s_remote_audio_calls == audio_before);
+    assert(s_rtm_event_calls == events_before);
+    assert(s_rtm_data_calls == data_before);
+    assert(s_rtm_subscribe_data_calls == channel_data_before);
+    assert(s_rtm_subscribe_result_calls == subscribe_results_before);
+    assert(s_rtm_send_result_calls == send_results_before);
+    assert(s_token_expiry_calls == token_expiries_before);
+    assert(mybot_agora_rtc_fini() == 0);
+}
+
+static void test_stale_connection_callbacks(const mybot_agora_rtc_callbacks_t *callbacks) {
+    assert(mybot_agora_rtc_init("stale-app", callbacks) == 0);
+    assert(mybot_agora_rtc_join("stale-room", "token", "user") == 0);
+    join_rtm_login_thread();
+    join_rtm_subscribe_thread();
+    connection_id_t active = s_last_conn;
+    s_handler.on_join_channel_success(active, 42, 0);
+    synchronize_rtc();
+    int states_before = s_state_calls;
+    int audio_before = s_remote_audio_calls;
+    int token_expiries_before = s_token_expiry_calls;
+    connection_id_t stale = active + 100;
+    user_info_t user = {.uid = 7};
+    snprintf(user.user_account, sizeof(user.user_account), "%s", "remote-user");
+    static unsigned char audio[RTC_REMOTE_PCM_FRAME_BYTES];
+    const audio_frame_info_t info = {.data_type = AUDIO_DATA_TYPE_PCM};
+    s_handler.on_reconnecting(stale);
+    s_handler.on_connection_lost(stale);
+    s_handler.on_rejoin_channel_success(stale, 42, 0);
+    s_handler.on_user_joined_with_user_account(stale, &user, 0);
+    s_handler.on_user_offline_with_user_account(stale, &user, 0);
+    s_handler.on_error(stale, -1, "stale");
+    s_handler.on_license_validation_failure(stale, 1);
+    s_handler.on_token_privilege_will_expire(stale, NULL);
+    s_handler.on_audio_data(stale, 7, 0, audio, sizeof(audio), &info);
+    s_handler.on_audio_data(active, 7, 0, NULL, sizeof(audio), &info);
+    s_handler.on_audio_data(active, 7, 0, audio, 0, &info);
+    /* Duplicate connection success must not repeat the application state event. */
+    s_handler.on_join_channel_success(active, 42, 0);
+#if MYBOT_ENABLE_VIDEO
+    int key_frames_before = s_video_key_frame_requests;
+    uint32_t bitrate_before = s_video_target_bitrate;
+    s_handler.on_target_bitrate_changed(stale, 77777);
+    s_handler.on_key_frame_gen_req(stale, 7, VIDEO_STREAM_HIGH);
+    s_handler.on_key_frame_gen_req(active, 7, VIDEO_STREAM_LOW);
+#endif
+    synchronize_rtc();
+    assert(s_state_calls == states_before);
+    assert(s_last_state == MYBOT_RTC_STATE_CONNECTED);
+    assert(s_remote_audio_calls == audio_before);
+    assert(s_token_expiry_calls == token_expiries_before);
+#if MYBOT_ENABLE_VIDEO
+    assert(s_video_key_frame_requests == key_frames_before);
+    assert(s_video_target_bitrate == bitrate_before);
+#endif
+    assert(mybot_agora_rtc_leave() == 0);
+    assert(mybot_agora_rtc_fini() == 0);
+    states_before = s_state_calls;
+    s_handler.on_join_channel_success(active, 42, 0);
+    s_handler.on_audio_data(active, 7, 0, audio, sizeof(audio), &info);
+    s_rtm_handler.on_rtm_event("user", RTM_EVENT_TYPE_EXIT, ERR_RTM_OK);
+    s_rtm_handler.on_rtm_data("peer", audio, 1, RTM_MESSAGE_TYPE_BINARY, NULL);
+    s_rtm_handler.on_rtm_subscribe_result("stale-room", ERR_RTM_OK);
+    s_rtm_handler.on_rtm_subscribe_data("stale-room", "peer", audio, 1, RTM_MESSAGE_TYPE_STRING,
+                                        NULL);
+    s_rtm_handler.on_rtm_send_data_result("peer", 1, RTM_MSG_STATE_RECEIVED);
+#if MYBOT_ENABLE_VIDEO
+    s_handler.on_target_bitrate_changed(active, 77777);
+    s_handler.on_key_frame_gen_req(active, 7, VIDEO_STREAM_HIGH);
+#endif
+    assert(s_state_calls == states_before);
+    assert(s_remote_audio_calls == audio_before);
+    assert(!mybot_agora_rtc_is_rtm_logged_in());
+    assert(mybot_agora_rtc_login_rtm("user", NULL) < 0);
+    assert(mybot_agora_rtc_logout_rtm() < 0);
+    assert(mybot_agora_rtc_join("room", NULL, "user") < 0);
+    assert(mybot_agora_rtc_send_audio(audio, sizeof(audio)) < 0);
+    assert(mybot_agora_rtc_send_rtm_data("peer", audio, 1, 1, NULL) < 0);
+    assert(mybot_agora_rtc_renew_token("token") < 0);
+    assert(mybot_agora_rtc_fini() == 0);
+}
+
+static void test_fini_cleanup_failures(const mybot_agora_rtc_callbacks_t *callbacks) {
+    for (int fault = 0; fault < 2; ++fault) {
+        assert(mybot_agora_rtc_init("fini-app", callbacks) == 0);
+        assert(mybot_agora_rtc_join("fini-room", "token", "user") == 0);
+        join_rtm_login_thread();
+        join_rtm_subscribe_thread();
+        int finis_before = s_fini_calls;
+        int destroys_before = s_destroy_calls;
+        int logouts_before = s_rtm_logout_calls;
+        s_leave_result = fault == 0 ? -1 : 0;
+        s_rtm_logout_result = fault == 1 ? -1 : 0;
+        assert(mybot_agora_rtc_fini() < 0);
+        assert(s_fini_calls == finis_before + 1);
+        assert(s_destroy_calls == destroys_before + 1);
+        assert(s_rtm_logout_calls == logouts_before + 1);
+        assert(s_destroy_seq < s_fini_seq);
+        assert(!mybot_agora_rtc_is_rtm_logged_in());
+        s_leave_result = 0;
+        s_rtm_logout_result = 0;
+        assert(mybot_agora_rtc_fini() == 0);
+        assert(s_fini_calls == finis_before + 1);
+    }
+    /* An invalid initialization still creates an owner queue, but no vendor service. */
+    int finis_before = s_fini_calls;
+    assert(mybot_agora_rtc_init(NULL, NULL) < 0);
+    assert(mybot_agora_rtc_fini() == 0);
+    assert(s_fini_calls == finis_before);
+}
+
+#ifdef MYBOT_TEST_WRAP_RTC_ALLOC
+static void test_notification_allocation_failures(const mybot_agora_rtc_callbacks_t *callbacks) {
+    assert(mybot_agora_rtc_init("notification-app", callbacks) == 0);
+    assert(mybot_agora_rtc_join("notification-room", "token", "user") == 0);
+    join_rtm_login_thread();
+    join_rtm_subscribe_thread();
+    connection_id_t conn = s_last_conn;
+    s_handler.on_join_channel_success(conn, 42, 0);
+    synchronize_rtc();
+    int states_before = s_state_calls;
+    int events_before = s_rtm_event_calls;
+    int send_results_before = s_rtm_send_result_calls;
+    int subscribe_results_before = s_rtm_subscribe_result_calls;
+    int token_expiries_before = s_token_expiry_calls;
+    user_info_t user = {.uid = 7};
+    snprintf(user.user_account, sizeof(user.user_account), "%s", "remote-user");
+#if MYBOT_ENABLE_VIDEO
+    int key_frames_before = s_video_key_frame_requests;
+    uint32_t bitrate_before = s_video_target_bitrate;
+    const int notification_count = 14;
+#else
+    const int notification_count = 12;
+#endif
+    for (int kind = 0; kind < notification_count; ++kind) {
+        callback_allocation_fault_t fault = {.fail_at = 1};
+        assert(pthread_setspecific(s_allocation_fault_key, &fault) == 0);
+        switch (kind) {
+        case 0:
+            s_handler.on_join_channel_success(conn, 42, 0);
+            break;
+        case 1:
+            s_handler.on_reconnecting(conn);
+            break;
+        case 2:
+            s_handler.on_connection_lost(conn);
+            break;
+        case 3:
+            s_handler.on_rejoin_channel_success(conn, 42, 0);
+            break;
+        case 4:
+            s_handler.on_user_joined_with_user_account(conn, &user, 0);
+            break;
+        case 5:
+            s_handler.on_user_offline_with_user_account(conn, &user, 0);
+            break;
+        case 6:
+            s_handler.on_error(conn, -1, "allocation-failure");
+            break;
+        case 7:
+            s_handler.on_license_validation_failure(conn, 1);
+            break;
+        case 8:
+            s_handler.on_token_privilege_will_expire(conn, NULL);
+            break;
+        case 9:
+            s_rtm_handler.on_rtm_event("user", RTM_EVENT_TYPE_LOGIN, ERR_RTM_OK);
+            break;
+        case 10:
+            s_rtm_handler.on_rtm_send_data_result("peer", 1, RTM_MSG_STATE_RECEIVED);
+            break;
+        case 11:
+            s_rtm_handler.on_rtm_subscribe_result("notification-room", ERR_RTM_OK);
+            break;
+#if MYBOT_ENABLE_VIDEO
+        case 12:
+            s_handler.on_target_bitrate_changed(conn, 77777);
+            break;
+        case 13:
+            s_handler.on_key_frame_gen_req(conn, 7, VIDEO_STREAM_HIGH);
+            break;
+#endif
+        default:
+            assert(false);
+        }
+        assert(pthread_setspecific(s_allocation_fault_key, NULL) == 0);
+        assert(fault.failed);
+        synchronize_rtc();
+        assert(s_state_calls == states_before);
+        assert(s_last_state == MYBOT_RTC_STATE_CONNECTED);
+        assert(s_rtm_event_calls == events_before);
+        assert(s_rtm_send_result_calls == send_results_before);
+        assert(s_rtm_subscribe_result_calls == subscribe_results_before);
+        assert(s_token_expiry_calls == token_expiries_before);
+#if MYBOT_ENABLE_VIDEO
+        assert(s_video_key_frame_requests == key_frames_before);
+        assert(s_video_target_bitrate == bitrate_before);
+#endif
+    }
+    /* A dropped notification does not prevent later notifications or media. */
+    s_handler.on_reconnecting(conn);
+    synchronize_rtc();
+    assert(s_last_state == MYBOT_RTC_STATE_RECONNECTING);
+    s_handler.on_rejoin_channel_success(conn, 42, 0);
+    s_handler.on_token_privilege_will_expire(conn, NULL);
+    s_rtm_handler.on_rtm_send_data_result("peer", 1, RTM_MSG_STATE_RECEIVED);
+    synchronize_rtc();
+    assert(s_last_state == MYBOT_RTC_STATE_CONNECTED);
+    assert(s_state_calls == states_before + 2);
+    assert(s_token_expiry_calls == token_expiries_before + 1);
+    assert(s_rtm_send_result_calls == send_results_before + 1);
+    assert(mybot_agora_rtc_leave() == 0);
+    assert(mybot_agora_rtc_fini() == 0);
+}
+#endif
+
+#if MYBOT_ENABLE_VIDEO
+static void test_video_boundaries(const mybot_agora_rtc_callbacks_t *callbacks) {
+    assert(mybot_agora_rtc_init("video-app", callbacks) == 0);
+    int logins_before = s_rtm_login_calls;
+    assert((mybot_agora_rtc_join)("video-room", "token", "user", 0, 0) < 0);
+    assert((mybot_agora_rtc_join)("video-room", "token", "user", 2, 1) < 0);
+    assert(s_rtm_login_calls == logins_before);
+    assert((mybot_agora_rtc_join)("video-room", "token", "user", 0, UINT32_MAX) == 0);
+    join_rtm_login_thread();
+    join_rtm_subscribe_thread();
+    assert(s_last_bwe_min_bps == 0);
+    assert(s_last_bwe_max_bps == UINT32_MAX);
+    assert(s_last_bwe_start_bps == UINT32_MAX / 2U);
+    unsigned char payload[] = {0, 0, 0, 1, 0x26};
+    mybot_video_frame_t frame = {
+        .data = payload, .len = sizeof(payload), .codec = MYBOT_VIDEO_CODEC_H264};
+    int sends_before = s_send_calls;
+    assert(mybot_agora_rtc_send_video(&frame) < 0);
+    s_handler.on_join_channel_success(s_last_conn, 42, 0);
+    synchronize_rtc();
+    assert(mybot_agora_rtc_send_video(NULL) < 0);
+    frame.data = NULL;
+    assert(mybot_agora_rtc_send_video(&frame) < 0);
+    frame.data = payload;
+    frame.len = 0;
+    assert(mybot_agora_rtc_send_video(&frame) < 0);
+    frame.len = MYBOT_VIDEO_MAX_FRAME_BYTES + 1U;
+    assert(mybot_agora_rtc_send_video(&frame) < 0);
+    frame.len = sizeof(payload);
+    frame.codec = (mybot_video_codec_t)99;
+    assert(mybot_agora_rtc_send_video(&frame) < 0);
+    assert(s_send_calls == sends_before);
+    frame.codec = MYBOT_VIDEO_CODEC_H264;
+    assert(mybot_agora_rtc_send_video(&frame) == 0);
+    assert(s_last_video_info.data_type == VIDEO_DATA_TYPE_H264);
+    assert(s_last_video_info.stream_type == VIDEO_STREAM_HIGH);
+    assert(s_last_send_len == sizeof(payload));
+    frame.codec = MYBOT_VIDEO_CODEC_H265;
+    assert(mybot_agora_rtc_send_video(&frame) == 0);
+    assert(s_last_video_info.data_type == VIDEO_DATA_TYPE_H265);
+    s_send_result = -1;
+    assert(mybot_agora_rtc_send_video(&frame) < 0);
+    s_send_result = 0;
+    assert(s_send_calls == sends_before + 3);
+    assert(mybot_agora_rtc_leave() == 0);
+    sends_before = s_send_calls;
+    assert(mybot_agora_rtc_send_video(&frame) < 0);
+    assert(s_send_calls == sends_before);
+    assert(mybot_agora_rtc_fini() == 0);
+    assert(mybot_agora_rtc_send_video(&frame) < 0);
+}
+#endif
 
 int main(void) {
 #ifdef MYBOT_TEST_WRAP_RTC_ALLOC
@@ -777,14 +1265,14 @@ int main(void) {
     assert(s_rtm_handler.on_rtm_data != NULL);
     s_rtm_handler.on_rtm_data("agent-uid", rtm_payload, sizeof(rtm_payload) - 1,
                               RTM_MESSAGE_TYPE_STRING, "json");
-    aosl_hal_msleep(10);
+    synchronize_rtc();
     assert(s_rtm_data_calls == 1);
     assert(strcmp(s_last_rtm_data_uid, "agent-uid") == 0);
     assert(s_last_rtm_data_len == sizeof(rtm_payload) - 1);
     assert(strcmp(s_last_rtm_custom_type, "json") == 0);
     assert(s_rtm_handler.on_rtm_send_data_result != NULL);
     s_rtm_handler.on_rtm_send_data_result("agent-uid", 7, RTM_MSG_STATE_RECEIVED);
-    aosl_hal_msleep(10);
+    synchronize_rtc();
     assert(s_rtm_send_result_calls == 1);
     assert(strcmp(s_last_rtm_send_uid, "agent-uid") == 0);
     assert(s_last_rtm_result_msg_id == 7);
@@ -919,6 +1407,9 @@ int main(void) {
     int rtm_logins_before_join = s_rtm_login_calls;
     s_bwe_result = -1;
     assert(mybot_agora_rtc_join("room", "token", "user") == 0);
+    join_rtm_login_thread();
+    join_rtm_subscribe_thread();
+    synchronize_rtc();
     assert(s_rtm_login_calls == rtm_logins_before_join + 1);
     assert(strcmp(s_rtm_uid, "user") == 0);
     assert(strcmp(s_rtm_token, "token") == 0);
@@ -946,21 +1437,17 @@ int main(void) {
     assert(!s_join_options.auto_subscribe_video);
     s_handler.on_target_bitrate_changed(first_conn, 123456);
     s_handler.on_key_frame_gen_req(first_conn, 42, VIDEO_STREAM_HIGH);
-    for (int elapsed = 0;
-         elapsed < 500 && (s_video_target_bitrate != 123456 || s_video_key_frame_requests != 1);
-         ++elapsed) {
-        aosl_hal_msleep(1);
-    }
+    synchronize_rtc();
     assert(s_video_target_bitrate == 123456);
     assert(s_video_key_frame_requests == 1);
 #endif
 
     int states_before_wrong_conn = s_state_calls;
     s_handler.on_join_channel_success(first_conn + 100, 42, 0);
-    aosl_hal_msleep(10);
+    synchronize_rtc();
     assert(s_state_calls == states_before_wrong_conn);
     s_handler.on_join_channel_success(first_conn, 42, 10);
-    aosl_hal_msleep(10);
+    synchronize_rtc();
     assert(s_last_state == MYBOT_RTC_STATE_CONNECTED);
 #if MYBOT_ENABLE_VIDEO
     unsigned char video_data[] = {0xff, 0xd8, 0xff, 0xd9};
@@ -978,24 +1465,24 @@ int main(void) {
     assert(s_last_video_info.rotation == VIDEO_ORIENTATION_0);
 #endif
     s_handler.on_reconnecting(first_conn);
-    aosl_hal_msleep(10);
+    synchronize_rtc();
     assert(s_last_state == MYBOT_RTC_STATE_RECONNECTING);
     s_handler.on_connection_lost(first_conn);
-    aosl_hal_msleep(10);
+    synchronize_rtc();
     assert(s_last_state == MYBOT_RTC_STATE_DISCONNECTED);
     assert(mybot_agora_rtc_send_audio(pcm_frame, sizeof(pcm_frame)) < 0);
     s_handler.on_rejoin_channel_success(first_conn, 42, 10);
-    aosl_hal_msleep(10);
+    synchronize_rtc();
     assert(s_last_state == MYBOT_RTC_STATE_CONNECTED);
 
     int channel_data_before_wrong_channel = s_rtm_subscribe_data_calls;
     s_rtm_handler.on_rtm_subscribe_data("other-room", "agent-uid", rtm_payload,
                                         sizeof(rtm_payload) - 1, RTM_MESSAGE_TYPE_STRING, "json");
-    aosl_hal_msleep(10);
+    synchronize_rtc();
     assert(s_rtm_subscribe_data_calls == channel_data_before_wrong_channel);
     s_rtm_handler.on_rtm_subscribe_data("room", "agent-uid", rtm_payload, sizeof(rtm_payload) - 1,
                                         RTM_MESSAGE_TYPE_STRING, "json");
-    aosl_hal_msleep(10);
+    synchronize_rtc();
     assert(s_rtm_subscribe_data_calls == channel_data_before_wrong_channel + 1);
     assert(strcmp(s_last_rtm_subscribe_channel, "room") == 0);
     assert(strcmp(s_last_rtm_subscribe_uid, "agent-uid") == 0);
@@ -1009,19 +1496,19 @@ int main(void) {
     s_handler.on_user_offline_with_user_account(first_conn, NULL, 0);
     s_handler.on_user_offline_with_user_account(first_conn, &user, 0);
     s_handler.on_error(first_conn, -1, NULL);
-    aosl_hal_msleep(10);
+    synchronize_rtc();
     assert(s_last_state == MYBOT_RTC_STATE_ERROR);
     s_handler.on_join_channel_success(first_conn, 42, 0);
-    aosl_hal_msleep(10);
+    synchronize_rtc();
     int states_before_global_error = s_state_calls;
     s_handler.on_error(CONNECTION_ID_ALL, -1, "global");
-    aosl_hal_msleep(10);
+    synchronize_rtc();
     assert(s_state_calls == states_before_global_error);
     s_handler.on_license_validation_failure(first_conn, 1);
-    aosl_hal_msleep(10);
+    synchronize_rtc();
     assert(s_last_state == MYBOT_RTC_STATE_ERROR);
     s_handler.on_join_channel_success(first_conn, 42, 0);
-    aosl_hal_msleep(10);
+    synchronize_rtc();
     s_handler.on_token_privilege_will_expire(first_conn, "old-token");
     audio_frame_info_t pcm_info = {.data_type = AUDIO_DATA_TYPE_PCM};
     unsigned char pcm_data[RTC_REMOTE_PCM_FRAME_BYTES] = {0};
@@ -1034,12 +1521,10 @@ int main(void) {
     s_handler.on_audio_data(first_conn, 7, 0, pcm_data, sizeof(pcm_data) - 2, &pcm_info);
     s_handler.on_audio_data(first_conn, 7, 0, oversized_pcm_data, sizeof(oversized_pcm_data),
                             &pcm_info);
+    synchronize_rtc();
     assert(s_remote_audio_calls == audio_before_invalid);
     s_handler.on_audio_data(first_conn, 7, 0, pcm_data, sizeof(pcm_data), &pcm_info);
-    for (int elapsed = 0; elapsed < 100 && s_remote_audio_calls == audio_before_invalid;
-         ++elapsed) {
-        aosl_hal_msleep(1);
-    }
+    synchronize_rtc();
     assert(s_token_expiry_calls == 1);
     assert(s_remote_audio_calls == audio_before_invalid + 1);
 
@@ -1101,7 +1586,7 @@ int main(void) {
     s_handler.on_audio_data(first_conn, 7, 0, pcm_data, sizeof(pcm_data), &pcm_info);
     s_rtm_handler.on_rtm_subscribe_data("room", "agent-uid", rtm_payload, sizeof(rtm_payload) - 1,
                                         RTM_MESSAGE_TYPE_STRING, "json");
-    aosl_hal_msleep(10);
+    assert(!mybot_agora_rtc_is_rtm_logged_in());
     assert(s_state_calls == state_after_leave);
     assert(s_remote_audio_calls == audio_after_leave);
     assert(s_rtm_subscribe_data_calls == channel_data_after_leave);
@@ -1113,6 +1598,9 @@ int main(void) {
     connection_id_t second_conn = s_last_conn;
     assert(second_conn != first_conn);
     s_handler.on_join_channel_success(second_conn, 42, 0);
+    join_rtm_login_thread();
+    join_rtm_subscribe_thread();
+    synchronize_rtc();
 
     aosl_atomic_set(&s_block_state_callback, true);
     aosl_atomic_set(&s_state_callback_entered, false);
@@ -1195,6 +1683,17 @@ int main(void) {
     assert(s_fini_calls == fini_calls_before_retry + 1);
 
     test_callback_payload_ownership(&callbacks);
+    test_rtm_callback_boundaries(&callbacks);
+    test_callback_queue_saturation(&callbacks);
+    test_optional_callbacks();
+    test_stale_connection_callbacks(&callbacks);
+    test_fini_cleanup_failures(&callbacks);
+#ifdef MYBOT_TEST_WRAP_RTC_ALLOC
+    test_notification_allocation_failures(&callbacks);
+#endif
+#if MYBOT_ENABLE_VIDEO
+    test_video_boundaries(&callbacks);
+#endif
 
     join_rtm_login_thread();
     join_rtm_subscribe_thread();

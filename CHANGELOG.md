@@ -6,11 +6,17 @@ This project follows Semantic Versioning.
 
 ### Added
 
+- Expand unit coverage for protocol boundaries, allocation failures, callback ownership,
+  partial-start cleanup and recovery, including a standalone KV facade test and video-disabled
+  lifecycle checks.
 - Add a repeatable release script to package an explicit tag from main with its pinned AOSL
   sources, generate SHA-256 checksums, and verify the corresponding GitHub Release assets.
 
 ### Fixed
 
+- Avoid overflow when combining JSON fractional scale with extreme negative exponents,
+  reject non-finite or unrepresentable numbers before integer conversion, and preserve
+  signed 64-bit integer values when printing JSON.
 - Discard pending conversation-start requests when re-pairing begins. Starting a conversation
   after the new binding is claimed requires a fresh trigger, even after pair-code retries.
 - Use all available HTTP receive-buffer space at the 32 KiB allocation limit, avoiding early

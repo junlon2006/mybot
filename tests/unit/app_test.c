@@ -30,6 +30,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -90,6 +91,25 @@ static int s_start_thread_result;
 static bool s_kv_init_fails;
 static int s_rtc_init_result;
 static int s_rtc_join_result;
+static bool s_lcd_init_fails;
+enum {
+    SERVICE_FAIL_NONE,
+    SERVICE_FAIL_KEY_INIT,
+    SERVICE_FAIL_CAPTURE_INIT,
+    SERVICE_FAIL_CAPTURE_START,
+    SERVICE_FAIL_PLAYBACK_INIT,
+    SERVICE_FAIL_PLAYBACK_START,
+    SERVICE_FAIL_DEVICE_INIT,
+};
+static int s_service_failure;
+#if MYBOT_TEST_WRAP_APP_MPQ
+static bool s_control_create_fails;
+static bool s_control_call_fails;
+static bool s_control_destroy_fails;
+static const char *s_media_create_failure;
+static aosl_mpq_t s_wrapped_control_mpq = AOSL_MPQ_INVALID;
+static int s_control_destroy_failures;
+#endif
 
 static mybot_agora_rtc_callbacks_t s_rtc_callbacks;
 static bool s_rtc_initialized;
@@ -282,6 +302,51 @@ static void mock_unlock(void) {
     assert(pthread_mutex_unlock(&s_lock) == 0);
 }
 
+#if MYBOT_TEST_WRAP_APP_MPQ
+aosl_mpq_t __real_aosl_mpq_create_flags(int flags, int pri, int stack_size, int max,
+                                        const char *name, aosl_mpq_init_t init,
+                                        aosl_mpq_fini_t fini, void *arg);
+int __real_aosl_mpq_destroy_wait(aosl_mpq_t mpq);
+
+aosl_mpq_t __wrap_aosl_mpq_create_flags(int flags, int pri, int stack_size, int max,
+                                        const char *name, aosl_mpq_init_t init,
+                                        aosl_mpq_fini_t fini, void *arg) {
+    bool control = name && strcmp(name, "control_mpq") == 0;
+    if (control && s_control_create_fails) {
+        return AOSL_MPQ_INVALID;
+    }
+    if (s_media_create_failure && name && strcmp(name, s_media_create_failure) == 0) {
+        return AOSL_MPQ_INVALID;
+    }
+    aosl_mpq_t mpq =
+        __real_aosl_mpq_create_flags(flags, pri, stack_size, max, name, init, fini, arg);
+    if (control) {
+        s_wrapped_control_mpq = mpq;
+    }
+    return mpq;
+}
+
+int __wrap_aosl_mpq_call(aosl_mpq_t mpq, aosl_ref_t ref, const char *name,
+                         aosl_mpq_func_argv_t func, uintptr_t argc, ...) {
+    if (name && strcmp(name, "handle_control_start") == 0 && s_control_call_fails) {
+        return -1;
+    }
+    va_list args;
+    va_start(args, argc);
+    int result = aosl_mpq_call_args(mpq, ref, name, func, argc, args);
+    va_end(args);
+    return result;
+}
+
+int __wrap_aosl_mpq_destroy_wait(aosl_mpq_t mpq) {
+    if (mpq == s_wrapped_control_mpq && s_control_destroy_fails) {
+        s_control_destroy_failures++;
+        return -1;
+    }
+    return __real_aosl_mpq_destroy_wait(mpq);
+}
+#endif
+
 static void observe_control_thread(unsigned int observation) {
     pthread_t current = pthread_self();
 
@@ -364,6 +429,16 @@ static void wait_for_io_stop(bool *block_requested, bool *blocked, bool *started
 static bool wait_for_app_state(mybot_state_t expected, int timeout_ms) {
     for (int elapsed = 0; elapsed < timeout_ms; elapsed++) {
         if (mybot_get_state() == expected) {
+            return true;
+        }
+        aosl_hal_msleep(1);
+    }
+    return false;
+}
+
+static bool wait_for_runtime_exit(int timeout_ms) {
+    for (int elapsed = 0; elapsed < timeout_ms; ++elapsed) {
+        if (!mybot_is_running()) {
             return true;
         }
         aosl_hal_msleep(1);
@@ -580,7 +655,7 @@ bool mybot_lcd_is_registered(void) {
 
 int mybot_lcd_init(mybot_lcd_t *lcd) {
     assert(lcd != NULL);
-    return 0;
+    return s_lcd_init_fails ? -1 : 0;
 }
 
 int mybot_lcd_show_screen(mybot_lcd_t *lcd, mybot_lcd_screen_t screen) {
@@ -633,8 +708,9 @@ int mybot_key_init(mybot_key_t *key, mybot_key_event_handler_t handler, void *us
     s_key_handler = handler;
     s_key_user_data = user_data;
     s_key_init_calls++;
+    bool fails = s_service_failure == SERVICE_FAIL_KEY_INIT;
     mock_unlock();
-    return 0;
+    return fails ? -1 : 0;
 }
 
 void mybot_key_deinit(mybot_key_t *key) {
@@ -705,20 +781,24 @@ static int capture_init(void **ctx, int rate, int channels, int bits) {
     assert(channels == TEST_CHANNELS);
     assert(bits == TEST_BITS_PER_SAMPLE);
     observe_control_thread(CONTROL_OBS_CAPTURE_INIT);
-    *ctx = &s_capture_context;
     mock_lock();
     s_capture_init_calls++;
+    bool fails = s_service_failure == SERVICE_FAIL_CAPTURE_INIT;
     mock_unlock();
-    return 0;
+    if (!fails) {
+        *ctx = &s_capture_context;
+    }
+    return fails ? -1 : 0;
 }
 
 static int capture_start(void *ctx) {
     assert(ctx == &s_capture_context);
     mock_lock();
-    s_capture_started = true;
+    bool fails = s_service_failure == SERVICE_FAIL_CAPTURE_START;
+    s_capture_started = !fails;
     s_capture_start_calls++;
     mock_unlock();
-    return 0;
+    return fails ? -1 : 0;
 }
 
 static int capture_read(void *ctx, void *buf, int frames) {
@@ -765,20 +845,24 @@ static int playback_init(void **ctx, int rate, int channels, int bits) {
     assert(channels == TEST_CHANNELS);
     assert(bits == TEST_BITS_PER_SAMPLE);
     observe_control_thread(CONTROL_OBS_PLAYBACK_INIT);
-    *ctx = &s_playback_context;
     mock_lock();
     s_playback_init_calls++;
+    bool fails = s_service_failure == SERVICE_FAIL_PLAYBACK_INIT;
     mock_unlock();
-    return 0;
+    if (!fails) {
+        *ctx = &s_playback_context;
+    }
+    return fails ? -1 : 0;
 }
 
 static int playback_start(void *ctx) {
     assert(ctx == &s_playback_context);
     mock_lock();
-    s_playback_started = true;
+    bool fails = s_service_failure == SERVICE_FAIL_PLAYBACK_START;
+    s_playback_started = !fails;
     s_playback_start_calls++;
     mock_unlock();
-    return 0;
+    return fails ? -1 : 0;
 }
 
 static int playback_write(void *ctx, const void *buf, int frames) {
@@ -838,6 +922,9 @@ static const mybot_audio_playback_ops_t s_playback_ops = {
 };
 
 void mybot_audio_context_init(mybot_audio_t *audio) {
+    if (!audio) {
+        return;
+    }
     memset(audio, 0, sizeof(*audio));
     audio->capture_ops = &s_capture_ops;
     audio->playback_ops = &s_playback_ops;
@@ -978,6 +1065,9 @@ int mybot_device_lifecycle_init(mybot_device_lifecycle_t *lifecycle, mybot_kv_st
     (void)hw_model;
     assert(callbacks != NULL);
     observe_control_thread(CONTROL_OBS_DEVICE_INIT);
+    if (read_counter(&s_service_failure) == SERVICE_FAIL_DEVICE_INIT) {
+        return -1;
+    }
     mock_lock();
     s_device_lifecycle = lifecycle;
     s_device_callbacks = *callbacks;
@@ -1535,6 +1625,118 @@ static void test_control_queue_saturation(const mybot_config_t *config) {
     aosl_set_log_level(previous_log_level);
 }
 
+static void test_service_startup_failures(const mybot_config_t *config) {
+    s_lcd_init_fails = true;
+    int wifi_before = read_counter(&s_wifi_init_calls);
+    assert(mybot_start(config) < 0);
+    assert(!mybot_is_running());
+    assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+    assert(read_counter(&s_wifi_init_calls) == wifi_before);
+    s_lcd_init_fails = false;
+
+    assert(mybot_start(config) == 0);
+    emit_wifi_event(MYBOT_WIFI_EVENT_FAILED);
+    assert(wait_for_app_state(MYBOT_STATE_FAILED, 1000));
+    assert(wait_for_runtime_exit(1000));
+    mybot_stop();
+    assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+
+    for (int failure = SERVICE_FAIL_KEY_INIT; failure <= SERVICE_FAIL_DEVICE_INIT; ++failure) {
+        int capture_destroys = read_counter(&s_capture_destroy_calls);
+        int playback_destroys = read_counter(&s_playback_destroy_calls);
+        int device_shutdowns = read_counter(&s_device_shutdown_calls);
+        mock_lock();
+        s_service_failure = failure;
+        mock_unlock();
+        assert(mybot_start(config) == 0);
+        emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
+        assert(wait_for_app_state(MYBOT_STATE_FAILED, 1000));
+        assert(wait_for_runtime_exit(1000));
+        mybot_stop();
+        assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+        assert(read_counter(&s_capture_destroy_calls) ==
+               capture_destroys + (failure >= SERVICE_FAIL_CAPTURE_START));
+        assert(read_counter(&s_playback_destroy_calls) ==
+               playback_destroys + (failure == SERVICE_FAIL_CAPTURE_START ||
+                                    failure >= SERVICE_FAIL_PLAYBACK_START));
+        assert(read_counter(&s_device_shutdown_calls) == device_shutdowns);
+
+        /* Every partial-start failure must leave a complete restart possible. */
+        mock_lock();
+        s_service_failure = SERVICE_FAIL_NONE;
+        mock_unlock();
+        assert(mybot_start(config) == 0);
+        emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
+        assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
+        mybot_stop();
+        assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+    }
+}
+
+#if MYBOT_TEST_WRAP_APP_MPQ
+static void test_control_queue_failures(const mybot_config_t *config) {
+    int wifi_before = read_counter(&s_wifi_init_calls);
+    s_control_create_fails = true;
+    assert(mybot_start(config) < 0);
+    assert(!mybot_is_running());
+    assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+    assert(read_counter(&s_wifi_init_calls) == wifi_before);
+    s_control_create_fails = false;
+
+    s_control_call_fails = true;
+    assert(mybot_start(config) < 0);
+    assert(!mybot_is_running());
+    assert(read_counter(&s_wifi_init_calls) == wifi_before);
+    s_control_call_fails = false;
+
+    const char *media_queues[] = {"cap_mpq", "pb_mpq", "mybot_mpq"};
+    for (size_t i = 0; i < sizeof(media_queues) / sizeof(media_queues[0]); ++i) {
+        int capture_destroys = read_counter(&s_capture_destroy_calls);
+        int playback_destroys = read_counter(&s_playback_destroy_calls);
+        s_media_create_failure = media_queues[i];
+        assert(mybot_start(config) == 0);
+        emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
+        assert(wait_for_app_state(MYBOT_STATE_FAILED, 1000));
+        assert(wait_for_runtime_exit(1000));
+        mybot_stop();
+        assert(read_counter(&s_capture_destroy_calls) == capture_destroys + 1);
+        assert(read_counter(&s_playback_destroy_calls) == playback_destroys + 1);
+        assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+        s_media_create_failure = NULL;
+    }
+
+    assert(mybot_start(config) == 0);
+    emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
+    assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
+    int destroys_before = read_counter(&s_capture_destroy_calls);
+    s_control_destroy_fails = true;
+    mybot_stop();
+    assert(!mybot_is_running());
+    assert(s_control_destroy_failures == 1);
+    assert(read_counter(&s_capture_destroy_calls) == destroys_before);
+    assert(mybot_start(config) < 0);
+    s_control_destroy_fails = false;
+    mybot_stop();
+    assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+    assert(read_counter(&s_capture_destroy_calls) == destroys_before + 1);
+
+    /* Startup cleanup also retains queue ownership when its first join fails. */
+    s_control_call_fails = true;
+    s_control_destroy_fails = true;
+    assert(mybot_start(config) < 0);
+    assert(s_control_destroy_failures == 2);
+    assert(mybot_start(config) < 0);
+    s_control_call_fails = false;
+    s_control_destroy_fails = false;
+    mybot_stop();
+    assert(mybot_start(config) == 0);
+    emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
+    assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
+    mybot_stop();
+    assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+}
+#endif
+
 int main(void) {
     mybot_config_t config;
     memset(&config, 0, sizeof(config));
@@ -1568,6 +1770,26 @@ int main(void) {
     invalid = config;
     snprintf(invalid.server_base, sizeof(invalid.server_base), "%s", "ftp://server");
     assert(mybot_start(&invalid) < 0);
+    const char *invalid_servers[] = {
+        "https://",
+        "https:///path",
+        "https://bad@host",
+        "https://bad host",
+        "https://host:",
+        "https://host:-1",
+        "https://host:0",
+        "https://host:65536",
+        "https://host/path#fragment",
+        "https://host/path\\escape",
+        "https://host/path\n",
+    };
+    for (size_t i = 0; i < sizeof(invalid_servers) / sizeof(invalid_servers[0]); ++i) {
+        invalid = config;
+        assert(snprintf(invalid.server_base, sizeof(invalid.server_base), "%s",
+                        invalid_servers[i]) < (int)sizeof(invalid.server_base));
+        assert(mybot_start(&invalid) < 0);
+        assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+    }
 
     s_platform_registered = false;
     assert(mybot_start(&config) < 0);
@@ -1678,6 +1900,44 @@ int main(void) {
                             sizeof(uppercase_key_message) - 1U);
     wait_for_control_events();
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_VP_REGISTERED, false, 1000));
+
+    const char *invalid_messages[] = {
+        "{",
+        "[]",
+        "null",
+        "{\"event_type\":\"state.unknown\",\"payload\":{\"value\":true}}",
+        "{\"event_type\":\"state.listening\",\"payload\":true}",
+        "{\"event_type\":\"state.listening\",\"payload\":{\"value\":1}}",
+        "{\"event_type\":\"state.listening\",\"payload\":{}}",
+        "{\"event_type\":true,\"payload\":{\"value\":true}}",
+    };
+    for (size_t i = 0; i < sizeof(invalid_messages) / sizeof(invalid_messages[0]); ++i) {
+        emit_rtm_subscribe_data("rtc-channel", "agent-uid", invalid_messages[i],
+                                strlen(invalid_messages[i]));
+    }
+    char long_channel[129];
+    memset(long_channel, 'c', sizeof(long_channel) - 1);
+    long_channel[sizeof(long_channel) - 1] = '\0';
+    char long_sender[MYBOT_RTM_UID_MAX_LEN + 1];
+    memset(long_sender, 'u', sizeof(long_sender) - 1);
+    long_sender[sizeof(long_sender) - 1] = '\0';
+    emit_rtm_subscribe_data(NULL, "agent-uid", vp_message, sizeof(vp_message) - 1U);
+    emit_rtm_subscribe_data(long_channel, "agent-uid", vp_message, sizeof(vp_message) - 1U);
+    emit_rtm_subscribe_data("rtc-channel", NULL, vp_message, sizeof(vp_message) - 1U);
+    emit_rtm_subscribe_data("rtc-channel", long_sender, vp_message, sizeof(vp_message) - 1U);
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", NULL, 1);
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", vp_message, 0);
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", vp_message, sizeof(vp_message));
+    static const char oversized_message[1025] = {0};
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", oversized_message,
+                            sizeof(oversized_message));
+    emit_rtm_data(NULL, vp_message, sizeof(vp_message) - 1U);
+    emit_rtm_data(long_sender, vp_message, sizeof(vp_message) - 1U);
+    wait_for_control_events();
+    mock_lock();
+    assert(s_last_lcd_content.screen == MYBOT_LCD_SCREEN_IN_CONVERSATION);
+    assert(s_last_lcd_content.indicators == MYBOT_LCD_INDICATOR_NONE);
+    mock_unlock();
 
     emit_rtm_data("agent-uid", vp_message, sizeof(vp_message) - 1U);
     wait_for_control_events();
@@ -1902,7 +2162,7 @@ int main(void) {
     assert(mybot_start(&config) == 0);
     emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
     assert(wait_for_app_state(MYBOT_STATE_FAILED, 1000));
-    assert(!mybot_is_running());
+    assert(wait_for_runtime_exit(1000));
     mybot_stop();
     s_kv_init_fails = false;
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
@@ -2039,6 +2299,10 @@ int main(void) {
 #endif
 
     test_control_queue_saturation(&config);
+    test_service_startup_failures(&config);
+#if MYBOT_TEST_WRAP_APP_MPQ
+    test_control_queue_failures(&config);
+#endif
 
     puts("app_test: ok");
     return 0;

@@ -426,6 +426,10 @@ mybot/
 
 ## 开发与验证
 
+单元测试覆盖服务响应格式错误、内存分配及启动失败、回调缓冲区所有权，以及关闭错误后的
+恢复行为。视频测试分别验证功能开启和关闭时的行为。内部 JSON 模块拒绝非有限数值和
+`[-2^63, 2^63)` 范围外的浮点数，并在打印时保留解析得到的有符号 64 位整数精度。
+
 ```bash
 cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=ON
 cmake --build build -j
