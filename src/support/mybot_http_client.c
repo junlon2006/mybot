@@ -492,8 +492,16 @@ static char *read_all(http_stream_t *stream, size_t *out_len, int *out_closed, u
     }
 
     while (deadline_remaining_ms(deadline) > 0) {
-        int ret = stream_recv(stream, buf + len, cap - len - 1, deadline);
+        size_t capacity = cap - len - 1;
+        /* At the cap, distinguish a clean EOF from an oversized response
+         * without issuing a zero-length receive or overwriting the NUL. */
+        char overflow_byte;
+        int ret = stream_recv(stream, capacity ? buf + len : &overflow_byte,
+                              capacity ? capacity : 1, deadline);
         if (ret > 0) {
+            if (capacity == 0 || (size_t)ret > capacity) {
+                goto fail;
+            }
             len += (size_t)ret;
             buf[len] = '\0';
 
@@ -503,10 +511,7 @@ static char *read_all(http_stream_t *stream, size_t *out_len, int *out_closed, u
 
             /* Grow the buffer if needed, bounded by RECV_BUF_MAX so a
              * misbehaving server cannot cause unbounded memory growth. */
-            if (cap - len < RECV_BUF_SIZE / 2) {
-                if (cap >= RECV_BUF_MAX) {
-                    break; /* No room remains for another receive chunk within the cap. */
-                }
+            if (cap < RECV_BUF_MAX && cap - len < RECV_BUF_SIZE / 2) {
                 cap *= 2;
                 if (cap > RECV_BUF_MAX) {
                     cap = RECV_BUF_MAX;

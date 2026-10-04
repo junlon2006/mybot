@@ -138,6 +138,14 @@ socket API; the SDK core does not link OpenSSL. The implementation must:
 
 Add the operations table to the platform descriptor. Do not disable certificate or hostname
 verification for development certificates; install the required CA in the device trust store.
+
+The SDK's HTTP receive buffer grows to at most 32 KiB and reserves one byte for its terminating
+NUL, leaving 32767 bytes for the raw response, including HTTP headers and any chunk framing.
+The 2 KiB free-space threshold only triggers buffer growth; remaining space at the allocation
+limit is still usable regardless of how the response is split across receive calls. A full buffer
+that still needs an end-of-stream check uses a one-byte probe under the existing request deadline
+to detect closure or overflow; receive calls never use zero capacity.
+
 The Linux reference implementation uses OpenSSL and the system CA store. Plain HTTP exists only for an
 isolated development build configured with
 `MYBOT_ENABLE_HTTPS=OFF -DMYBOT_ALLOW_INSECURE_HTTP=ON`.

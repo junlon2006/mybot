@@ -65,8 +65,11 @@ Preallocated PCM arrays do **not** make the end-to-end audio path allocation-fre
   being drained. The normal capture/playback timers reuse their fixed arrays.
 - **Control and RTM:** service responses, request headers, JSON nodes, and RTM message copies have
   additional transient allocations. [HTTP](../src/support/mybot_http_client.c) allocates a 2 KiB
-  request buffer and a receive buffer growing from 4 KiB to 32 KiB. A separate response body is
-  allocated before the receive buffer is freed; later JSON parsing adds nodes alongside that body.
+  request buffer and a receive buffer growing from 4 KiB to 32 KiB. The receive allocation reserves
+  one byte for NUL, so at most 32767 raw response bytes fit, including HTTP headers and chunk
+  framing. At capacity, an end-of-stream/overflow probe uses one byte of stack scratch instead of
+  growing the buffer. A separate response body is allocated before the receive buffer is freed;
+  later JSON parsing adds nodes alongside that body.
   The 32 KiB receive limit is not a total request heap ceiling.
 - **Platform and RTSA:** prompt asset storage, camera/encoder buffers, TLS, and RTSA internal
   memory require separate target measurements. Prompt `open()` does not require a whole asset to

@@ -25,6 +25,9 @@ static int s_tls_send_limit;
 static int s_tls_recv_limit;
 static int s_tls_send_fail_at;
 static int s_tls_recv_fail_at;
+static int s_tls_recv_overreport_at;
+static bool s_tls_probe_fails;
+static int s_tls_probe_count;
 
 static const char s_default_tls_response[] =
     "HTTP/1.1 200 OK\r\nContent-Length: 6\r\nConnection: close\r\n\r\nsecure";
@@ -37,6 +40,9 @@ static void reset_tls_script(const char *response) {
     s_tls_recv_limit = 0;
     s_tls_send_fail_at = 0;
     s_tls_recv_fail_at = 0;
+    s_tls_recv_overreport_at = 0;
+    s_tls_probe_fails = false;
+    s_tls_probe_count = 0;
 }
 
 static int fake_tls_connect(void **connection, const char *host, uint16_t port, int timeout_ms) {
@@ -76,7 +82,19 @@ static int fake_tls_send(void *connection, const void *data, size_t len, int tim
 static int fake_tls_recv(void *connection, void *data, size_t capacity, int timeout_ms) {
     assert(connection == &s_tls_port);
     assert(timeout_ms > 0);
+    assert(data != NULL && capacity > 0);
     s_tls_recv_count++;
+    if (s_tls_recv_overreport_at == s_tls_recv_count) {
+        assert(capacity < INT_MAX);
+        return (int)capacity +
+               1; /* Report malformed progress without overrunning the mock buffer. */
+    }
+    if (s_tls_response_offset == RECV_BUF_MAX - 1 && capacity == 1) {
+        s_tls_probe_count++;
+        if (s_tls_probe_fails) {
+            return -1;
+        }
+    }
     if (s_tls_recv_fail_at == s_tls_recv_count) {
         return -1;
     }
@@ -266,6 +284,7 @@ static void test_parse_fuzz(void) {
 static size_t s_alloc_count;
 static size_t s_fail_on_alloc;
 static int s_alloc_failures;
+static size_t s_fail_realloc_size;
 
 void *__wrap_aosl_hal_malloc(size_t size) {
     s_alloc_count++;
@@ -278,7 +297,8 @@ void *__wrap_aosl_hal_malloc(size_t size) {
 
 void *__wrap_aosl_hal_realloc(void *ptr, size_t size) {
     s_alloc_count++;
-    if (s_fail_on_alloc != 0 && s_alloc_count == s_fail_on_alloc) {
+    if ((s_fail_on_alloc != 0 && s_alloc_count == s_fail_on_alloc) ||
+        (s_fail_realloc_size != 0 && size == s_fail_realloc_size)) {
         s_alloc_failures++;
         return NULL;
     }
@@ -287,6 +307,144 @@ void *__wrap_aosl_hal_realloc(void *ptr, size_t size) {
 
 void __wrap_aosl_hal_free(void *ptr) {
     free(ptr);
+}
+
+typedef enum { RESPONSE_CONTENT_LENGTH, RESPONSE_EOF, RESPONSE_CHUNKED } response_framing_t;
+
+static char *build_large_response(response_framing_t framing, size_t raw_len, size_t *body_len) {
+    const char *plain_header = "HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n";
+    const char *chunked_header =
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
+    char header[128];
+    size_t header_len;
+    size_t body_offset;
+    char *raw = malloc(raw_len + 1);
+    assert(raw != NULL);
+    if (framing == RESPONSE_CONTENT_LENGTH) {
+        int ret = snprintf(header, sizeof(header),
+                           "HTTP/1.1 200 OK\r\nContent-Length: 00000\r\nConnection: close\r\n\r\n");
+        assert(ret > 0 && (size_t)ret < sizeof(header));
+        header_len = (size_t)ret;
+        *body_len = raw_len - header_len;
+        ret = snprintf(raw, raw_len + 1,
+                       "HTTP/1.1 200 OK\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n",
+                       *body_len);
+        assert(ret == (int)header_len);
+        body_offset = header_len;
+    } else if (framing == RESPONSE_CHUNKED) {
+        header_len = strlen(chunked_header);
+        /* One four-digit chunk size, CRLF, body, CRLF and terminating zero chunk. */
+        *body_len = raw_len - header_len - 6 - 7;
+        int ret = snprintf(raw, raw_len + 1, "%s%zx\r\n", chunked_header, *body_len);
+        assert(ret == (int)(header_len + 6));
+        body_offset = (size_t)ret;
+        memcpy(raw + body_offset + *body_len, "\r\n0\r\n\r\n", 7);
+    } else {
+        header_len = strlen(plain_header);
+        memcpy(raw, plain_header, header_len);
+        body_offset = header_len;
+        *body_len = raw_len - header_len;
+    }
+    for (size_t i = 0; i < *body_len; ++i) {
+        raw[body_offset + i] = (char)('a' + i % 26);
+    }
+    raw[raw_len] = '\0';
+    assert(strlen(raw) == raw_len);
+    return raw;
+}
+
+static void check_large_body(const mybot_http_client_response_t *response, size_t body_len) {
+    assert(response->status_code == 200);
+    assert(response->body != NULL && response->body_len == body_len);
+    for (size_t i = 0; i < body_len; ++i) {
+        assert(response->body[i] == (char)('a' + i % 26));
+    }
+    assert(response->body[body_len] == '\0');
+}
+
+static void test_receive_capacity_boundaries(void) {
+    const size_t raw_lengths[] = {32000, RECV_BUF_MAX - 1, RECV_BUF_MAX};
+    const int recv_limits[] = {0, 1024, 17};
+    for (int framing = RESPONSE_CONTENT_LENGTH; framing <= RESPONSE_CHUNKED; ++framing) {
+        for (size_t length = 0; length < sizeof(raw_lengths) / sizeof(raw_lengths[0]); ++length) {
+            size_t body_len;
+            char *raw =
+                build_large_response((response_framing_t)framing, raw_lengths[length], &body_len);
+            for (size_t fragment = 0; fragment < sizeof(recv_limits) / sizeof(recv_limits[0]);
+                 ++fragment) {
+                reset_tls_script(raw);
+                s_tls_recv_limit = recv_limits[fragment];
+                int closes_before = s_tls_closed;
+                mybot_http_client_response_t response = {0};
+                int ret =
+                    mybot_http_client_get_ex("https://api.example.test/boundary", NULL, &response);
+                assert(s_tls_closed == closes_before + 1);
+                if (raw_lengths[length] < RECV_BUF_MAX) {
+                    assert(ret == 0);
+                    check_large_body(&response, body_len);
+                    assert(s_tls_response_offset == raw_lengths[length]);
+                    if (raw_lengths[length] == RECV_BUF_MAX - 1) {
+                        assert(s_tls_probe_count == (framing == RESPONSE_CONTENT_LENGTH ? 0 : 1));
+                    }
+                } else {
+                    assert(ret < 0);
+                    assert(response.body == NULL && response.body_len == 0);
+                    assert(s_tls_probe_count == 1);
+                }
+                mybot_http_client_response_free(&response);
+            }
+            reset_tls_script(NULL);
+            free(raw);
+        }
+    }
+}
+
+static void test_receive_capacity_failures(void) {
+    for (int framing = RESPONSE_CONTENT_LENGTH; framing <= RESPONSE_CHUNKED; ++framing) {
+        size_t body_len;
+        char *raw = build_large_response((response_framing_t)framing, RECV_BUF_MAX - 1, &body_len);
+        reset_tls_script(raw);
+        s_tls_probe_fails = true;
+        int closes_before = s_tls_closed;
+        mybot_http_client_response_t response = {0};
+        int ret = mybot_http_client_get_ex("https://api.example.test/probe-error", NULL, &response);
+        assert(s_tls_closed == closes_before + 1);
+        if (framing == RESPONSE_CONTENT_LENGTH) {
+            assert(ret == 0 && s_tls_probe_count == 0);
+            check_large_body(&response, body_len);
+        } else {
+            assert(ret < 0 && s_tls_probe_count == 1);
+            assert(response.body == NULL);
+        }
+        mybot_http_client_response_free(&response);
+        reset_tls_script(NULL);
+        free(raw);
+    }
+
+    reset_tls_script(NULL);
+    s_tls_recv_overreport_at = 1;
+    int closes_before = s_tls_closed;
+    mybot_http_client_response_t response = {0};
+    assert(mybot_http_client_get_ex("https://api.example.test/invalid-recv", NULL, &response) < 0);
+    assert(s_tls_closed == closes_before + 1);
+    assert(response.body == NULL);
+
+    size_t body_len;
+    char *raw = build_large_response(RESPONSE_CONTENT_LENGTH, RECV_BUF_MAX - 1, &body_len);
+    reset_tls_script(raw);
+    s_fail_realloc_size = RECV_BUF_MAX;
+    s_alloc_failures = 0;
+    closes_before = s_tls_closed;
+    assert(mybot_http_client_get_ex("https://api.example.test/growth-fail", NULL, &response) < 0);
+    assert(s_alloc_failures == 1 && s_tls_closed == closes_before + 1);
+    assert(response.body == NULL);
+    s_fail_realloc_size = 0;
+    reset_tls_script(raw);
+    assert(mybot_http_client_get_ex("https://api.example.test/growth-retry", NULL, &response) == 0);
+    check_large_body(&response, body_len);
+    mybot_http_client_response_free(&response);
+    reset_tls_script(NULL);
+    free(raw);
 }
 
 static void test_oom_injection(void) {
@@ -503,6 +661,8 @@ int main(void) {
 
     test_response_boundaries();
     test_tls_transport_and_requests();
+    test_receive_capacity_boundaries();
+    test_receive_capacity_failures();
     test_parse_fuzz();
     test_oom_injection();
 
