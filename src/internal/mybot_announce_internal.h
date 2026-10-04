@@ -21,7 +21,6 @@ typedef struct {
     void *ops_ctx;
     aosl_mutex_t lock;
     bool active;
-    mybot_announce_sound_t queue[MYBOT_ANNOUNCE_MAX_QUEUE];
     void *handles[MYBOT_ANNOUNCE_MAX_QUEUE];
     int queue_len;
     int queue_pos;

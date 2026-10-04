@@ -40,12 +40,8 @@ int mybot_announce_init(mybot_announce_t *announce) {
     return 0;
 }
 
-void mybot_announce_deinit(mybot_announce_t *announce) {
-    if (!announce || !announce->active) {
-        return;
-    }
-
-    aosl_hal_mutex_lock(announce->lock);
+/* The caller holds announce->lock; publishing a new generation remains its responsibility. */
+static void close_queued_sounds(mybot_announce_t *announce) {
     for (int i = 0; i < announce->queue_len; i++) {
         if (announce->handles[i]) {
             announce->ops->close(announce->ops_ctx, announce->handles[i]);
@@ -54,6 +50,15 @@ void mybot_announce_deinit(mybot_announce_t *announce) {
     }
     announce->queue_len = 0;
     announce->queue_pos = 0;
+}
+
+void mybot_announce_deinit(mybot_announce_t *announce) {
+    if (!announce || !announce->active) {
+        return;
+    }
+
+    aosl_hal_mutex_lock(announce->lock);
+    close_queued_sounds(announce);
     aosl_hal_mutex_unlock(announce->lock);
 
     announce->ops->destroy(announce->ops_ctx);
@@ -106,19 +111,12 @@ int mybot_announce_play_pair_code(mybot_announce_t *announce, const char *code) 
                          sounds[i] - MYBOT_ANNOUNCE_SOUND_DIGIT_0);
             continue;
         }
-        sounds[len] = sounds[i];
         handles[len] = h;
         len++;
     }
 
     aosl_hal_mutex_lock(announce->lock);
-    for (int i = 0; i < announce->queue_len; i++) {
-        if (announce->handles[i]) {
-            announce->ops->close(announce->ops_ctx, announce->handles[i]);
-            announce->handles[i] = NULL;
-        }
-    }
-    memcpy(announce->queue, sounds, (size_t)len * sizeof(sounds[0]));
+    close_queued_sounds(announce);
     memcpy(announce->handles, handles, (size_t)len * sizeof(handles[0]));
     announce->queue_len = len;
     announce->queue_pos = 0;
@@ -135,14 +133,7 @@ void mybot_announce_stop(mybot_announce_t *announce) {
     }
 
     aosl_hal_mutex_lock(announce->lock);
-    for (int i = 0; i < announce->queue_len; i++) {
-        if (announce->handles[i]) {
-            announce->ops->close(announce->ops_ctx, announce->handles[i]);
-            announce->handles[i] = NULL;
-        }
-    }
-    announce->queue_len = 0;
-    announce->queue_pos = 0;
+    close_queued_sounds(announce);
     announce->generation++;
     aosl_hal_mutex_unlock(announce->lock);
 }
