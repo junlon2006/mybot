@@ -123,7 +123,14 @@ BearSSL 或芯片厂商 TLS socket API；SDK 核心
 - `close` 释放整个 TLS 连接。
 
 将 ops 表加入平台描述符。不要为开发证书关闭证书或主机名校验；请将所需 CA 安装到设备
-信任库。Linux 参考实现使用 OpenSSL 与系统 CA 库。明文 HTTP 仅存在于
+信任库。
+
+SDK 的 HTTP 接收缓冲最多申请 32 KiB，并为结尾 NUL 保留一个字节，因此最多保存 32767 字节
+原始响应，包括 HTTP 头和 chunk 分块封装。剩余空间低于 2 KiB 只触发扩容；到达分配上限后
+剩余空间仍可使用，不受响应在各次接收中的分片方式影响。缓冲已满而仍需确认连接结束时，
+在原有请求 deadline 内用一个字节的探测接收判断连接关闭或响应超限；不会以零容量调用接收。
+
+Linux 参考实现使用 OpenSSL 与系统 CA 库。明文 HTTP 仅存在于
 配置了 `MYBOT_ENABLE_HTTPS=OFF -DMYBOT_ALLOW_INSECURE_HTTP=ON` 的隔离开发构建。
 
 ### 按键
