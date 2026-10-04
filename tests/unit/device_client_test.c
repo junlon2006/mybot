@@ -22,6 +22,13 @@ static int s_http_result;
 static int s_response_status = 200;
 static int s_get_ex_call_count;
 static int s_post_ex_call_count;
+static int s_response_body_alloc_count;
+static int s_response_body_free_count;
+static size_t s_parse_fail_after_http;
+static size_t s_json_alloc_count;
+static size_t s_json_fail_at;
+static int s_json_alloc_failures;
+static int s_json_live_allocations;
 
 #ifdef MYBOT_TEST_WRAP_DEVICE_HEADERS
 static bool s_track_header;
@@ -123,6 +130,10 @@ static int mock_http_response(mybot_http_client_response_t *resp) {
         }
         memcpy(resp->body, s_response_body, response_len + 1);
         resp->body_len = response_len;
+        s_response_body_alloc_count++;
+    }
+    if (s_parse_fail_after_http) {
+        s_json_fail_at = s_json_alloc_count + s_parse_fail_after_http;
     }
     return 0;
 }
@@ -159,8 +170,18 @@ void mybot_http_client_response_free(mybot_http_client_response_t *resp) {
     if (!resp) {
         return;
     }
-    free(resp->body);
+    if (resp->body) {
+        s_response_body_free_count++;
+        free(resp->body);
+    }
     memset(resp, 0, sizeof(*resp));
+}
+
+static void expect_output_bytes(const void *output, size_t size, unsigned char value) {
+    const unsigned char *bytes = output;
+    for (size_t i = 0; i < size; ++i) {
+        assert(bytes[i] == value);
+    }
 }
 
 static void test_required_arguments(void) {
@@ -168,6 +189,10 @@ static void test_required_arguments(void) {
     mybot_device_binding_t binding;
     mybot_device_conversation_t conversation;
     mybot_device_rtc_token_t token;
+    memset(&pair, 0x5a, sizeof(pair));
+    memset(&binding, 0x5a, sizeof(binding));
+    memset(&conversation, 0x5a, sizeof(conversation));
+    memset(&token, 0x5a, sizeof(token));
 
     assert(mybot_device_client_create_pair_code(NULL, "device", NULL, NULL, &pair) < 0);
     assert(mybot_device_client_create_pair_code("http://server", NULL, NULL, NULL, &pair) < 0);
@@ -214,6 +239,143 @@ static void test_required_arguments(void) {
                                                  NULL) < 0);
     assert(mybot_device_client_stop_conversation("http://server", "device", "token", NULL, NULL) <
            0);
+    expect_output_bytes(&pair, sizeof(pair), 0x5a);
+    expect_output_bytes(&binding, sizeof(binding), 0x5a);
+    expect_output_bytes(&conversation, sizeof(conversation), 0x5a);
+    expect_output_bytes(&token, sizeof(token), 0x5a);
+}
+
+typedef enum { PARSED_PAIR, PARSED_BINDING, PARSED_START, PARSED_RENEW } parsed_call_t;
+
+typedef union {
+    mybot_device_pair_code_t pair;
+    mybot_device_binding_t binding;
+    mybot_device_conversation_t conversation;
+    mybot_device_rtc_token_t token;
+} parsed_output_t;
+
+static const size_t s_parsed_output_size[] = {
+    sizeof(mybot_device_pair_code_t),
+    sizeof(mybot_device_binding_t),
+    sizeof(mybot_device_conversation_t),
+    sizeof(mybot_device_rtc_token_t),
+};
+
+static int call_parsed_response(parsed_call_t operation, parsed_output_t *output) {
+    switch (operation) {
+    case PARSED_PAIR:
+        return mybot_device_client_create_pair_code("http://server", "device", NULL, NULL,
+                                                    &output->pair);
+    case PARSED_BINDING:
+        return mybot_device_client_get_binding_status("http://server", "device", "Device token",
+                                                      &output->binding);
+    case PARSED_START:
+        return mybot_device_client_start_conversation("http://server", "device", "token", NULL,
+                                                      &output->conversation);
+    case PARSED_RENEW:
+        return mybot_device_client_renew_rtc_token("http://server", "device", "token", "channel-1",
+                                                   "device-uid", &output->token);
+    }
+    return -1;
+}
+
+static void test_outer_data_contract(void) {
+    const char *responses[] = {"{}", "{\"data\":null}", "{\"data\":123}", "{\"data\":[]}",
+                               "{\"data\":{}}"};
+    for (int operation = PARSED_PAIR; operation <= PARSED_RENEW; ++operation) {
+        for (size_t i = 0; i < sizeof(responses) / sizeof(responses[0]); ++i) {
+            reset_http_mock(responses[i]);
+            int allocations_before = s_response_body_alloc_count;
+            int frees_before = s_response_body_free_count;
+            parsed_output_t output;
+            memset(&output, 0x5a, sizeof(output));
+            int ret = call_parsed_response((parsed_call_t)operation, &output);
+            assert(ret == (operation == PARSED_BINDING && i != 0 ? 0 : -1));
+            expect_output_bytes(&output, s_parsed_output_size[operation], 0);
+            assert(s_response_body_alloc_count == allocations_before + 1);
+            assert(s_response_body_free_count == frees_before + 1);
+        }
+    }
+}
+
+static void test_partial_parsed_outputs(void) {
+    int allocations_before = s_response_body_alloc_count;
+    int frees_before = s_response_body_free_count;
+    parsed_output_t output;
+    reset_http_mock(s_missing_pair_token_response_body);
+    assert(call_parsed_response(PARSED_PAIR, &output) == -1);
+    assert(strcmp(output.pair.code, "123456") == 0);
+    assert(output.pair.pair_token[0] == '\0');
+    reset_http_mock(s_missing_pair_code_response_body);
+    assert(call_parsed_response(PARSED_PAIR, &output) == -1);
+    assert(output.pair.code[0] == '\0');
+    assert(strcmp(output.pair.pair_token, "pair-token") == 0);
+
+    reset_http_mock(s_missing_id_response_body);
+    assert(call_parsed_response(PARSED_START, &output) == -1);
+    expect_output_bytes(&output.conversation, sizeof(output.conversation), 0);
+    reset_http_mock("{\"data\":{\"conversation_id\":\"c-1\"}}");
+    assert(call_parsed_response(PARSED_START, &output) == -1);
+    assert(strcmp(output.conversation.conversation_id, "c-1") == 0);
+    assert(output.conversation.rtc_app_id[0] == '\0');
+    reset_http_mock(s_missing_renew_token_response_body);
+    assert(call_parsed_response(PARSED_RENEW, &output) == -1);
+    assert(strcmp(output.token.rtc_channel, "channel-1") == 0);
+    assert(strcmp(output.token.rtc_uid, "device-uid") == 0);
+    assert(output.token.rtc_token[0] == '\0');
+    assert(s_response_body_alloc_count == allocations_before + 5);
+    assert(s_response_body_free_count == frees_before + 5);
+}
+
+static void *parse_test_malloc(size_t size) {
+    s_json_alloc_count++;
+    if (s_json_fail_at && s_json_alloc_count == s_json_fail_at) {
+        s_json_alloc_failures++;
+        return NULL;
+    }
+    void *ptr = malloc(size);
+    if (ptr) {
+        s_json_live_allocations++;
+    }
+    return ptr;
+}
+
+static void parse_test_free(void *ptr) {
+    if (ptr) {
+        assert(s_json_live_allocations > 0);
+        s_json_live_allocations--;
+        free(ptr);
+    }
+}
+
+static void test_response_parse_allocation_failure(void) {
+    const char *responses[] = {s_valid_pair_response_body,
+                               "{\"data\":{\"status\":\"bound\",\"device_token\":\"token\"}}",
+                               s_valid_response_body, s_valid_renew_response_body};
+    const size_t fail_positions[] = {1, 2, 5};
+    const mybot_json_hooks_t hooks = {.malloc_fn = parse_test_malloc, .free_fn = parse_test_free};
+    assert(mybot_json_init_hooks(&hooks) == 0);
+    for (int operation = PARSED_PAIR; operation <= PARSED_RENEW; ++operation) {
+        for (size_t i = 0; i < sizeof(fail_positions) / sizeof(fail_positions[0]); ++i) {
+            reset_http_mock(responses[operation]);
+            s_json_alloc_count = 0;
+            s_json_fail_at = 0;
+            s_json_alloc_failures = 0;
+            s_parse_fail_after_http = fail_positions[i];
+            int allocations_before = s_response_body_alloc_count;
+            int frees_before = s_response_body_free_count;
+            parsed_output_t output;
+            int ret = call_parsed_response((parsed_call_t)operation, &output);
+            assert(ret == -1);
+            assert(s_json_alloc_failures == 1);
+            assert(s_json_live_allocations == 0);
+            assert(s_response_body_alloc_count == allocations_before + 1);
+            assert(s_response_body_free_count == frees_before + 1);
+        }
+    }
+    s_parse_fail_after_http = 0;
+    s_json_fail_at = 0;
+    assert(mybot_json_init_hooks(NULL) == 0);
 }
 
 static void test_pair_code_failures(void) {
@@ -785,6 +947,9 @@ int main(void) {
 #ifdef MYBOT_TEST_WRAP_DEVICE_HEADERS
     test_device_post_header_ownership();
 #endif
+    test_outer_data_contract();
+    test_partial_parsed_outputs();
+    test_response_parse_allocation_failure();
     aosl_dtor();
     puts("device_client_test: ok");
     return 0;

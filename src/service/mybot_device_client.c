@@ -308,6 +308,13 @@ static bool http_response_ok(const mybot_http_client_response_t *resp) {
     return resp->status_code >= 200 && resp->status_code < 300;
 }
 
+/* Return borrowed data; the caller owns *root even when data is missing. */
+static mybot_json_t *parse_response_data(const mybot_http_client_response_t *raw,
+                                         mybot_json_t **root) {
+    *root = raw->body ? mybot_json_parse(raw->body) : NULL;
+    return mybot_json_get_object_item(*root, "data");
+}
+
 int mybot_device_client_create_pair_code(const char *base_url, const char *device_id,
                                          const char *firmware_ver, const char *hw_model,
                                          mybot_device_pair_code_t *resp) {
@@ -328,35 +335,28 @@ int mybot_device_client_create_pair_code(const char *base_url, const char *devic
 
     mybot_http_client_response_t raw;
     memset(&raw, 0, sizeof(raw));
+    mybot_json_t *root = NULL;
+    int result = -1;
 
-    if (mybot_http_client_post_ex(url, "application/json", body, NULL, &raw) < 0) {
-        mybot_json_free_string(body);
-        AOSL_LOG_ERR("POST %s failed (http)", url);
-        return -1;
-    }
+    int ret = mybot_http_client_post_ex(url, "application/json", body, NULL, &raw);
     mybot_json_free_string(body);
+    if (ret < 0) {
+        AOSL_LOG_ERR("POST %s failed (http)", url);
+        goto done;
+    }
 
     AOSL_LOG_NTC("POST %s -> status=%d", url, raw.status_code);
 
     if (!http_response_ok(&raw)) {
         int status = raw.status_code;
         AOSL_LOG_ERR("POST %s -> HTTP error %d", url, raw.status_code);
-        mybot_http_client_response_free(&raw);
-        return status > 0 ? status : -1;
+        result = status > 0 ? status : -1;
+        goto done;
     }
 
-    /* Parse with the namespaced JSON API. */
-    mybot_json_t *root = raw.body ? mybot_json_parse(raw.body) : NULL;
-    if (!root) {
-        mybot_http_client_response_free(&raw);
-        return -1;
-    }
-
-    mybot_json_t *data = mybot_json_get_object_item(root, "data");
+    mybot_json_t *data = parse_response_data(&raw, &root);
     if (!data) {
-        mybot_json_delete(root);
-        mybot_http_client_response_free(&raw);
-        return -1;
+        goto done;
     }
 
     int code_result = copy_required_json_string(data, "code", resp->code, sizeof(resp->code));
@@ -364,17 +364,17 @@ int mybot_device_client_create_pair_code(const char *base_url, const char *devic
         copy_required_json_string(data, "pair_token", resp->pair_token, sizeof(resp->pair_token));
     if (code_result < 0 || pair_token_result < 0) {
         AOSL_LOG_ERR("pair-code response missing or invalid code/pair_token");
-        mybot_json_delete(root);
-        mybot_http_client_response_free(&raw);
-        return -1;
+        goto done;
     }
     copy_json_integer(data, "poll_after_seconds", &resp->poll_after_seconds);
 
     AOSL_LOG_NTC("pair_code: code=%s poll=%ds", resp->code, resp->poll_after_seconds);
+    result = 0;
 
+done:
     mybot_json_delete(root);
     mybot_http_client_response_free(&raw);
-    return 0;
+    return result;
 }
 
 int mybot_device_client_get_binding_status(const char *base_url, const char *device_id,
@@ -385,30 +385,28 @@ int mybot_device_client_get_binding_status(const char *base_url, const char *dev
     memset(resp, 0, sizeof(*resp));
 
     char url[MYBOT_DEVICE_CLIENT_MAX_URL];
+    mybot_http_client_response_t raw;
+    memset(&raw, 0, sizeof(raw));
+    mybot_json_t *root = NULL;
+    int result = -1;
     char *extra_hdrs = (char *)aosl_hal_malloc(MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32U);
     if (!extra_hdrs) {
-        return -1;
+        goto done;
     }
     if (build_device_url(base_url, device_id, "/binding-status", url, sizeof(url)) < 0) {
-        aosl_hal_free(extra_hdrs);
-        return -1;
+        goto done;
     }
 
     if (build_authorization_header("", auth_header, extra_hdrs,
                                    MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32U) < 0) {
-        aosl_hal_free(extra_hdrs);
-        return -1;
+        goto done;
     }
 
     AOSL_LOG_NTC("GET %s", url);
 
-    mybot_http_client_response_t raw;
-    memset(&raw, 0, sizeof(raw));
-
     if (mybot_http_client_get_ex(url, extra_hdrs, &raw) < 0) {
         AOSL_LOG_ERR("GET %s failed (http)", url);
-        aosl_hal_free(extra_hdrs);
-        return -1;
+        goto done;
     }
 
     AOSL_LOG_NTC("GET %s -> status=%d", url, raw.status_code);
@@ -416,25 +414,13 @@ int mybot_device_client_get_binding_status(const char *base_url, const char *dev
     if (!http_response_ok(&raw)) {
         int status = raw.status_code;
         AOSL_LOG_ERR("GET %s -> HTTP error %d", url, raw.status_code);
-        mybot_http_client_response_free(&raw);
-        aosl_hal_free(extra_hdrs);
-        return status > 0 ? status : -1;
+        result = status > 0 ? status : -1;
+        goto done;
     }
 
-    /* Parse with the namespaced JSON API. */
-    mybot_json_t *root = raw.body ? mybot_json_parse(raw.body) : NULL;
-    if (!root) {
-        mybot_http_client_response_free(&raw);
-        aosl_hal_free(extra_hdrs);
-        return -1;
-    }
-
-    mybot_json_t *data = mybot_json_get_object_item(root, "data");
+    mybot_json_t *data = parse_response_data(&raw, &root);
     if (!data) {
-        mybot_json_delete(root);
-        mybot_http_client_response_free(&raw);
-        aosl_hal_free(extra_hdrs);
-        return -1;
+        goto done;
     }
 
     if (copy_optional_json_string(data, "status", resp->status, sizeof(resp->status)) < 0 ||
@@ -443,20 +429,19 @@ int mybot_device_client_get_binding_status(const char *base_url, const char *dev
         copy_optional_json_string(data, "agent_id", resp->agent_id, sizeof(resp->agent_id)) < 0 ||
         copy_optional_json_string(data, "agent_name", resp->agent_name, sizeof(resp->agent_name)) <
             0) {
-        mybot_json_delete(root);
-        mybot_http_client_response_free(&raw);
-        aosl_hal_free(extra_hdrs);
-        return -1;
+        goto done;
     }
     copy_json_integer(data, "poll_after_seconds", &resp->poll_after_seconds);
 
     AOSL_LOG_DBG("binding: status=%s agent=%s has_token=%d poll=%ds", resp->status,
                  resp->agent_name, resp->device_token[0] ? 1 : 0, resp->poll_after_seconds);
+    result = 0;
 
+done:
     mybot_json_delete(root);
     mybot_http_client_response_free(&raw);
     aosl_hal_free(extra_hdrs);
-    return 0;
+    return result;
 }
 
 int mybot_device_client_start_conversation(const char *base_url, const char *device_id,
@@ -489,12 +474,14 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
 
     mybot_http_client_response_t raw;
     memset(&raw, 0, sizeof(raw));
+    mybot_json_t *root = NULL;
+    int result = -1;
 
     int ret = post_device_json(url, device_token, body, &raw);
     mybot_json_free_string(generated_body);
     if (ret < 0) {
         AOSL_LOG_ERR("POST %s failed (http)", url);
-        return -1;
+        goto done;
     }
 
     AOSL_LOG_NTC("POST %s -> status=%d response body length=%zu", url, raw.status_code,
@@ -503,46 +490,35 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
     if (!http_response_ok(&raw)) {
         int status = raw.status_code;
         AOSL_LOG_ERR("POST %s -> HTTP error %d", url, raw.status_code);
-        mybot_http_client_response_free(&raw);
-        return status > 0 ? status : -1;
+        result = status > 0 ? status : -1;
+        goto done;
     }
 
-    /* Parse with the namespaced JSON API. */
-    mybot_json_t *root = raw.body ? mybot_json_parse(raw.body) : NULL;
-    if (!root) {
-        mybot_http_client_response_free(&raw);
-        return -1;
-    }
-
-    mybot_json_t *data = mybot_json_get_object_item(root, "data");
+    mybot_json_t *data = parse_response_data(&raw, &root);
     if (!data) {
-        mybot_json_delete(root);
-        mybot_http_client_response_free(&raw);
-        return -1;
+        goto done;
     }
 
     if (copy_required_json_string(data, "conversation_id", resp->conversation_id,
                                   sizeof(resp->conversation_id)) < 0) {
         AOSL_LOG_ERR("conversation response missing or invalid conversation_id");
-        mybot_json_delete(root);
-        mybot_http_client_response_free(&raw);
-        return -1;
+        goto done;
     }
 
     /* Parse nested "rtc":{...} block — required to join RTC. */
     if (parse_rtc_block(data, resp) < 0) {
         AOSL_LOG_ERR("conversation response missing rtc block");
-        mybot_json_delete(root);
-        mybot_http_client_response_free(&raw);
-        return -1;
+        goto done;
     }
 
     AOSL_LOG_NTC("conversation: id=%s channel=%s uid=%s agent_uid=%s", resp->conversation_id,
                  resp->rtc_channel, resp->rtc_uid, resp->rtc_agent_uid);
+    result = 0;
 
+done:
     mybot_json_delete(root);
     mybot_http_client_response_free(&raw);
-    return 0;
+    return result;
 }
 
 int mybot_device_client_renew_rtc_token(const char *base_url, const char *device_id,
@@ -568,28 +544,28 @@ int mybot_device_client_renew_rtc_token(const char *base_url, const char *device
 
     mybot_http_client_response_t raw;
     memset(&raw, 0, sizeof(raw));
+    mybot_json_t *root = NULL;
+    int result = -1;
     int ret = post_device_json(url, device_token, body, &raw);
     mybot_json_free_string(body);
     if (ret < 0) {
         AOSL_LOG_ERR("POST %s failed (http)", url);
-        return -1;
+        goto done;
     }
 
     AOSL_LOG_NTC("POST %s -> status=%d", url, raw.status_code);
     if (!http_response_ok(&raw)) {
         int status = raw.status_code;
         AOSL_LOG_ERR("POST %s -> HTTP error %d", url, status);
-        mybot_http_client_response_free(&raw);
-        return status > 0 ? status : -1;
+        result = status > 0 ? status : -1;
+        goto done;
     }
 
-    mybot_json_t *root = raw.body ? mybot_json_parse(raw.body) : NULL;
+    mybot_json_t *data = parse_response_data(&raw, &root);
     if (!root) {
-        mybot_http_client_response_free(&raw);
-        return -1;
+        goto done;
     }
 
-    mybot_json_t *data = mybot_json_get_object_item(root, "data");
     mybot_json_t *rtc = data ? mybot_json_get_object_item(data, "rtc") : NULL;
     if (!rtc ||
         copy_required_json_string(rtc, "channel", resp->rtc_channel, sizeof(resp->rtc_channel)) <
@@ -597,13 +573,14 @@ int mybot_device_client_renew_rtc_token(const char *base_url, const char *device
         copy_required_json_string(rtc, "uid", resp->rtc_uid, sizeof(resp->rtc_uid)) < 0 ||
         copy_required_json_string(rtc, "token", resp->rtc_token, sizeof(resp->rtc_token)) < 0) {
         AOSL_LOG_ERR("RTC-token response missing required rtc fields");
-        mybot_json_delete(root);
-        mybot_http_client_response_free(&raw);
-        return -1;
+        goto done;
     }
+    result = 0;
+
+done:
     mybot_json_delete(root);
     mybot_http_client_response_free(&raw);
-    return 0;
+    return result;
 }
 
 int mybot_device_client_stop_conversation(const char *base_url, const char *device_id,
