@@ -23,6 +23,43 @@ static int s_response_status = 200;
 static int s_get_ex_call_count;
 static int s_post_ex_call_count;
 
+#ifdef MYBOT_TEST_WRAP_DEVICE_HEADERS
+static bool s_track_header;
+static bool s_fail_header;
+static void *s_header_allocation;
+static int s_header_alloc_calls;
+static int s_header_free_calls;
+static const char *s_borrowed_body;
+
+void *__real_aosl_hal_malloc(size_t size);
+void __real_aosl_hal_free(void *ptr);
+
+void *__wrap_aosl_hal_malloc(size_t size) {
+    bool header = s_track_header && size == MYBOT_DEVICE_CLIENT_MAX_TOKEN + 32U;
+    if (header) {
+        assert(s_header_allocation == NULL);
+        s_header_alloc_calls++;
+        if (s_fail_header) {
+            return NULL;
+        }
+    }
+    void *ptr = __real_aosl_hal_malloc(size);
+    if (header) {
+        s_header_allocation = ptr;
+    }
+    return ptr;
+}
+
+void __wrap_aosl_hal_free(void *ptr) {
+    assert(!s_borrowed_body || ptr != s_borrowed_body);
+    if (s_track_header && ptr && ptr == s_header_allocation) {
+        s_header_free_calls++;
+        s_header_allocation = NULL;
+    }
+    __real_aosl_hal_free(ptr);
+}
+#endif
+
 static const char s_valid_pair_response_body[] =
     "{\"data\":{\"code\":\"123456\",\"pair_token\":\"pair-token\"}}";
 
@@ -102,6 +139,14 @@ int mybot_http_client_get_ex(const char *url, const char *extra_headers,
 
 int mybot_http_client_post_ex(const char *url, const char *content_type, const char *body,
                               const char *extra_headers, mybot_http_client_response_t *resp) {
+#ifdef MYBOT_TEST_WRAP_DEVICE_HEADERS
+    if (s_track_header) {
+        assert(extra_headers == s_header_allocation);
+        if (s_borrowed_body) {
+            assert(body == s_borrowed_body);
+        }
+    }
+#endif
     s_post_ex_call_count++;
     capture_request(url, content_type, body, extra_headers);
     if (s_http_result < 0) {
@@ -532,6 +577,86 @@ static void test_stop_conversation(void) {
            0);
 }
 
+#ifdef MYBOT_TEST_WRAP_DEVICE_HEADERS
+typedef enum { POST_START_BORROWED, POST_START_GENERATED, POST_RENEW, POST_STOP } device_post_t;
+
+static int call_device_post(device_post_t operation, const char *credential, const char *body) {
+    mybot_device_conversation_t conversation;
+    mybot_device_rtc_token_t token;
+    switch (operation) {
+    case POST_START_BORROWED:
+    case POST_START_GENERATED:
+        return mybot_device_client_start_conversation(
+            "http://server", "device", credential, operation == POST_START_BORROWED ? body : NULL,
+            &conversation);
+    case POST_RENEW:
+        return mybot_device_client_renew_rtc_token("http://server", "device", credential,
+                                                   "channel-1", "device-uid", &token);
+    case POST_STOP:
+        return mybot_device_client_stop_conversation("http://server", "device", credential,
+                                                     "conversation-1", "device_hangup");
+    }
+    return -1;
+}
+
+static void begin_header_tracking(device_post_t operation, const char *body, bool fail) {
+    assert(s_header_allocation == NULL);
+    s_header_alloc_calls = 0;
+    s_header_free_calls = 0;
+    s_fail_header = fail;
+    s_borrowed_body = operation == POST_START_BORROWED ? body : NULL;
+    s_track_header = true;
+    reset_http_mock(operation == POST_STOP    ? NULL
+                    : operation == POST_RENEW ? s_valid_renew_response_body
+                                              : s_valid_response_body);
+}
+
+static void end_header_tracking(int expected_frees) {
+    assert(s_header_alloc_calls == 1);
+    assert(s_header_free_calls == expected_frees);
+    assert(s_header_allocation == NULL);
+    s_track_header = false;
+    s_fail_header = false;
+    s_borrowed_body = NULL;
+}
+
+static void test_device_post_header_ownership(void) {
+    const struct {
+        int transport_result;
+        int status;
+        int expected;
+    } responses[] = {{-1, 200, -1}, {0, 401, 401}, {0, 503, 503}, {0, 0, -1}, {0, 200, 0}};
+    char body[] = "{\"custom\":true}";
+    for (int operation = POST_START_BORROWED; operation <= POST_STOP; ++operation) {
+        begin_header_tracking((device_post_t)operation, body, true);
+        int calls_before = s_post_ex_call_count;
+        assert(call_device_post((device_post_t)operation, "token", body) == -1);
+        assert(s_post_ex_call_count == calls_before);
+        assert(strcmp(body, "{\"custom\":true}") == 0);
+        end_header_tracking(0);
+
+        begin_header_tracking((device_post_t)operation, body, false);
+        calls_before = s_post_ex_call_count;
+        assert(call_device_post((device_post_t)operation, "token\nInjected", body) == -1);
+        assert(s_post_ex_call_count == calls_before);
+        assert(strcmp(body, "{\"custom\":true}") == 0);
+        end_header_tracking(1);
+
+        for (size_t i = 0; i < sizeof(responses) / sizeof(responses[0]); ++i) {
+            begin_header_tracking((device_post_t)operation, body, false);
+            s_http_result = responses[i].transport_result;
+            s_response_status = responses[i].status;
+            calls_before = s_post_ex_call_count;
+            assert(call_device_post((device_post_t)operation, "token", body) ==
+                   responses[i].expected);
+            assert(s_post_ex_call_count == calls_before + 1);
+            assert(strcmp(body, "{\"custom\":true}") == 0);
+            end_header_tracking(1);
+        }
+    }
+}
+#endif
+
 int main(void) {
     aosl_ctor();
     test_required_arguments();
@@ -657,6 +782,9 @@ int main(void) {
     test_conversation_failures();
     test_renew_failures();
     test_stop_conversation();
+#ifdef MYBOT_TEST_WRAP_DEVICE_HEADERS
+    test_device_post_header_ownership();
+#endif
     aosl_dtor();
     puts("device_client_test: ok");
     return 0;
