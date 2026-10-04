@@ -474,6 +474,11 @@ projects linked below.
 
 ## Development and verification
 
+Unit tests exercise malformed service responses, allocation and startup failures, callback
+buffer ownership, and recovery after shutdown errors. Video tests run with the feature both
+enabled and disabled. The internal JSON helper rejects non-finite numbers and floating-point
+values outside `[-2^63, 2^63)`, and preserves parsed signed 64-bit integers when printing.
+
 ```bash
 cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=ON
 cmake --build build -j

@@ -21,6 +21,12 @@ static int16_t s_digits[10][MOCK_DIGIT_FRAMES];
 static bool s_digit_available[10];
 static bool s_prompt_available;
 static bool s_invalid_read_count;
+static int s_init_result;
+static int s_init_count;
+static int s_open_count;
+static int s_close_count;
+static int s_destroy_count;
+static mybot_announce_sound_t s_error_sound = MYBOT_ANNOUNCE_SOUND_COUNT;
 
 typedef struct {
     mybot_announce_sound_t sound;
@@ -29,7 +35,8 @@ typedef struct {
 
 static int mock_init(void **ctx) {
     *ctx = NULL;
-    return 0;
+    s_init_count++;
+    return s_init_result;
 }
 
 static void *mock_open(void *ctx, mybot_announce_sound_t sound) {
@@ -51,6 +58,7 @@ static void *mock_open(void *ctx, mybot_announce_sound_t sound) {
     }
     h->sound = sound;
     h->offset = 0;
+    s_open_count++;
     return h;
 }
 
@@ -62,6 +70,9 @@ static int mock_read(void *ctx, void *sound, int16_t *dst, int max_frames) {
     mock_handle_t *h = (mock_handle_t *)sound;
     if (!h) {
         return 0;
+    }
+    if (h->sound == s_error_sound) {
+        return -1;
     }
     const int16_t *src;
     int frames;
@@ -84,11 +95,15 @@ static int mock_read(void *ctx, void *sound, int16_t *dst, int max_frames) {
 
 static void mock_close(void *ctx, void *sound) {
     (void)ctx;
+    assert(sound != NULL);
+    s_close_count++;
     free(sound);
 }
 
 static void mock_destroy(void *ctx) {
     (void)ctx;
+    assert(s_open_count == s_close_count);
+    s_destroy_count++;
 }
 
 static const mybot_announce_ops_t s_mock_ops = {
@@ -134,6 +149,9 @@ static void expect_value(const int16_t *buf, int start, int count, int16_t value
 }
 
 static void test_not_registered(void) {
+    assert(mybot_announce_init(NULL) == -1);
+    assert(mybot_announce_init(&s_announce) == 0);
+    assert(!s_announce.active);
     assert(mybot_announce_play_pair_code(&s_announce, "42") == -1);
     assert(!mybot_announce_is_active(&s_announce));
     int16_t tmp[8];
@@ -142,10 +160,36 @@ static void test_not_registered(void) {
     assert(mybot_announce_get_generation(&s_announce) == 0);
     assert(mybot_announce_read_pcm(&s_announce, tmp, 8, &generation) == 0);
     assert(generation == 0);
+    assert(mybot_announce_play_pair_code(NULL, "42") == -1);
+    assert(!mybot_announce_is_active(NULL));
+    assert(mybot_announce_get_generation(NULL) == 0);
+    mybot_announce_stop(NULL);
+    mybot_announce_stop(&s_announce);
+    mybot_announce_deinit(NULL);
+    mybot_announce_deinit(&s_announce);
+}
+
+static void test_init_failure(void) {
+    s_init_result = -1;
+    assert(mybot_announce_init(&s_announce) == -1);
+    assert(!s_announce.active);
+    assert(s_announce.lock == NULL);
+    assert(s_announce.ops_ctx == NULL);
+    assert(mybot_announce_play_pair_code(&s_announce, "42") == -1);
+    int16_t buf[8];
+    uint32_t generation = 1;
+    assert(mybot_announce_read_pcm(&s_announce, buf, 8, &generation) == 0);
+    assert(generation == 0);
+    mybot_announce_deinit(&s_announce);
+    assert(s_destroy_count == 0);
+    s_init_result = 0;
 }
 
 static void test_prompt_then_digits(void) {
     assert(mybot_announce_init(&s_announce) == 0);
+    int init_count = s_init_count;
+    assert(mybot_announce_init(&s_announce) == 0);
+    assert(s_init_count == init_count);
 
     assert(mybot_announce_play_pair_code(&s_announce, "42") == 0);
     int16_t buf[256];
@@ -167,6 +211,8 @@ static void test_non_digit_and_empty_code(void) {
     expect_value(buf, MOCK_PROMPT_FRAMES + MOCK_DIGIT_FRAMES, MOCK_DIGIT_FRAMES, 1002);
 
     assert(mybot_announce_play_pair_code(&s_announce, "") == 0);
+    assert(read_all(buf, 256) == MOCK_PROMPT_FRAMES);
+    assert(mybot_announce_play_pair_code(&s_announce, NULL) == 0);
     assert(read_all(buf, 256) == MOCK_PROMPT_FRAMES);
 }
 
@@ -276,6 +322,63 @@ static void test_invalid_read_count(void) {
     mybot_announce_stop(&s_announce);
 }
 
+static void test_read_error_skips_sound(void) {
+    assert(mybot_announce_play_pair_code(&s_announce, "42") == 0);
+    s_error_sound = MYBOT_ANNOUNCE_SOUND_DIGIT_4;
+    int16_t buf[256];
+    assert(read_all(buf, 256) == MOCK_PROMPT_FRAMES + MOCK_DIGIT_FRAMES);
+    expect_value(buf, 0, MOCK_PROMPT_FRAMES, 1000);
+    expect_value(buf, MOCK_PROMPT_FRAMES, MOCK_DIGIT_FRAMES, 1002);
+    assert(!mybot_announce_is_active(&s_announce));
+    s_error_sound = MYBOT_ANNOUNCE_SOUND_COUNT;
+}
+
+static void test_invalid_read_inputs(void) {
+    assert(mybot_announce_play_pair_code(&s_announce, "7") == 0);
+    uint32_t current = mybot_announce_get_generation(&s_announce);
+    uint32_t generation = current;
+    int16_t buf[16];
+    assert(mybot_announce_read_pcm(NULL, buf, 16, &generation) == 0);
+    assert(generation == 0);
+    generation = current;
+    assert(mybot_announce_read_pcm(&s_announce, NULL, 16, &generation) == 0);
+    assert(generation == 0);
+    generation = current;
+    assert(mybot_announce_read_pcm(&s_announce, buf, 0, &generation) == 0);
+    assert(generation == 0);
+    assert(mybot_announce_read_pcm(&s_announce, buf, -1, &generation) == 0);
+    assert(mybot_announce_is_active(&s_announce));
+    assert(mybot_announce_get_generation(&s_announce) == current);
+    assert(mybot_announce_read_pcm(&s_announce, buf, 16, &generation) == 16);
+    expect_value(buf, 0, 16, 1000);
+    mybot_announce_stop(&s_announce);
+}
+
+static void test_deinit_closes_pending_sounds(void) {
+    assert(mybot_announce_play_pair_code(&s_announce, "42") == 0);
+    int16_t buf[MOCK_PROMPT_FRAMES + 5];
+    assert(mybot_announce_read_pcm(&s_announce, buf, MOCK_PROMPT_FRAMES + 5, NULL) ==
+           MOCK_PROMPT_FRAMES + 5);
+    assert(mybot_announce_is_active(&s_announce));
+    int closes = s_close_count;
+    mybot_announce_deinit(&s_announce);
+    assert(s_close_count == closes + 2);
+    assert(s_destroy_count == 1);
+    assert(!s_announce.active);
+    assert(s_announce.lock == NULL);
+    assert(s_announce.ops_ctx == NULL);
+    assert(s_announce.queue_len == 0);
+    assert(s_announce.queue_pos == 0);
+    mybot_announce_deinit(&s_announce);
+    assert(s_destroy_count == 1);
+
+    assert(mybot_announce_init(&s_announce) == 0);
+    assert(mybot_announce_play_pair_code(&s_announce, "7") == 0);
+    mybot_announce_deinit(&s_announce);
+    assert(s_destroy_count == 2);
+    assert(s_open_count == s_close_count);
+}
+
 int main(void) {
     setup_mock_sounds();
     aosl_ctor();
@@ -284,6 +387,7 @@ int main(void) {
     mybot_platform_descriptor_t descriptor = mybot_test_platform_descriptor();
     descriptor.announce = &s_mock_ops;
     assert(mybot_platform_register(&descriptor) == 0);
+    test_init_failure();
     test_prompt_then_digits();
     test_non_digit_and_empty_code();
     test_stop_midway();
@@ -293,6 +397,9 @@ int main(void) {
     test_generation_and_frame_boundaries();
     test_failed_replacement_preserves_source();
     test_invalid_read_count();
+    test_read_error_skips_sound();
+    test_invalid_read_inputs();
+    test_deinit_closes_pending_sounds();
 
     mybot_announce_deinit(&s_announce);
     aosl_dtor();

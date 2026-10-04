@@ -21,6 +21,7 @@ static int s_tls_connect_count;
 static int s_tls_send_count;
 static int s_tls_recv_count;
 static int s_tls_connect_result;
+static bool s_tls_partial_connect;
 static int s_tls_send_limit;
 static int s_tls_recv_limit;
 static int s_tls_send_fail_at;
@@ -36,6 +37,7 @@ static const char *s_tls_response = s_default_tls_response;
 static void reset_tls_script(const char *response) {
     s_tls_response = response ? response : s_default_tls_response;
     s_tls_connect_result = 0;
+    s_tls_partial_connect = false;
     s_tls_send_limit = 0;
     s_tls_recv_limit = 0;
     s_tls_send_fail_at = 0;
@@ -55,6 +57,9 @@ static int fake_tls_connect(void **connection, const char *host, uint16_t port, 
     s_tls_send_count = 0;
     s_tls_recv_count = 0;
     if (s_tls_connect_result < 0) {
+        if (s_tls_partial_connect) {
+            *connection = &s_tls_port;
+        }
         return s_tls_connect_result;
     }
     *connection = &s_tls_port;
@@ -249,6 +254,83 @@ static void test_response_boundaries(void) {
     expect_failure("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n", 1);
     expect_failure("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\nextra", 1);
     expect_failure("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nFFFFFFFFFFFFFFFFF\r\n", 1);
+}
+
+static void test_status_and_chunk_framing(void) {
+    const char *invalid_statuses[] = {
+        "HTTP/1.2 200 OK\r\n\r\n", "HTTP/1.1\t200 OK\r\n\r\n", "HTTP/1.1 x00 OK\r\n\r\n",
+        "HTTP/1.1 2x0 OK\r\n\r\n", "HTTP/1.1 20x OK\r\n\r\n",  "HTTP/1.1 200x OK\r\n\r\n",
+        "HTTP/1.1 000 OK\r\n\r\n",
+    };
+    for (size_t i = 0; i < sizeof(invalid_statuses) / sizeof(invalid_statuses[0]); ++i) {
+        expect_failure(invalid_statuses[i], 1);
+    }
+    assert(parse_status_line(NULL) < 0);
+    assert(parse_status_line("HTTP/1.0 503 Unavailable") == 503);
+
+    expect_success("HTTP/1.0 200 OK\r\nContent-Length: 3\r\n\r\nold", 0, "old");
+    expect_success("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                   "A\r\n0123456789\r\na\r\nabcdefghij\r\n0\r\n\r\n",
+                   0, "0123456789abcdefghij");
+    expect_success("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n", 0, "");
+    const char *invalid_chunks[] = {
+        "",       "1",        "1\n",       "1;extension",    "1;extension\n",
+        "1\r\na", "1\r\na\r", "1\r\na\rX", "0\r\nX: trailer"};
+    for (size_t i = 0; i < sizeof(invalid_chunks) / sizeof(invalid_chunks[0]); ++i) {
+        char raw[128];
+        int length =
+            snprintf(raw, sizeof(raw), "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n%s",
+                     invalid_chunks[i]);
+        assert(length > 0 && (size_t)length < sizeof(raw));
+        expect_failure(raw, 1);
+    }
+}
+
+static void test_tls_wrapper_failures(void) {
+    void *connection = NULL;
+    int connects_before = s_tls_connect_count;
+    assert(mybot_https_transport_connect(NULL, "host", 443, 10) < 0);
+    assert(mybot_https_transport_connect(&connection, NULL, 443, 10) < 0);
+    assert(mybot_https_transport_connect(&connection, "", 443, 10) < 0);
+    assert(mybot_https_transport_connect(&connection, "host", 0, 10) < 0);
+    assert(mybot_https_transport_connect(&connection, "host", 443, 0) < 0);
+    assert(s_tls_connect_count == connects_before);
+
+    reset_tls_script(NULL);
+    s_tls_connect_result = -1;
+    s_tls_partial_connect = true;
+    int closes_before = s_tls_closed;
+    mybot_http_client_response_t response = {0};
+    assert(mybot_http_client_get_ex("https://api.example.test/partial-connect", NULL, &response) <
+           0);
+    assert(s_tls_closed == closes_before + 1);
+    assert(response.body == NULL && s_tls_send_count == 0 && s_tls_recv_count == 0);
+
+    reset_tls_script(NULL);
+    assert(mybot_https_transport_connect(&connection, "host", 443, 10) == 0);
+    assert(connection == &s_tls_port);
+    char buffer[8] = {0};
+    assert(mybot_https_transport_send(NULL, buffer, sizeof(buffer), 10) < 0);
+    assert(mybot_https_transport_send(connection, NULL, sizeof(buffer), 10) < 0);
+    assert(mybot_https_transport_send(connection, buffer, 0, 10) < 0);
+    assert(mybot_https_transport_send(connection, buffer, sizeof(buffer), 0) < 0);
+    assert(mybot_https_transport_recv(NULL, buffer, sizeof(buffer), 10) < 0);
+    assert(mybot_https_transport_recv(connection, NULL, sizeof(buffer), 10) < 0);
+    assert(mybot_https_transport_recv(connection, buffer, 0, 10) < 0);
+    assert(mybot_https_transport_recv(connection, buffer, sizeof(buffer), 0) < 0);
+    assert(s_tls_send_count == 0 && s_tls_recv_count == 0);
+    closes_before = s_tls_closed;
+    mybot_https_transport_close(NULL);
+    assert(s_tls_closed == closes_before);
+    mybot_https_transport_close(connection);
+    assert(s_tls_closed == closes_before + 1);
+
+    /* A failed partial connection must not poison the next HTTP request. */
+    assert(mybot_http_client_get_ex("https://api.example.test/retry", NULL, &response) == 0);
+    assert(response.status_code == 200 && strcmp(response.body, "secure") == 0);
+    mybot_http_client_response_free(&response);
+    assert(response.body == NULL && response.body_len == 0 && response.status_code == 0);
+    mybot_http_client_response_free(&response);
 }
 
 static void test_content_length_consistency(void) {
@@ -611,6 +693,11 @@ int main(void) {
 
     assert(mybot_http_client_get_ex("https://api.example.test/status", NULL, &response) < 0);
     assert(response.body == NULL);
+    char buffer[1] = {0};
+    assert(mybot_https_transport_send(&s_tls_port, buffer, sizeof(buffer), 10) < 0);
+    assert(mybot_https_transport_recv(&s_tls_port, buffer, sizeof(buffer), 10) < 0);
+    mybot_https_transport_close(&s_tls_port);
+    assert(s_tls_closed == 0);
 
     url_parts_t parts;
     assert(parse_url("https://service.example/v1", &parts) == 0);
@@ -709,12 +796,14 @@ int main(void) {
     mybot_http_client_response_free(&response);
 
     test_response_boundaries();
+    test_status_and_chunk_framing();
     test_content_length_consistency();
     test_tls_transport_and_requests();
     test_receive_capacity_boundaries();
     test_receive_capacity_failures();
     test_parse_fuzz();
     test_oom_injection();
+    test_tls_wrapper_failures();
 
     aosl_dtor();
     puts("http_client_test: ok");

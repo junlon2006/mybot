@@ -43,30 +43,91 @@ static void destroy(void *ctx) {
 }
 
 static int s_device_volume = MYBOT_AUDIO_VOLUME_DEFAULT;
+static int s_volume_init_result;
+static int s_volume_set_result;
+static int s_volume_get_result;
+static int s_volume_destroy_count;
 
 static int volume_init(void **ctx) {
-    *ctx = ctx;
-    return 0;
+    *ctx = s_volume_init_result == 0 ? &s_device_volume : NULL;
+    return s_volume_init_result;
 }
 
 static int volume_set(void *ctx, int volume) {
-    (void)ctx;
+    assert(ctx == &s_device_volume);
+    if (s_volume_set_result < 0) {
+        return s_volume_set_result;
+    }
     s_device_volume = volume;
     return 0;
 }
 
 static int volume_get(void *ctx, int *volume) {
-    (void)ctx;
+    assert(ctx == &s_device_volume);
+    if (s_volume_get_result < 0) {
+        return s_volume_get_result;
+    }
     *volume = s_device_volume;
     return 0;
 }
 
 static void volume_destroy(void *ctx) {
-    (void)ctx;
+    assert(ctx == &s_device_volume);
+    s_volume_destroy_count++;
+}
+
+static void test_volume_failures(void) {
+    mybot_audio_t audio = {0};
+    mybot_audio_context_init(&audio);
+    int destroys = s_volume_destroy_count;
+    s_volume_init_result = -1;
+    assert(mybot_audio_device_volume_init(&audio) == -1);
+    assert(!mybot_audio_device_volume_is_active(&audio));
+    assert(audio.volume_ctx == NULL);
+    mybot_audio_device_volume_deinit(&audio);
+    assert(s_volume_destroy_count == destroys);
+
+    /* Hardware may initialize while its first volume read fails; the SDK keeps
+     * its default tracked setting until a successful set. */
+    s_volume_init_result = 0;
+    s_volume_get_result = -1;
+    assert(mybot_audio_device_volume_init(&audio) == 0);
+    assert(mybot_audio_device_volume_is_active(&audio));
+    assert(audio.device_volume == MYBOT_AUDIO_VOLUME_DEFAULT);
+    int current = -1;
+    assert(mybot_audio_device_get_volume(&audio, &current) == -1);
+    assert(current == -1);
+    assert(mybot_audio_device_set_volume(&audio, 45) == 0);
+    assert(audio.device_volume == 45);
+
+    s_volume_set_result = -1;
+    assert(mybot_audio_device_set_volume(&audio, 80) == -1);
+    assert(audio.device_volume == 45);
+    assert(s_device_volume == 45);
+    s_volume_set_result = 0;
+    s_volume_get_result = 0;
+    assert(mybot_audio_device_get_volume(&audio, &current) == 0);
+    assert(current == 45);
+    assert(mybot_audio_device_set_volume(&audio, MYBOT_AUDIO_VOLUME_MIN) == 0);
+    assert(mybot_audio_device_get_volume(&audio, &current) == 0);
+    assert(current == MYBOT_AUDIO_VOLUME_MIN);
+    assert(mybot_audio_device_set_volume(&audio, MYBOT_AUDIO_VOLUME_MAX) == 0);
+    assert(mybot_audio_device_get_volume(&audio, &current) == 0);
+    assert(current == MYBOT_AUDIO_VOLUME_MAX);
+    mybot_audio_device_volume_deinit(&audio);
+    assert(s_volume_destroy_count == destroys + 1);
 }
 
 int main(void) {
     mybot_audio_t audio = {0};
+    /* Without a registered hardware-volume implementation, software gain
+     * remains available. */
+    mybot_audio_context_init(&audio);
+    assert(audio.volume_ops == NULL);
+    assert(mybot_audio_device_volume_init(&audio) == -1);
+    assert(mybot_audio_set_media_volume(&audio, 50) == 0);
+    assert(mybot_audio_get_media_volume(&audio) == 50);
+
     const mybot_audio_capture_ops_t capture = {
         .init = init,
         .start = start,
@@ -173,5 +234,18 @@ int main(void) {
     assert(memcmp(half, half_expected, sizeof(half)) == 0);
 
     assert(mybot_audio_set_media_volume(&audio, MYBOT_AUDIO_VOLUME_MAX) == 0);
+
+    test_volume_failures();
+    mybot_audio_context_init(NULL);
+    assert(!mybot_audio_device_volume_is_active(NULL));
+    assert(mybot_audio_device_volume_init(NULL) == -1);
+    mybot_audio_device_volume_deinit(NULL);
+    assert(mybot_audio_device_set_volume(NULL, 50) == -1);
+    assert(mybot_audio_device_get_volume(NULL, &v) == -1);
+    assert(mybot_audio_set_media_volume(NULL, 50) == -1);
+    assert(mybot_audio_get_media_volume(NULL) == MYBOT_AUDIO_VOLUME_DEFAULT);
+    mybot_audio_apply_media_volume(NULL, half, 5);
+    assert(memcmp(half, half_expected, sizeof(half)) == 0);
+
     return 0;
 }
