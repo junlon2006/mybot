@@ -104,6 +104,44 @@ static void discard_pending_playback(mybot_media_pipeline_t *pipeline) {
     pipeline->pb_pending_source = MYBOT_PB_SOURCE_NONE;
 }
 
+/* Called by the playback owner only when no PCM remains pending. */
+static bool prepare_pending_playback(mybot_media_pipeline_t *pipeline, bool announce_active,
+                                     uint32_t generation) {
+    int frames;
+    if (announce_active) {
+        memset(pipeline->pb_pending, 0, sizeof(pipeline->pb_pending));
+        frames =
+            mybot_announce_read_pcm(&pipeline->announce, pipeline->pb_pending,
+                                    MYBOT_MEDIA_FRAME_SAMPLES, &pipeline->pb_pending_generation);
+        if (frames > MYBOT_MEDIA_FRAME_SAMPLES) {
+            AOSL_LOG_ERR("announcement returned invalid frame count: %d", frames);
+            return false;
+        }
+    } else {
+        if (mybot_ringbuf_get_data_size(pipeline->pb_ringbuf) < MYBOT_MEDIA_FRAME_BYTES) {
+            return false;
+        }
+        if (mybot_ringbuf_read((char *)pipeline->pb_pending, MYBOT_MEDIA_FRAME_BYTES,
+                               pipeline->pb_ringbuf) != MYBOT_MEDIA_FRAME_BYTES) {
+            return false;
+        }
+        frames = MYBOT_MEDIA_FRAME_SAMPLES;
+        pipeline->pb_pending_generation = generation;
+    }
+    if (frames <= 0) {
+        return false;
+    }
+    pipeline->pb_pending_offset = 0;
+    pipeline->pb_pending_frames = MYBOT_MEDIA_FRAME_SAMPLES;
+    pipeline->pb_pending_source = announce_active ? MYBOT_PB_SOURCE_ANNOUNCE : MYBOT_PB_SOURCE_RTC;
+
+    if (!mybot_audio_device_volume_is_active(&pipeline->audio)) {
+        mybot_audio_apply_media_volume(&pipeline->audio, pipeline->pb_pending,
+                                       MYBOT_MEDIA_FRAME_SAMPLES * MYBOT_MEDIA_CHANNELS);
+    }
+    return true;
+}
+
 static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc,
                            uintptr_t argv[]) {
     (void)id;
@@ -142,41 +180,9 @@ static void playback_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t argc
     }
 
     const mybot_audio_playback_ops_t *ops = pipeline->audio.playback_ops;
-    if (pipeline->pb_pending_frames == 0) {
-        int frames = 0;
-        bool announce_source = announce_active;
-        if (announce_source) {
-            memset(pipeline->pb_pending, 0, sizeof(pipeline->pb_pending));
-            frames = mybot_announce_read_pcm(&pipeline->announce, pipeline->pb_pending,
-                                             MYBOT_MEDIA_FRAME_SAMPLES,
-                                             &pipeline->pb_pending_generation);
-            if (frames > MYBOT_MEDIA_FRAME_SAMPLES) {
-                AOSL_LOG_ERR("announcement returned invalid frame count: %d", frames);
-                return;
-            }
-        } else {
-            if (mybot_ringbuf_get_data_size(pipeline->pb_ringbuf) < MYBOT_MEDIA_FRAME_BYTES) {
-                return;
-            }
-            if (mybot_ringbuf_read((char *)pipeline->pb_pending, MYBOT_MEDIA_FRAME_BYTES,
-                                   pipeline->pb_ringbuf) != MYBOT_MEDIA_FRAME_BYTES) {
-                return;
-            }
-            frames = MYBOT_MEDIA_FRAME_SAMPLES;
-            pipeline->pb_pending_generation = generation;
-        }
-        if (frames <= 0) {
-            return;
-        }
-        pipeline->pb_pending_offset = 0;
-        pipeline->pb_pending_frames = MYBOT_MEDIA_FRAME_SAMPLES;
-        pipeline->pb_pending_source =
-            announce_source ? MYBOT_PB_SOURCE_ANNOUNCE : MYBOT_PB_SOURCE_RTC;
-
-        if (!mybot_audio_device_volume_is_active(&pipeline->audio)) {
-            mybot_audio_apply_media_volume(&pipeline->audio, pipeline->pb_pending,
-                                           MYBOT_MEDIA_FRAME_SAMPLES * MYBOT_MEDIA_CHANNELS);
-        }
+    if (pipeline->pb_pending_frames == 0 &&
+        !prepare_pending_playback(pipeline, announce_active, generation)) {
+        return;
     }
 
     int frame_bytes = MYBOT_MEDIA_CHANNELS * (MYBOT_MEDIA_BITS_PER_SAMPLE / 8);
