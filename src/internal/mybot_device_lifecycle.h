@@ -28,7 +28,7 @@ typedef struct {
      */
     void (*on_conversation_start)(const mybot_device_conversation_t *params, void *user_data);
 
-    /** Conversation should stop — leave RTC channel. */
+    /** Stop local media and leave RTC synchronously, before the service stop request. */
     void (*on_conversation_stop)(void *user_data);
 
     /** Apply a renewed RTC token. Return 0 when the RTC SDK accepts it. */
@@ -68,12 +68,6 @@ typedef struct {
     char rtc_agent_uid[64];
     bool conversation_requested;
     aosl_atomic_t stop_request;
-    /* Device-service stop is retried for transient transport/5xx failures
-     * before local teardown proceeds. Re-pairing and shutdown complete local
-     * teardown without waiting for these retries. These fields are owned by the control
-     * tick thread and therefore need no additional synchronization. */
-    unsigned stop_retry_attempts;
-    unsigned stop_retry_ticks_remaining;
     aosl_atomic_t rtc_token_renewal_requested;
     bool rtc_token_renewal_pending;
     int rtc_token_retry_delay_ticks;

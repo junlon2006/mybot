@@ -22,8 +22,6 @@ This project follows Semantic Versioning.
 - Use all available HTTP receive-buffer space at the 32 KiB allocation limit, avoiding early
   rejection of responses split across receive calls. Check full-buffer closure or overflow with
   a one-byte receive probe under the existing request deadline.
-- Preserve the current conversation-stop reason during retry delays and rescheduling, so a
-  transport failure or HTTP 5xx does not by itself change `device_hangup` to `error`.
 - Reject Linux announcement assets when seeking back to the PCM data fails.
 - Discard software-buffered PCM from replaced or stopped pairing announcements, including
   unfinished short writes. Commit replacements only after asset loading succeeds, preserving
@@ -31,8 +29,10 @@ This project follows Semantic Versioning.
 - Reject control-event submissions without waiting when the queue is full, preventing an RTC
   callback from blocking token renewal or shutdown. Request application exit if a video-start
   event cannot be queued.
-- Complete local conversation cleanup before re-pairing when the device-service stop request
-  fails or is waiting for a retry, and avoid duplicate pair-code requests after auth rejection.
+- Stop local video/RTC, flush session PCM, and publish the online hangup's ready state before
+  sending a single HTTPS stop notification. Do not retry failed stop notifications; the compatible
+  service also ends the remote conversation when the device leaves RTC. Keep local-first teardown
+  for re-pairing and avoid duplicate pair-code requests after auth rejection.
 - Align public Wi-Fi comments and integration guides with product-owned provisioning, and
   correct the embedded notes on RTSA logging and per-frame heap allocations.
 - Serialize video startup and encoder control with shutdown on the application control worker,

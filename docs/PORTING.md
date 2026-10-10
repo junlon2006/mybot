@@ -361,13 +361,18 @@ Re-pairing also discards pending conversation-start requests, including requests
 the pair request but before the next control tick. Once the new binding is claimed, starting a
 conversation requires a fresh trigger, even if the pair-code request needed retries.
 
-Re-pairing during a conversation performs local conversation cleanup before clearing the device
-credential and requesting a new pair code, even if the device-service stop request fails or is
-already waiting for a retry. This clears the old conversation's stop and token-renewal requests.
-The device-service stop is best effort in this path; a failed request does not confirm that the
-server has ended the conversation. Ordinary conversation stops retain their bounded retry policy.
-Retry countdown and rescheduling preserve the current `device_hangup` or `error` stop reason;
-a transport failure or HTTP 5xx does not by itself change `device_hangup` to `error`.
+Conversation teardown first stops local video and RTC, then flushes session PCM. An online hangup
+returns to `MYBOT_STATE_READY` before sending one HTTPS stop notification with the original reason.
+The notification is not retried on failure; the compatible device service also ends the remote
+conversation when the device leaves the RTC channel. HTTPS still runs synchronously on the control
+worker: local audio and LCD cleanup do not wait for its response, but later control work may wait
+until the request completes or times out. Offline conversations end locally without an HTTPS stop
+notification.
+
+Re-pairing uses the same local-first teardown before clearing the device credential and requesting
+a new pair code. Pending stop and RTC-token renewal requests for the old conversation are cleared.
+A rejected device credential still restarts pairing; pair-code and RTC-token renewal retries are
+unaffected by the single-attempt stop policy.
 
 ### RTM account mapping
 
