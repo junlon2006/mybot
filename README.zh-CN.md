@@ -397,11 +397,11 @@ cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=ON
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 find include src platforms/linux examples/linux tests -type f \
-  \( -name '*.c' -o -name '*.h' \) \
+  \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) \
   -exec clang-format --dry-run --Werror {} +
 ```
 
-- 自维护的 C 代码遵循根目录 `.clang-format`；`third_party/` 保持上游内容。
+- 使用 clang-format 15 或更高版本，按根目录的 `.clang-format` 格式化自维护的 C 和 C++ 代码。
 - CI（[.github/workflows/ci.yml](.github/workflows/ci.yml)）在每个 push / PR 上执行
   构建、测试与格式检查，提交前请确保本地命令与 CI 一致。
 - CI 使用 GCC 与 Clang 双编译器分别在 ASan、UBSan 下构建，运行 cppcheck 与 clang-tidy

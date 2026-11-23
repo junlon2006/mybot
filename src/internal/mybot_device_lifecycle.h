@@ -30,8 +30,10 @@ typedef struct {
     char device_id[MYBOT_DEVICE_CLIENT_MAX_ID];
     char credential[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
     int result;
+
     union {
         mybot_device_binding_t binding;
+
         struct {
             char conversation_id[MYBOT_DEVICE_CLIENT_MAX_ID];
             char reason[32];

@@ -15,11 +15,18 @@ those components are rebuilt.
 3. Never commit credentials, device tokens, customer data, or unapproved proprietary SDK packages.
    Changes to the existing Agora RTSA package under `third_party/agora_rtsa_sdk` require license
    and redistribution review; see `THIRD_PARTY_NOTICES.md`.
-4. Format self-maintained C sources with the repository `.clang-format` and tag every file with an
-   SPDX license header (`/* SPDX-License-Identifier: Apache-2.0 */`; the cJSON-derived `mybot_json`
-   sources use `MIT`). After mechanical renames or bulk edits, run
-   `find include src platforms/linux examples/linux tests -type f \( -name '*.c' -o -name '*.h'
-   \) -exec clang-format -i {} +` before committing.
+4. Format first-party C and C++ files with clang-format 15 or newer using the repository
+   `.clang-format`. Separate function definitions with one blank line, including around
+   conditional blocks that group whole functions. Use braces for control statement bodies.
+   Tag every file with its SPDX license header (`/* SPDX-License-Identifier: Apache-2.0 */`).
+   The cJSON-derived `mybot_json` sources use `MIT`. After mechanical renames or bulk edits,
+   run the following command before committing.
+
+   ```sh
+   find include src platforms/linux examples/linux tests -type f \
+     \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) -exec clang-format -i {} +
+   ```
+
 5. Build and test before opening a pull request using the commands in
    [README: Development and verification](README.md#development-and-verification).
 

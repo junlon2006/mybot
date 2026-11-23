@@ -93,6 +93,7 @@ static bool extra_headers_are_safe(const char *headers) {
 }
 
 static aosl_fd_t tcp_connect(const char *host, int port, uint64_t deadline);
+
 typedef struct {
     bool use_tls;
     aosl_fd_t fd;
