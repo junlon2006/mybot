@@ -2625,37 +2625,28 @@ static void test_lost_rtc_notification(const mybot_config_t *config) {
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
 }
 
-int main(void) {
-    mybot_config_t config;
-    memset(&config, 0, sizeof(config));
-    snprintf(config.server_base, sizeof(config.server_base), "%s", TEST_SERVER_BASE);
-    snprintf(config.device_id, sizeof(config.device_id), "%s", "device-1");
-    snprintf(config.firmware_ver, sizeof(config.firmware_ver), "%s", "test-fw");
-    snprintf(config.hw_model, sizeof(config.hw_model), "%s", "test-hw");
-    s_https_registered = true;
-    s_wake_words_registered = true;
-
+static void test_invalid_config(const mybot_config_t *config) {
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
     assert(mybot_start(NULL) < 0);
-    mybot_config_t invalid = config;
+    mybot_config_t invalid = *config;
     invalid.server_base[0] = '\0';
     assert(mybot_start(&invalid) < 0);
-    invalid = config;
+    invalid = *config;
     invalid.device_id[0] = '\0';
     assert(mybot_start(&invalid) < 0);
-    invalid = config;
+    invalid = *config;
     memset(invalid.server_base, 'x', sizeof(invalid.server_base));
     assert(mybot_start(&invalid) < 0);
-    invalid = config;
+    invalid = *config;
     memset(invalid.device_id, 'x', sizeof(invalid.device_id));
     assert(mybot_start(&invalid) < 0);
-    invalid = config;
+    invalid = *config;
     memset(invalid.firmware_ver, 'x', sizeof(invalid.firmware_ver));
     assert(mybot_start(&invalid) < 0);
-    invalid = config;
+    invalid = *config;
     memset(invalid.hw_model, 'x', sizeof(invalid.hw_model));
     assert(mybot_start(&invalid) < 0);
-    invalid = config;
+    invalid = *config;
     snprintf(invalid.server_base, sizeof(invalid.server_base), "%s", "ftp://server");
     assert(mybot_start(&invalid) < 0);
     const char *invalid_servers[] = {
@@ -2672,15 +2663,17 @@ int main(void) {
         "https://host/path\n",
     };
     for (size_t i = 0; i < sizeof(invalid_servers) / sizeof(invalid_servers[0]); ++i) {
-        invalid = config;
+        invalid = *config;
         assert(snprintf(invalid.server_base, sizeof(invalid.server_base), "%s",
                         invalid_servers[i]) < (int)sizeof(invalid.server_base));
         assert(mybot_start(&invalid) < 0);
         assert(mybot_get_state() == MYBOT_STATE_STOPPED);
     }
+}
 
+static void test_required_platform(const mybot_config_t *config) {
     s_platform_registered = false;
-    assert(mybot_start(&config) < 0);
+    assert(mybot_start(config) < 0);
     assert(!mybot_is_running());
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
     assert(read_counter(&s_wifi_init_calls) == 0);
@@ -2688,27 +2681,29 @@ int main(void) {
     s_platform_registered = true;
 #if MYBOT_WAKE_WORDS
     s_wake_words_registered = false;
-    assert(mybot_start(&config) < 0);
+    assert(mybot_start(config) < 0);
     assert(!mybot_is_running());
     assert(read_counter(&s_wifi_init_calls) == 0);
     s_wake_words_registered = true;
 #endif
 #if MYBOT_ENABLE_HTTPS
     s_https_registered = false;
-    assert(mybot_start(&config) < 0);
+    assert(mybot_start(config) < 0);
     assert(!mybot_is_running());
     assert(read_counter(&s_wifi_init_calls) == 0);
     s_https_registered = true;
 #endif
+}
 
+static void start_application_and_services(const mybot_config_t *config) {
     aosl_set_log_level(AOSL_LOG_ERROR);
     begin_control_thread_tracking();
-    assert(mybot_start(&config) == 0);
+    assert(mybot_start(config) == 0);
     assert(aosl_get_log_level() == AOSL_LOG_NOTICE);
     assert(mybot_is_running());
     assert(mybot_get_state() == MYBOT_STATE_WIFI_PROVISIONING);
     assert(read_counter(&s_wifi_init_calls) == 1);
-    assert(mybot_start(&config) < 0);
+    assert(mybot_start(config) < 0);
 
     emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
     assert(wait_for_app_state(MYBOT_STATE_READY, 3000));
@@ -2719,7 +2714,9 @@ int main(void) {
     assert(read_counter(&s_playback_init_calls) == 1);
     assert(read_counter(&s_playback_start_calls) == 1);
     assert(read_counter(&s_device_init_calls) == 1);
+}
 
+static void check_ready_keys_and_connectivity(void) {
     emit_key_event(MYBOT_KEY_EVENT_PAIR);
     emit_key_event(MYBOT_KEY_EVENT_VOLUME_UP);
     emit_key_event(MYBOT_KEY_EVENT_VOLUME_DOWN);
@@ -2748,7 +2745,9 @@ int main(void) {
     assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
     assert(read_counter(&s_network_down_calls) == 2);
     assert(read_counter(&s_network_up_calls) == 2);
+}
 
+static void start_first_conversation(void) {
     emit_key_event(MYBOT_KEY_EVENT_CONVERSATION_START);
     assert(wait_for_counter(&s_rtc_join_calls, 1, 3000));
 #if MYBOT_ENABLE_VIDEO
@@ -2766,19 +2765,24 @@ int main(void) {
     assert(s_rtc_callbacks.on_rtm_data != NULL);
     assert(s_rtc_callbacks.on_rtm_subscribe_result != NULL);
     assert(s_rtc_callbacks.on_rtm_subscribe_data != NULL);
+}
 
+static const char s_vp_registered_message[] =
+    "{\"object\":\"message.sal_status\",\"status\":\"VP_REGISTER_SUCCESS\","
+    "\"timestamp\":1710000000000,\"data_type\":\"message\","
+    "\"message_id\":\"abcd1234\",\"send_ts\":1710000000100}";
+static const char s_thinking_message[] =
+    "{\"event_type\":\"state.thinking\",\"payload\":{\"value\":true}}";
+
+static void check_invalid_indicator_messages(void) {
     const char malformed_vp_message[] =
         "{\"object\":\"message.sal_status\",\"status\":\"VP_REGISTER_FAILED\"}";
     emit_rtm_subscribe_data("rtc-channel", "agent-uid", malformed_vp_message,
                             sizeof(malformed_vp_message) - 1U);
     wait_for_control_events();
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_VP_REGISTERED, false, 1000));
-
-    const char vp_message[] =
-        "{\"object\":\"message.sal_status\",\"status\":\"VP_REGISTER_SUCCESS\","
-        "\"timestamp\":1710000000000,\"data_type\":\"message\","
-        "\"message_id\":\"abcd1234\",\"send_ts\":1710000000100}";
-    emit_rtm_subscribe_data("rtc-channel", "other-uid", vp_message, sizeof(vp_message) - 1U);
+    emit_rtm_subscribe_data("rtc-channel", "other-uid", s_vp_registered_message,
+                            sizeof(s_vp_registered_message) - 1U);
     wait_for_control_events();
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_VP_REGISTERED, false, 1000));
 
@@ -2809,32 +2813,40 @@ int main(void) {
     char long_sender[MYBOT_RTM_UID_MAX_LEN + 1];
     memset(long_sender, 'u', sizeof(long_sender) - 1);
     long_sender[sizeof(long_sender) - 1] = '\0';
-    emit_rtm_subscribe_data(NULL, "agent-uid", vp_message, sizeof(vp_message) - 1U);
-    emit_rtm_subscribe_data(long_channel, "agent-uid", vp_message, sizeof(vp_message) - 1U);
-    emit_rtm_subscribe_data("rtc-channel", NULL, vp_message, sizeof(vp_message) - 1U);
-    emit_rtm_subscribe_data("rtc-channel", long_sender, vp_message, sizeof(vp_message) - 1U);
+    emit_rtm_subscribe_data(NULL, "agent-uid", s_vp_registered_message,
+                            sizeof(s_vp_registered_message) - 1U);
+    emit_rtm_subscribe_data(long_channel, "agent-uid", s_vp_registered_message,
+                            sizeof(s_vp_registered_message) - 1U);
+    emit_rtm_subscribe_data("rtc-channel", NULL, s_vp_registered_message,
+                            sizeof(s_vp_registered_message) - 1U);
+    emit_rtm_subscribe_data("rtc-channel", long_sender, s_vp_registered_message,
+                            sizeof(s_vp_registered_message) - 1U);
     emit_rtm_subscribe_data("rtc-channel", "agent-uid", NULL, 1);
-    emit_rtm_subscribe_data("rtc-channel", "agent-uid", vp_message, 0);
-    emit_rtm_subscribe_data("rtc-channel", "agent-uid", vp_message, sizeof(vp_message));
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", s_vp_registered_message, 0);
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", s_vp_registered_message,
+                            sizeof(s_vp_registered_message));
     static const char oversized_message[1025] = {0};
     emit_rtm_subscribe_data("rtc-channel", "agent-uid", oversized_message,
                             sizeof(oversized_message));
-    emit_rtm_data(NULL, vp_message, sizeof(vp_message) - 1U);
-    emit_rtm_data(long_sender, vp_message, sizeof(vp_message) - 1U);
+    emit_rtm_data(NULL, s_vp_registered_message, sizeof(s_vp_registered_message) - 1U);
+    emit_rtm_data(long_sender, s_vp_registered_message, sizeof(s_vp_registered_message) - 1U);
     wait_for_control_events();
     mock_lock();
     assert(s_last_lcd_content.screen == MYBOT_LCD_SCREEN_IN_CONVERSATION);
     assert(s_last_lcd_content.indicators == MYBOT_LCD_INDICATOR_NONE);
     mock_unlock();
 
-    emit_rtm_data("agent-uid", vp_message, sizeof(vp_message) - 1U);
+    emit_rtm_data("agent-uid", s_vp_registered_message, sizeof(s_vp_registered_message) - 1U);
     wait_for_control_events();
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_VP_REGISTERED, false, 1000));
 
-    emit_rtm_subscribe_data("bad-channel", "agent-uid", vp_message, sizeof(vp_message) - 1U);
+    emit_rtm_subscribe_data("bad-channel", "agent-uid", s_vp_registered_message,
+                            sizeof(s_vp_registered_message) - 1U);
     wait_for_control_events();
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_VP_REGISTERED, false, 1000));
+}
 
+static void check_conversation_indicators_and_commands(void) {
     const char listening_message[] =
         "{\"event_type\":\"state.listening\",\"payload\":{\"value\":true}}";
     emit_rtm_subscribe_data("rtc-channel", "agent-uid", listening_message,
@@ -2843,17 +2855,15 @@ int main(void) {
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_THINKING, false, 1000));
 
     /* Voiceprint registration is independent of the current server state. */
-    emit_rtm_subscribe_data("rtc-channel", "agent-uid", vp_message, sizeof(vp_message) - 1U);
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", s_vp_registered_message,
+                            sizeof(s_vp_registered_message) - 1U);
     assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_VP_REGISTERED, 1000));
     mock_lock();
     assert(s_last_lcd_content.indicators ==
            (MYBOT_LCD_INDICATOR_VP_REGISTERED | MYBOT_LCD_INDICATOR_LISTENING));
     mock_unlock();
-
-    const char thinking_message[] =
-        "{\"event_type\":\"state.thinking\",\"payload\":{\"value\":true}}";
-    emit_rtm_subscribe_data("rtc-channel", "agent-uid", thinking_message,
-                            sizeof(thinking_message) - 1U);
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", s_thinking_message,
+                            sizeof(s_thinking_message) - 1U);
     assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_THINKING, 1000));
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_LISTENING, false, 1000));
 
@@ -2875,8 +2885,8 @@ int main(void) {
     assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_SPEAKING, 1000));
 
     /* Keep a different-length sender case alongside the same-length VP case. */
-    emit_rtm_subscribe_data("rtc-channel", "other-agent", thinking_message,
-                            sizeof(thinking_message) - 1U);
+    emit_rtm_subscribe_data("rtc-channel", "other-agent", s_thinking_message,
+                            sizeof(s_thinking_message) - 1U);
     wait_for_control_events();
     assert(wait_for_lcd_indicator(MYBOT_LCD_INDICATOR_SPEAKING, 1000));
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_THINKING, false, 1000));
@@ -2888,26 +2898,9 @@ int main(void) {
     emit_rtm_subscribe_data("rtc-channel", "agent-uid", speaking_done_message,
                             sizeof(speaking_done_message) - 1U);
     assert(wait_for_lcd_indicator_state(MYBOT_LCD_INDICATOR_SPEAKING, false, 1000));
+}
 
-    emit_key_event(MYBOT_KEY_EVENT_PAIR);
-    assert(wait_for_counter(&s_pair_requests, 2, 1000));
-
-    mock_lock();
-    void (*token_will_expire)(void *) = s_rtc_callbacks.on_token_will_expire;
-    void *rtc_user_data = s_rtc_callbacks.user_data;
-    int (*token_renewed)(const char *, void *) = s_device_callbacks.on_rtc_token_renewed;
-    void *device_user_data = s_device_callbacks.user_data;
-    mock_unlock();
-    assert(token_will_expire != NULL);
-    assert(token_renewed != NULL);
-
-    token_will_expire(rtc_user_data);
-    assert(wait_for_counter(&s_token_renewal_requests, 1, 1000));
-    assert(wait_for_counter(&s_rtc_renew_calls, 1, 1000));
-    mock_lock();
-    assert(strcmp(s_renewed_token, "renewed-token") == 0);
-    mock_unlock();
-
+static void check_audio_uplink_and_playback(void) {
     assert(wait_for_counter(&s_rtc_send_calls, 1, 3000));
     assert(wait_for_audio_frame(0, 1000));
 
@@ -2946,7 +2939,9 @@ int main(void) {
     s_playback_write_limit = -1;
     mock_unlock();
 #endif
+}
 
+static void hang_up_and_check_late_notifications(void) {
     emit_key_event(MYBOT_KEY_EVENT_CONVERSATION_STOP);
     assert(wait_for_counter(&s_stop_requests, 1, 1000));
     assert(wait_for_counter(&s_rtc_leave_calls, 1, 1000));
@@ -2961,9 +2956,10 @@ int main(void) {
     drain_device_commands();
     assert(read_counter(&s_media_volume_set_calls) == volume_sets_after_stop);
     /* Late notifications cannot restore the ended conversation's screen. */
-    emit_rtm_subscribe_data("rtc-channel", "agent-uid", vp_message, sizeof(vp_message) - 1U);
-    emit_rtm_subscribe_data("rtc-channel", "agent-uid", thinking_message,
-                            sizeof(thinking_message) - 1U);
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", s_vp_registered_message,
+                            sizeof(s_vp_registered_message) - 1U);
+    emit_rtm_subscribe_data("rtc-channel", "agent-uid", s_thinking_message,
+                            sizeof(s_thinking_message) - 1U);
     wait_for_control_events();
     mock_lock();
     assert(s_last_lcd_content.screen == MYBOT_LCD_SCREEN_READY);
@@ -2981,6 +2977,9 @@ int main(void) {
     assert(aosl_atomic_read(&s_video_bitrate_calls) == 1);
     s_rtc_callbacks.on_state_changed(MYBOT_RTC_STATE_INITIALIZED, s_rtc_callbacks.user_data);
 #endif
+}
+
+static void start_second_conversation(void) {
     int sends_before_second_call = read_counter(&s_rtc_send_calls);
 #if MYBOT_WAKE_WORDS
     emit_wake_word();
@@ -2997,7 +2996,9 @@ int main(void) {
     drain_device_commands();
     assert(read_counter(&s_media_volume_set_calls) == volume_sets_before_second_command + 1);
     assert(read_counter(&s_last_media_volume) == 50);
+}
 
+static void block_capture_and_playback(void) {
     /* Wait until playback applies the pending buffer clear before blocking I/O. */
     int activity_checks = read_counter(&s_announce_active_checks);
     assert(wait_for_counter(&s_announce_active_checks, activity_checks + 1, 1000));
@@ -3011,14 +3012,9 @@ int main(void) {
     emit_remote_audio(shutdown_frame, sizeof(shutdown_frame));
     assert(wait_for_flag(&s_capture_read_blocked, 1000));
     assert(wait_for_flag(&s_playback_write_blocked, 2000));
+}
 
-    emit_key_event(MYBOT_KEY_EVENT_EXIT);
-    assert(!mybot_is_running());
-    int renewals_before_stop = read_counter(&s_token_renewal_requests);
-    token_will_expire(rtc_user_data);
-    assert(read_counter(&s_token_renewal_requests) == renewals_before_stop);
-    assert(token_renewed("too-late", device_user_data) < 0);
-
+static void stop_and_check_resource_cleanup(void) {
     mybot_stop();
     end_control_thread_tracking();
     assert(!s_capture_read_timed_out);
@@ -3053,24 +3049,68 @@ int main(void) {
     mybot_stop();
     assert(read_counter(&s_device_shutdown_calls) == 1);
     assert(read_counter(&s_rtc_fini_calls) == 1);
+}
 
+static void test_two_conversations(const mybot_config_t *config) {
+    start_application_and_services(config);
+    check_ready_keys_and_connectivity();
+    start_first_conversation();
+    check_invalid_indicator_messages();
+    check_conversation_indicators_and_commands();
+
+    emit_key_event(MYBOT_KEY_EVENT_PAIR);
+    assert(wait_for_counter(&s_pair_requests, 2, 1000));
+
+    mock_lock();
+    void (*token_will_expire)(void *) = s_rtc_callbacks.on_token_will_expire;
+    void *rtc_user_data = s_rtc_callbacks.user_data;
+    int (*token_renewed)(const char *, void *) = s_device_callbacks.on_rtc_token_renewed;
+    void *device_user_data = s_device_callbacks.user_data;
+    mock_unlock();
+    assert(token_will_expire != NULL);
+    assert(token_renewed != NULL);
+
+    token_will_expire(rtc_user_data);
+    assert(wait_for_counter(&s_token_renewal_requests, 1, 1000));
+    assert(wait_for_counter(&s_rtc_renew_calls, 1, 1000));
+    mock_lock();
+    assert(strcmp(s_renewed_token, "renewed-token") == 0);
+    mock_unlock();
+
+    check_audio_uplink_and_playback();
+    hang_up_and_check_late_notifications();
+    start_second_conversation();
+    block_capture_and_playback();
+
+    emit_key_event(MYBOT_KEY_EVENT_EXIT);
+    assert(!mybot_is_running());
+    int renewals_before_stop = read_counter(&s_token_renewal_requests);
+    token_will_expire(rtc_user_data);
+    assert(read_counter(&s_token_renewal_requests) == renewals_before_stop);
+    assert(token_renewed("too-late", device_user_data) < 0);
+    stop_and_check_resource_cleanup();
+}
+
+static void test_startup_failure_states(const mybot_config_t *config) {
     aosl_set_log_level(AOSL_LOG_DEBUG);
     s_wifi_init_fails = true;
-    assert(mybot_start(&config) < 0);
+    assert(mybot_start(config) < 0);
     assert(aosl_get_log_level() == AOSL_LOG_DEBUG);
     s_wifi_init_fails = false;
     assert(!mybot_is_running());
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
 
     s_kv_init_fails = true;
-    assert(mybot_start(&config) == 0);
+    assert(mybot_start(config) == 0);
     emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
     assert(wait_for_app_state(MYBOT_STATE_FAILED, 1000));
     assert(wait_for_runtime_exit(1000));
     mybot_stop();
     s_kv_init_fails = false;
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+}
 
+static void test_stop_during_start(mybot_config_t *config) {
     /* Concurrent stop must wait for a start that is still constructing the
      * runtime instead of tearing down partially initialized resources. */
     mock_lock();
@@ -3085,7 +3125,7 @@ int main(void) {
 
     pthread_t start_tid;
     pthread_t stop_tid;
-    int thread_result = pthread_create(&start_tid, NULL, start_thread, &config);
+    int thread_result = pthread_create(&start_tid, NULL, start_thread, config);
     assert(thread_result == 0);
     assert(wait_for_flag_value(&s_wifi_init_entered, true, 1000));
     thread_result = pthread_create(&stop_tid, NULL, stop_thread, NULL);
@@ -3105,8 +3145,10 @@ int main(void) {
     assert(read_bool(&s_stop_thread_returned));
     assert(read_counter(&s_wifi_deinit_calls) == wifi_deinit_before_race + 1);
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+}
 
-    assert(mybot_start(&config) == 0);
+static void test_rtc_start_failures(const mybot_config_t *config) {
+    assert(mybot_start(config) == 0);
     emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
     assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
     int ended_before_failure = read_counter(&s_conversation_ended_notifications);
@@ -3122,7 +3164,7 @@ int main(void) {
     mock_unlock();
     mybot_stop();
 
-    assert(mybot_start(&config) == 0);
+    assert(mybot_start(config) == 0);
     emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
     assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
     ended_before_failure = read_counter(&s_conversation_ended_notifications);
@@ -3137,59 +3179,67 @@ int main(void) {
     mock_lock();
     s_rtc_init_result = 0;
     mock_unlock();
+}
 
+static void test_wifi_connected_during_init(const mybot_config_t *config) {
     mock_lock();
     s_wifi_emit_connected_on_init = true;
     mock_unlock();
-    assert(mybot_start(&config) == 0);
+    assert(mybot_start(config) == 0);
     assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
     mybot_stop();
     mock_lock();
     s_wifi_emit_connected_on_init = false;
     mock_unlock();
+}
 
 #if MYBOT_ENABLE_VIDEO
+static void test_video_init_failure(const mybot_config_t *config) {
     /* An encoder init failure must fail service startup and leave restart possible. */
     intptr_t video_destroys_before = aosl_atomic_read(&s_video_destroy_calls);
     aosl_atomic_set(&s_video_init_fails, true);
-    assert(mybot_start(&config) == 0);
+    assert(mybot_start(config) == 0);
     emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
     assert(wait_for_app_state(MYBOT_STATE_FAILED, 1000));
     mybot_stop();
     assert(aosl_atomic_read(&s_video_destroy_calls) == video_destroys_before);
     aosl_atomic_set(&s_video_init_fails, false);
-    assert(mybot_start(&config) == 0);
+    assert(mybot_start(config) == 0);
     emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
     assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
     mybot_stop();
     assert(aosl_atomic_read(&s_video_destroy_calls) == video_destroys_before + 1);
+}
 
+static void test_video_stop_retry(const mybot_config_t *config) {
     /* Keep the original encoder owner for a retry after a failed stop. */
-    assert(mybot_start(&config) == 0);
+    assert(mybot_start(config) == 0);
     emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
     assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
     intptr_t starts_before_retry = aosl_atomic_read(&s_video_start_calls);
-    video_destroys_before = aosl_atomic_read(&s_video_destroy_calls);
+    intptr_t video_destroys_before = aosl_atomic_read(&s_video_destroy_calls);
     emit_key_event(MYBOT_KEY_EVENT_CONVERSATION_START);
     assert(wait_for_video_counter(&s_video_start_calls, starts_before_retry + 1));
     aosl_atomic_set(&s_video_stop_fails, true);
     mybot_stop();
     assert(mybot_get_state() == MYBOT_STATE_STOPPING);
-    assert(mybot_start(&config) < 0);
+    assert(mybot_start(config) < 0);
     assert(aosl_atomic_read(&s_video_destroy_calls) == video_destroys_before);
     aosl_atomic_set(&s_video_stop_fails, false);
     mybot_stop();
     assert(mybot_get_state() == MYBOT_STATE_STOPPED);
     assert(aosl_atomic_read(&s_video_destroy_calls) == video_destroys_before + 1);
+}
 
+static void test_stop_during_video_start(const mybot_config_t *config) {
     /* Shutdown must wait for a platform start already executing on control,
      * rather than invoking stop/destroy concurrently from another thread. */
-    assert(mybot_start(&config) == 0);
+    assert(mybot_start(config) == 0);
     emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
     assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
     intptr_t video_starts_before = aosl_atomic_read(&s_video_start_calls);
     intptr_t video_stops_before = aosl_atomic_read(&s_video_stop_calls);
-    video_destroys_before = aosl_atomic_read(&s_video_destroy_calls);
+    intptr_t video_destroys_before = aosl_atomic_read(&s_video_destroy_calls);
     mock_lock();
     s_block_video_start = true;
     s_video_start_entered = false;
@@ -3199,7 +3249,8 @@ int main(void) {
     emit_key_event(MYBOT_KEY_EVENT_CONVERSATION_START);
     assert(wait_for_flag(&s_video_start_entered, 1000));
     assert(mybot_is_running());
-    thread_result = pthread_create(&stop_tid, NULL, stop_thread, NULL);
+    pthread_t stop_tid;
+    int thread_result = pthread_create(&stop_tid, NULL, stop_thread, NULL);
     assert(thread_result == 0);
     assert(wait_for_flag(&s_stop_thread_entered, 1000));
     for (int elapsed = 0; elapsed < 1000 && mybot_is_running(); elapsed++) {
@@ -3218,8 +3269,30 @@ int main(void) {
     assert(aosl_atomic_read(&s_video_start_calls) == video_starts_before + 1);
     assert(aosl_atomic_read(&s_video_stop_calls) == video_stops_before + 1);
     assert(aosl_atomic_read(&s_video_destroy_calls) == video_destroys_before + 1);
+}
+
 #endif
 
+int main(void) {
+    mybot_config_t config = {.server_base = TEST_SERVER_BASE,
+                             .device_id = "device-1",
+                             .firmware_ver = "test-fw",
+                             .hw_model = "test-hw"};
+    s_https_registered = true;
+    s_wake_words_registered = true;
+
+    test_invalid_config(&config);
+    test_required_platform(&config);
+    test_two_conversations(&config);
+    test_startup_failure_states(&config);
+    test_stop_during_start(&config);
+    test_rtc_start_failures(&config);
+    test_wifi_connected_during_init(&config);
+#if MYBOT_ENABLE_VIDEO
+    test_video_init_failure(&config);
+    test_video_stop_retry(&config);
+    test_stop_during_video_start(&config);
+#endif
     test_control_queue_saturation(&config);
     test_lost_rtc_notification(&config);
     test_service_startup_failures(&config);
