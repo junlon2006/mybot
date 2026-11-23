@@ -19,8 +19,9 @@ static void *test_malloc(size_t size) {
         return NULL;
     }
     void *ptr = malloc(size);
-    if (ptr)
+    if (ptr) {
         s_live_alloc_count++;
+    }
     return ptr;
 }
 
@@ -127,11 +128,13 @@ static void test_arrays_escapes_and_numbers(void) {
 
     char nested[80];
     size_t pos = 0;
-    for (int i = 0; i < 33; ++i)
+    for (int i = 0; i < 33; ++i) {
         nested[pos++] = '[';
+    }
     nested[pos++] = '0';
-    for (int i = 0; i < 33; ++i)
+    for (int i = 0; i < 33; ++i) {
         nested[pos++] = ']';
+    }
     nested[pos] = '\0';
     assert(mybot_json_parse(nested) == NULL);
 }
@@ -184,6 +187,7 @@ static void test_number_boundaries(void) {
         {"-9223372036854775808e0", INT64_MIN, (double)INT64_MIN},
         {"0e-2147483647", 0, 0.0},
     };
+
     for (size_t i = 0; i < sizeof(valid) / sizeof(valid[0]); ++i) {
         mybot_json_t *value = mybot_json_parse(valid[i].text);
         assert(value != NULL && value->type == MYBOT_JSON_NUMBER);
@@ -213,8 +217,9 @@ static void test_number_boundaries(void) {
         "NaN",
         "Infinity",
     };
-    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i)
+    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
         assert(mybot_json_parse(invalid[i]) == NULL);
+    }
 }
 
 static void test_string_validation_and_round_trip(void) {
@@ -250,8 +255,9 @@ static void test_string_validation_and_round_trip(void) {
         "\"\\uD800\\uXC00\"", "\"\\uD800\\uDX00\"", "\"\\uD800\\uDCX0\"",
         "\"\\uD800\\uDC0X\"", "\"\\uD800\\uE000\"",
     };
-    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i)
+    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
         assert(mybot_json_parse(invalid[i]) == NULL);
+    }
 }
 
 static void test_container_validation_and_depth(void) {
@@ -291,8 +297,9 @@ static void test_container_validation_and_depth(void) {
         "{}[]",
         "\fnull",
     };
-    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i)
+    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
         assert(mybot_json_parse(invalid[i]) == NULL);
+    }
 
     for (int object = 0; object <= 1; ++object) {
         for (int depth = 32; depth <= 33; ++depth) {
@@ -307,8 +314,9 @@ static void test_container_validation_and_depth(void) {
                 }
             }
             nested[pos++] = '0';
-            for (int i = 0; i < depth; ++i)
+            for (int i = 0; i < depth; ++i) {
                 nested[pos++] = object ? '}' : ']';
+            }
             nested[pos] = '\0';
             root = mybot_json_parse(nested);
             assert((root != NULL) == (depth == 32));
@@ -416,6 +424,7 @@ static void test_numeric_regressions(void) {
     } valid[] = {{-9223372036854775808.0, INT64_MIN},
                  {nextafter(9223372036854775808.0, 0.0), INT64_MAX - 1023},
                  {-1.5, -1}};
+
     for (size_t i = 0; i < sizeof(valid) / sizeof(valid[0]); ++i) {
         mybot_json_t *value = mybot_json_create_number(valid[i].number);
         assert(value != NULL && value->valuedouble == valid[i].number);
@@ -442,6 +451,7 @@ static void test_numeric_regressions(void) {
                     {"-9223372036854775808", INT64_MIN},
                     {"9007199254740993", INT64_C(9007199254740993)},
                     {"-9007199254740993", -INT64_C(9007199254740993)}};
+
     for (size_t i = 0; i < sizeof(integers) / sizeof(integers[0]); ++i) {
         mybot_json_t *value = mybot_json_parse(integers[i].text);
         assert(value != NULL);
@@ -478,8 +488,9 @@ static void test_parse_and_print_allocation_failures(void) {
         "[1,\"two\",{\"three\":3}]",
         "{\"a\":[1,2],\"b\":false,\"c\":\"three\"}",
     };
-    for (size_t i = 0; i < sizeof(printable) / sizeof(printable[0]); ++i)
+    for (size_t i = 0; i < sizeof(printable) / sizeof(printable[0]); ++i) {
         assert_print_allocation_failures(printable[i]);
+    }
     restore_allocator();
 }
 

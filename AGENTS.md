@@ -153,11 +153,14 @@ ctest --test-dir build-video --output-on-failure
 - Documentation-only changes need link/content and whitespace checks; public-header comment
   changes also need Doxygen. Hardware validation is separate from stubbed host tests.
 
+Use clang-format 15 or newer. Leave one blank line between function definitions, including
+around conditional blocks that group whole functions. Use braces for control statement bodies.
+
 Formatting and API documentation commands:
 
 ```sh
 find include src platforms/linux examples/linux tests -type f \
-  \( -name '*.c' -o -name '*.h' \) -exec clang-format --dry-run --Werror {} +
+  \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) -exec clang-format --dry-run --Werror {} +
 doxygen build/docs/Doxyfile
 ```
 

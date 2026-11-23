@@ -107,6 +107,7 @@ static bool s_kv_init_fails;
 static int s_rtc_init_result;
 static int s_rtc_join_result;
 static bool s_lcd_init_fails;
+
 enum {
     SERVICE_FAIL_NONE,
     SERVICE_FAIL_KEY_INIT,
@@ -116,6 +117,7 @@ enum {
     SERVICE_FAIL_PLAYBACK_START,
     SERVICE_FAIL_DEVICE_INIT,
 };
+
 static int s_service_failure;
 #if MYBOT_TEST_WRAP_APP_MPQ
 static bool s_control_create_fails;
@@ -1317,6 +1319,7 @@ void mybot_device_lifecycle_tick(mybot_device_lifecycle_t *lifecycle) {
     assert(lifecycle == s_device_lifecycle);
     observe_control_thread(CONTROL_OBS_DEVICE_TICK);
     mybot_device_lifecycle_callbacks_t callbacks;
+
     enum {
         DEVICE_TICK_IDLE = 0,
         DEVICE_TICK_PAIR,
@@ -2503,6 +2506,7 @@ static void test_cloud_adjust_volume(void) {
         {-10, 30},  {10, 40},  {-100, 0}, {-10, 0}, {10, 10},
         {100, 100}, {10, 100}, {-10, 90}, {0, 90},
     };
+
     for (size_t i = 0; i < sizeof(adjustments) / sizeof(adjustments[0]); ++i) {
         char id[32];
         char command[96];

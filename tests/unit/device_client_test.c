@@ -461,6 +461,7 @@ static void test_binding_optional_fields(void) {
                   {"device_token", sizeof(binding.device_token)},
                   {"agent_id", MYBOT_DEVICE_CLIENT_MAX_ID},
                   {"agent_name", MYBOT_DEVICE_CLIENT_MAX_ID}};
+
     char value[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 1];
     char response[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 128];
     for (size_t i = 0; i < sizeof(fields) / sizeof(fields[0]); ++i) {
@@ -949,6 +950,7 @@ static void test_device_post_header_ownership(void) {
         int status;
         int expected;
     } responses[] = {{-1, 200, -1}, {0, 401, 401}, {0, 503, 503}, {0, 0, -1}, {0, 200, 0}};
+
     for (int operation = POST_START; operation <= POST_STOP; ++operation) {
         begin_header_tracking((device_post_t)operation, true);
         int calls_before = s_post_ex_call_count;

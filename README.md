@@ -445,11 +445,11 @@ cmake -S . -B build -DCONFIG_PLATFORM=linux -DMYBOT_ENABLE_ASAN=ON
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 find include src platforms/linux examples/linux tests -type f \
-  \( -name '*.c' -o -name '*.h' \) \
+  \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) \
   -exec clang-format --dry-run --Werror {} +
 ```
 
-- Self-maintained C code follows the root `.clang-format`; `third_party/` keeps upstream content.
+- Format first-party C and C++ code with clang-format 15 or newer using the root `.clang-format`.
 - CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the build, tests, and format check
   on every push / PR; make sure your local commands match CI before merging.
 - CI builds with both GCC and Clang under ASan and UBSan, runs cppcheck and clang-tidy static

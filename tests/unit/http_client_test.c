@@ -399,6 +399,7 @@ static void test_content_length_consistency(void) {
         {"Content-Length: 6\r\n", "hello", NULL},
         {"Content-Length: 5\r\nX-Incomplete: header", "", NULL},
     };
+
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
         char raw[256];
         int written = snprintf(raw, sizeof(raw), "HTTP/1.1 200 OK\r\n%s\r\n%s", cases[i].headers,

@@ -14,11 +14,16 @@
 3. 绝不提交凭据、设备 token、客户数据或未经批准的专有 SDK 包。修改
    `third_party/agora_rtsa_sdk` 中已有的 Agora RTSA 软件包必须经过许可证与再分发审查；
    参见 `THIRD_PARTY_NOTICES.md`。
-4. 自维护的 C 源码遵循仓库根目录 `.clang-format`，并为每个文件标注 SPDX 许可证头
-   （`/* SPDX-License-Identifier: Apache-2.0 */`；cJSON 派生的 `mybot_json` 源码使用 `MIT`）。
-   机械重命名或批量编辑后，提交前先执行
-   `find include src platforms/linux examples/linux tests -type f \( -name '*.c' -o -name '*.h'
-   \) -exec clang-format -i {} +`。
+4. 使用 clang-format 15 或更高版本，按仓库根目录的 `.clang-format` 格式化自维护的
+   C 和 C++ 文件。函数定义之间留一个空行，整组函数的条件编译块前后也留空行。控制语句的
+   语句体使用花括号。每个文件标注 SPDX 许可证头（`/* SPDX-License-Identifier: Apache-2.0 */`）。
+   cJSON 派生的 `mybot_json` 源码使用 `MIT`。机械重命名或批量编辑后，提交前先执行以下命令。
+
+   ```sh
+   find include src platforms/linux examples/linux tests -type f \
+     \( -name '*.c' -o -name '*.cpp' -o -name '*.h' \) -exec clang-format -i {} +
+   ```
+
 5. 提交 pull request 前按
    [README：开发与验证](README.zh-CN.md#开发与验证)中的命令构建并测试。
 

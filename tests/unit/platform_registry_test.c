@@ -101,6 +101,7 @@ static const mybot_wake_words_ops_t s_wake_words = {
     .process = wake_words_process,
     .destroy = mybot_test_destroy,
 };
+
 int main(void) {
     const mybot_platform_descriptor_t required = mybot_test_platform_descriptor();
     mybot_platform_descriptor_t descriptor;

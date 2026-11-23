@@ -115,9 +115,11 @@ static int capture_init(void **ctx, int rate, int channels, int bits) {
     *ctx = &s_capture_ctx;
     return 0;
 }
+
 static int capture_start(void *ctx) {
     return ctx == &s_capture_ctx ? 0 : -1;
 }
+
 static int capture_read(void *ctx, void *buf, int frames) {
     if (ctx != &s_capture_ctx) {
         return -1;
@@ -138,9 +140,11 @@ static int capture_read(void *ctx, void *buf, int frames) {
     }
     return frames;
 }
+
 static int capture_stop(void *ctx) {
     return ctx == &s_capture_ctx && !s_capture_stop_fail ? 0 : -1;
 }
+
 static void capture_destroy(void *ctx) {
     assert(ctx == &s_capture_ctx);
 }
@@ -150,9 +154,11 @@ static int playback_init(void **ctx, int rate, int channels, int bits) {
     *ctx = &s_playback_ctx;
     return 0;
 }
+
 static int playback_start(void *ctx) {
     return ctx == &s_playback_ctx ? 0 : -1;
 }
+
 static int playback_write(void *ctx, const void *buf, int frames) {
     assert(ctx == &s_playback_ctx && buf != NULL && frames > 0);
     aosl_atomic_inc(&s_playback_writes);
@@ -182,9 +188,11 @@ static int playback_write(void *ctx, const void *buf, int frames) {
     }
     return frames;
 }
+
 static int playback_stop(void *ctx) {
     return ctx == &s_playback_ctx && !s_playback_stop_fail ? 0 : -1;
 }
+
 static void playback_destroy(void *ctx) {
     assert(ctx == &s_playback_ctx);
 }
@@ -193,6 +201,7 @@ static int volume_init(void **ctx) {
     *ctx = &s_device_volume;
     return 0;
 }
+
 static int volume_set(void *ctx, int volume) {
     assert(ctx == &s_device_volume);
     if (s_volume_set_fail) {
@@ -201,6 +210,7 @@ static int volume_set(void *ctx, int volume) {
     s_device_volume = volume;
     return 0;
 }
+
 static int volume_get(void *ctx, int *volume) {
     assert(ctx == &s_device_volume);
     if (s_volume_get_fail) {
@@ -209,6 +219,7 @@ static int volume_get(void *ctx, int *volume) {
     *volume = s_device_volume;
     return 0;
 }
+
 static void volume_destroy(void *ctx) {
     assert(ctx == &s_device_volume);
 }
@@ -218,6 +229,7 @@ static int announce_init(void **ctx) {
     *ctx = &s_capture_ctx;
     return 0;
 }
+
 static void *announce_open(void *ctx, mybot_announce_sound_t sound) {
     (void)ctx;
     if (aosl_atomic_read(&s_prompt_fixture)) {
@@ -235,6 +247,7 @@ static void *announce_open(void *ctx, mybot_announce_sound_t sound) {
     }
     return (void *)(uintptr_t)(sound + 1);
 }
+
 static int announce_read(void *ctx, void *sound, int16_t *dst, int max_frames) {
     (void)ctx;
     assert(sound != NULL && dst != NULL && max_frames > 0);
@@ -244,10 +257,12 @@ static int announce_read(void *ctx, void *sound, int16_t *dst, int max_frames) {
     }
     return max_frames;
 }
+
 static void announce_close(void *ctx, void *sound) {
     (void)ctx;
     (void)sound;
 }
+
 static void announce_destroy(void *ctx) {
     assert(ctx == &s_capture_ctx);
     s_announce_destroy_calls++;
@@ -292,6 +307,7 @@ static mybot_platform_descriptor_t s_platform = {
 bool mybot_platform_registry_is_registered(void) {
     return true;
 }
+
 const mybot_platform_descriptor_t *mybot_platform_registry_get(void) {
     return &s_platform;
 }

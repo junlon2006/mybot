@@ -12,6 +12,7 @@
 #define VALID_ACTION "{\"type\":\"action\",\"name\":\"audio.set_volume\",\"params\":{\"level\":50}}"
 #define VALID_ADJUST                                                                               \
     "{\"type\":\"action\",\"name\":\"audio.adjust_volume\",\"params\":{\"delta\":-10}}"
+
 static mybot_json_t *fixture(const char *command, const char *extra) {
     char text[2048];
     int length = snprintf(text, sizeof(text),
@@ -67,6 +68,7 @@ static void test_parameter_boundaries(void) {
         {"9223372036854775807", false},
         {"-9223372036854775808", false},
     };
+
     mybot_device_command_t result;
     for (size_t index = 0; index < sizeof(cases) / sizeof(cases[0]); index++) {
         char command[192];
@@ -105,6 +107,7 @@ static void test_relative_parameter_boundaries(void) {
         {"9223372036854775807", false, 0},
         {"-9223372036854775808", false, 0},
     };
+
     for (size_t index = 0; index < sizeof(cases) / sizeof(cases[0]); ++index) {
         char action[192];
         int length = snprintf(action, sizeof(action),
@@ -301,12 +304,14 @@ static void test_free(void *ptr) {
 static void test_allocation_and_ownership(void) {
     const mybot_json_hooks_t hooks = {.malloc_fn = test_malloc, .free_fn = test_free};
     assert(mybot_json_init_hooks(&hooks) == 0);
+
     static const struct {
         const char *action;
         mybot_device_command_type_t type;
         int value;
     } commands[] = {{VALID_ACTION, MYBOT_DEVICE_COMMAND_SET_VOLUME, 50},
                     {VALID_ADJUST, MYBOT_DEVICE_COMMAND_ADJUST_VOLUME, -10}};
+
     for (size_t index = 0; index < sizeof(commands) / sizeof(commands[0]); ++index) {
         mybot_json_t *root = fixture(commands[index].action, "");
         size_t allocations_before = s_allocation_count;
