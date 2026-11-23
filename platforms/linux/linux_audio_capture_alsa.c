@@ -1,29 +1,18 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include <mybot/platform/mybot_audio.h>
 
+#include "linux_alsa_pcm.h"
 #include "linux_platform_adapters.h"
-
-#include <alsa/asoundlib.h>
 
 #include <string.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <stdint.h>
 
 #include <api/aosl_log.h>
-#include <hal/aosl_hal_time.h>
-
-/* Bounded wait for poll-based (non-blocking) PCM I/O. Keeps read/write
- * interruptible so worker threads can observe stop conditions and exit
- * promptly instead of blocking forever inside the driver. */
-#define PCM_POLL_TIMEOUT_MS 50
-#define PCM_RESUME_TIMEOUT_MS 500
-#define PCM_RESUME_RETRY_MS 1
 
 /* Internal context. */
 typedef struct {
     snd_pcm_t *handle;
-    int rate;
     int channels;
     int bits_per_sample;
 
@@ -32,50 +21,6 @@ typedef struct {
     size_t acc_capacity;
     size_t acc_len;
 } alsa_cap_t;
-
-/* ---- ALSA error recovery helpers ---- */
-static int xrun_recover(snd_pcm_t *handle) {
-    snd_pcm_status_t *status;
-    snd_pcm_status_alloca(&status);
-
-    int err = snd_pcm_status(handle, status);
-    if (err < 0) {
-        AOSL_LOG_ERR("xrun_recover: status error: %s", snd_strerror(err));
-        goto prepare;
-    }
-    if (snd_pcm_status_get_state(status) == SND_PCM_STATE_XRUN) {
-        snd_pcm_uframes_t delay = snd_pcm_status_get_delay(status);
-        AOSL_LOG_WRN("xrun: overrun detected (%lu frames), recovering", (unsigned long)delay);
-    }
-
-prepare:
-    err = snd_pcm_prepare(handle);
-    if (err < 0) {
-        AOSL_LOG_ERR("xrun_recover: prepare failed: %s", snd_strerror(err));
-        return -1;
-    }
-    return 0;
-}
-
-static int suspend_recover(snd_pcm_t *handle) {
-    int err;
-    uint64_t deadline = aosl_hal_get_tick_ms() + PCM_RESUME_TIMEOUT_MS;
-
-    while ((err = snd_pcm_resume(handle)) == -EAGAIN) {
-        if (aosl_hal_get_tick_ms() >= deadline) {
-            break;
-        }
-        aosl_hal_msleep(PCM_RESUME_RETRY_MS);
-    }
-    if (err < 0) {
-        err = snd_pcm_prepare(handle);
-        if (err < 0) {
-            AOSL_LOG_ERR("suspend_recover: resume/prepare failed: %s", snd_strerror(err));
-            return -1;
-        }
-    }
-    return 0;
-}
 
 static int pcm_read(snd_pcm_t *handle, char *buf, size_t frames, size_t frame_bytes) {
     ssize_t r;
@@ -91,11 +36,11 @@ static int pcm_read(snd_pcm_t *handle, char *buf, size_t frames, size_t frame_by
                 break;
             }
         } else if (r == -EPIPE) {
-            if (xrun_recover(handle) < 0) {
+            if (linux_alsa_recover_xrun(handle, "overrun") < 0) {
                 return -1;
             }
         } else if (r == -ESTRPIPE) {
-            if (suspend_recover(handle) < 0) {
+            if (linux_alsa_recover_suspend(handle) < 0) {
                 return -1;
             }
         } else if (r < 0) {
@@ -126,82 +71,20 @@ static int alsa_capture_init(void **ctx, int rate, int channels, int bits) {
         return -1;
     }
 
-    c->rate = rate;
     c->channels = channels;
     c->bits_per_sample = bits;
 
     AOSL_LOG_NTC("init: rate=%d channels=%d bits=%d", rate, channels, bits);
 
-    int err;
-    snd_pcm_hw_params_t *hw;
-    snd_pcm_sw_params_t *sw;
-
-    err = snd_pcm_open(&c->handle, "default", SND_PCM_STREAM_CAPTURE, 0);
-    if (err < 0) {
-        AOSL_LOG_ERR("init: snd_pcm_open failed: %s", snd_strerror(err));
-        goto fail;
+    c->handle =
+        linux_alsa_open_pcm(SND_PCM_STREAM_CAPTURE, rate, channels, 50, PCM_START_ON_FIRST_FRAME);
+    if (!c->handle) {
+        free(c);
+        return -1;
     }
-
-    /* Non-blocking mode: pcm_read() uses snd_pcm_wait() with a timeout so a
-     * capture thread blocked on no data can still notice shutdown. */
-    snd_pcm_nonblock(c->handle, 1);
-
-    /* Hardware parameters. */
-    snd_pcm_hw_params_alloca(&hw);
-    snd_pcm_hw_params_any(c->handle, hw);
-    snd_pcm_hw_params_set_access(c->handle, hw, SND_PCM_ACCESS_RW_INTERLEAVED);
-    snd_pcm_hw_params_set_format(c->handle, hw, SND_PCM_FORMAT_S16_LE);
-    snd_pcm_hw_params_set_channels(c->handle, hw, channels);
-
-    unsigned int actual_rate = rate;
-    err = snd_pcm_hw_params_set_rate_near(c->handle, hw, &actual_rate, 0);
-    if (err < 0) {
-        AOSL_LOG_ERR("init: set_rate_near failed: %s", snd_strerror(err));
-        goto fail;
-    }
-    if (actual_rate != (unsigned int)rate) {
-        /* The app derives frame sizes from the requested rate; a mismatch
-         * would silently skew timing, so fail rather than run wrong. */
-        AOSL_LOG_ERR("init: device rate %u != requested %d", actual_rate, rate);
-        goto fail;
-    }
-
-    snd_pcm_uframes_t buf_frames = (snd_pcm_uframes_t)(rate * 50 / 1000);
-    snd_pcm_hw_params_set_buffer_size_near(c->handle, hw, &buf_frames);
-
-    snd_pcm_uframes_t period_frames = buf_frames / 4;
-    snd_pcm_hw_params_set_period_size_near(c->handle, hw, &period_frames, 0);
-
-    err = snd_pcm_hw_params(c->handle, hw);
-    if (err < 0) {
-        AOSL_LOG_ERR("init: hw_params failed: %s", snd_strerror(err));
-        goto fail;
-    }
-
-    AOSL_LOG_DBG("init: hw_params ok (rate=%u, buf=%lu, period=%lu)", actual_rate,
-                 (unsigned long)buf_frames, (unsigned long)period_frames);
-
-    /* Software parameters. */
-    snd_pcm_sw_params_alloca(&sw);
-    snd_pcm_sw_params_current(c->handle, sw);
-    snd_pcm_sw_params_set_avail_min(c->handle, sw, period_frames);
-    snd_pcm_sw_params_set_start_threshold(c->handle, sw, 1);
-    err = snd_pcm_sw_params(c->handle, sw);
-    if (err < 0) {
-        AOSL_LOG_ERR("init: sw_params failed: %s", snd_strerror(err));
-        goto fail;
-    }
-
     *ctx = c;
     AOSL_LOG_NTC("init: ok");
     return 0;
-
-fail:
-    if (c->handle) {
-        snd_pcm_close(c->handle);
-    }
-    free(c);
-    return -1;
 }
 
 static int alsa_capture_start(void *ctx) {
