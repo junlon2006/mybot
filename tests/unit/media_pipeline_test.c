@@ -21,6 +21,8 @@ static aosl_atomic_t s_last_send_len;
 static int s_capture_mode;
 static int s_playback_mode;
 static bool s_capture_init_fail;
+static bool s_capture_stop_fail;
+static bool s_playback_stop_fail;
 static int s_announce_init_calls;
 static int s_announce_destroy_calls;
 static int s_device_volume = MYBOT_AUDIO_VOLUME_DEFAULT;
@@ -137,7 +139,7 @@ static int capture_read(void *ctx, void *buf, int frames) {
     return frames;
 }
 static int capture_stop(void *ctx) {
-    return ctx == &s_capture_ctx ? 0 : -1;
+    return ctx == &s_capture_ctx && !s_capture_stop_fail ? 0 : -1;
 }
 static void capture_destroy(void *ctx) {
     assert(ctx == &s_capture_ctx);
@@ -181,7 +183,7 @@ static int playback_write(void *ctx, const void *buf, int frames) {
     return frames;
 }
 static int playback_stop(void *ctx) {
-    return ctx == &s_playback_ctx ? 0 : -1;
+    return ctx == &s_playback_ctx && !s_playback_stop_fail ? 0 : -1;
 }
 static void playback_destroy(void *ctx) {
     assert(ctx == &s_playback_ctx);
@@ -351,8 +353,7 @@ typedef struct {
 
 static void *replace_prompt(void *arg) {
     prompt_replacement_t *replacement = arg;
-    replacement->result =
-        mybot_media_pipeline_play_prompt(replacement->pipeline, MYBOT_PROMPT_PAIR_CODE, "");
+    replacement->result = mybot_media_pipeline_play_pair_code(replacement->pipeline, "");
     return NULL;
 }
 
@@ -384,7 +385,7 @@ static void test_prompt_replacement(const mybot_media_pipeline_callbacks_t *call
                                     bool fail_load, int write_result) {
     mybot_media_pipeline_t pipeline;
     init_prompt_fixture(&pipeline, callbacks, fail_load ? 1 : 2, write_result);
-    assert(mybot_media_pipeline_play_prompt(&pipeline, MYBOT_PROMPT_PAIR_CODE, "") == 0);
+    assert(mybot_media_pipeline_play_pair_code(&pipeline, "") == 0);
     assert(wait_for_atomic(&s_prompt_write_entered, 1));
     assert(s_prompt_write_samples[0] == 1000);
     uint32_t generation_before = mybot_announce_get_generation(&pipeline.announce);
@@ -439,7 +440,7 @@ static void test_stop_prompt_during_write(const mybot_media_pipeline_callbacks_t
     mybot_media_pipeline_t pipeline;
     init_prompt_fixture(&pipeline, callbacks, 1, write_result);
     mybot_media_pipeline_set_rtc_connected(&pipeline, true);
-    assert(mybot_media_pipeline_play_prompt(&pipeline, MYBOT_PROMPT_PAIR_CODE, "") == 0);
+    assert(mybot_media_pipeline_play_pair_code(&pipeline, "") == 0);
     assert(wait_for_atomic(&s_prompt_write_entered, 1));
     mybot_media_pipeline_stop_prompt(&pipeline);
     prompt_replacement_t flush = {.pipeline = &pipeline, .result = -2};
@@ -509,7 +510,7 @@ static void test_prompt_aec_reference(const mybot_media_pipeline_callbacks_t *ca
     mybot_media_pipeline_push_remote_audio(&pipeline, rtc_frame, sizeof(rtc_frame));
     assert(wait_for_atomic(&s_prompt_write_entered, 1));
     assert(s_prompt_write_samples[0] == 7);
-    assert(mybot_media_pipeline_play_prompt(&pipeline, MYBOT_PROMPT_PAIR_CODE, "") == 0);
+    assert(mybot_media_pipeline_play_pair_code(&pipeline, "") == 0);
     aosl_atomic_set(&s_block_prompt_write, 2);
     aosl_atomic_set(&s_release_prompt_write, 1);
     assert(wait_for_atomic(&s_prompt_write_entered, 2));
@@ -525,7 +526,7 @@ static void test_prompt_aec_reference(const mybot_media_pipeline_callbacks_t *ca
     assert(wait_for_atomic(&s_prompt_write_entered, 3));
     assert(s_prompt_write_samples[2] == 7);
     aosl_atomic_set(&s_prompt_asset_sample, 2000);
-    assert(mybot_media_pipeline_play_prompt(&pipeline, MYBOT_PROMPT_PAIR_CODE, "") == 0);
+    assert(mybot_media_pipeline_play_pair_code(&pipeline, "") == 0);
     aosl_atomic_set(&s_block_prompt_write, 4);
     aosl_atomic_set(&s_release_prompt_write, 3);
     assert(wait_for_atomic(&s_prompt_write_entered, 4));
@@ -687,7 +688,7 @@ int main(void) {
     assert(wait_for_writes(writes_before_fail + 2, 1000));
 
     int writes_before_prompt = (int)aosl_atomic_read(&s_playback_writes);
-    assert(mybot_media_pipeline_play_prompt(&pipeline, MYBOT_PROMPT_PAIR_CODE, "1") == 0);
+    assert(mybot_media_pipeline_play_pair_code(&pipeline, "1") == 0);
     assert(wait_for_writes(writes_before_prompt + 1, 1000));
     assert(aosl_atomic_read(&s_last_sample) == 100);
     mybot_media_pipeline_stop_prompt(&pipeline);
@@ -717,7 +718,16 @@ int main(void) {
     mybot_media_pipeline_set_rtc_connected(&pipeline, false);
     mybot_media_pipeline_push_remote_audio(&pipeline, rtc_frame, sizeof(rtc_frame));
     assert(mybot_media_pipeline_flush_session(&pipeline) == 0);
-    assert(mybot_media_pipeline_play_prompt(&pipeline, MYBOT_PROMPT_PAIR_CODE, "1") == 0);
+    assert(mybot_media_pipeline_play_pair_code(&pipeline, "1") == 0);
+    s_capture_stop_fail = true;
+    s_playback_stop_fail = true;
+    assert(mybot_media_pipeline_stop(&pipeline) < 0);
+    assert(pipeline.cap_started && pipeline.pb_started);
+    assert(mybot_media_pipeline_destroy(&pipeline) < 0);
+    s_capture_stop_fail = false;
+    assert(mybot_media_pipeline_stop(&pipeline) < 0);
+    assert(!pipeline.cap_started && pipeline.pb_started);
+    s_playback_stop_fail = false;
     assert(mybot_media_pipeline_stop(&pipeline) == 0);
     /* In-flight RTC callbacks can still query the initialized prompt after workers stop. */
     assert(pipeline.announce.active && pipeline.announce.lock);

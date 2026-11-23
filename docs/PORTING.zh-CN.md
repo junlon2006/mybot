@@ -106,6 +106,8 @@ Linux 适配器假定宿主已联网并立即上报已连接，不实现配网�
 
 - `get` 成功返回 0，条目缺失返回 `MYBOT_ERR_NOT_FOUND`，失败返回负值。必须遵守
   `capacity`，且只在成功时设置 `out_len`。
+  启动时读取设备凭据失败会使服务启动失败，原记录会保留。存储恢复后，停止并重新启动
+  MyBot 即可恢复原绑定。
 - `set` 应能在断电时存活，且不暴露部分替换。
 - `erase` 是幂等的。
 - 使用适当的访问控制或加密保护设备 token。
@@ -157,6 +159,9 @@ Linux 参考平台仅在 `MYBOT_ENABLE_HTTPS=ON` 时编译并链接 OpenSSL。
 平台侧维护第二份状态；运行期断网会报告 `MYBOT_STATE_WIFI_DISCONNECTED`，SDK 会在本地结束会话。
 
 ### LCD（可选）
+
+设备等待认领期间，如果 Wi-Fi 断开后重新连接，SDK 会再次下发当前配对码。LCD 适配器可根据
+每次收到的内容绘制屏幕。
 
 存在显示设备时实现 `mybot_lcd_ops_t`。渲染由应用 control owner 调用，SDK 不会并发调用。
 内容为借用。将 ops 表加入平台描述符。
@@ -315,6 +320,9 @@ RTC 回调队列全部销毁后最后释放该引用。RTC 生命周期、状态
 RTSA 生命周期通过 `agora_rtc_init()` / `agora_rtc_fini()` 管理。宿主若直接使用 AOSL，
 必须自行配对 `aosl_ctor()` 与 `aosl_dtor()`，并在所有 AOSL 用户停止前保持该引用。
 
+如果停止设备 I/O 或等待工作线程退出失败，SDK 会保留资源并报告 `MYBOT_STATE_STOPPING`。
+从产品控制线程再次调用 `mybot_stop()`，待清理完成后再启动。
+
 使用 `mybot_get_state()` 决定当前可执行的产品操作，返回状态的含义以
 [mybot.h](../include/mybot/mybot.h) 为准。不要在平台侧重建 SDK 私有的设备服务状态机。
 
@@ -322,6 +330,9 @@ RTSA 生命周期通过 `agora_rtc_init()` / `agora_rtc_fini()` 管理。宿主�
 和关键帧通知会记录日志并丢弃。按键、Wi-Fi、唤醒词或视频启动事件投递失败时，SDK 发布退出
 请求：`mybot_is_running()` 变为 false，产品控制任务必须调用 `mybot_stop()`。
 回调本身不会销毁资源。
+
+当前 RTC 连接的关键状态或 token 通知因内存不足、队列已满而投递失败时，下一个控制周期会按
+会话结束流程清理该会话。
 
 普通临时断网时保持 MyBot 运行，由产品网络管理器使用已有凭据重连，适配器依次上报断开与
 重新可用的连接，不必每次断网都重新进入配网。SDK 会结束被中断的会话，并在重连后恢复

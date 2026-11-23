@@ -109,11 +109,11 @@ typedef enum {
  *
  * @param cfg application configuration; must stay valid only for the duration
  *            of the call (it is copied).
- * @return 0 on success, -1 on error. On error, all partially initialized
- *         resources have already been released and the application is stopped.
+ * @return 0 on success, -1 on error. If startup cleanup cannot finish, call
+ *         mybot_stop() to retry before starting again.
  *
  * @note The caller must call mybot_stop() before exiting the process, and
- *       may call mybot_start() again after mybot_stop() returns.
+ *       may call mybot_start() again after shutdown reaches MYBOT_STATE_STOPPED.
  * @note mybot_start() acquires one application reference to the process-wide
  *       AOSL runtime. The matching reference is released by mybot_stop();
  *       applications that use AOSL directly must maintain their own ctor/dtor
@@ -166,8 +166,9 @@ MYBOT_API mybot_state_t mybot_get_state(void);
  * cannot be joined, the associated resources are retained so a later call can retry.
  *
  * Idempotent: safe to call when the application is not running, after a
- * failed mybot_start(), or repeatedly. After it returns, the application
- * returns to MYBOT_STATE_STOPPED and may be started again.
+ * failed mybot_start(), or repeatedly. A device-stop or worker-join failure
+ * keeps shutdown in MYBOT_STATE_STOPPING. Call mybot_stop() again to retry.
+ * The application can restart after it reaches MYBOT_STATE_STOPPED.
  *
  * RTC shutdown completes before mybot releases its application AOSL reference,
  * after all application-owned workers and buffers have been destroyed.

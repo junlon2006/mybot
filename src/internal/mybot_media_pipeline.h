@@ -35,10 +35,6 @@ typedef struct {
 } mybot_media_pipeline_callbacks_t;
 
 typedef enum {
-    MYBOT_PROMPT_PAIR_CODE = 0,
-} mybot_prompt_type_t;
-
-typedef enum {
     MYBOT_PB_SOURCE_NONE = 0,
     MYBOT_PB_SOURCE_RTC,
     MYBOT_PB_SOURCE_ANNOUNCE,
@@ -100,7 +96,7 @@ int mybot_media_pipeline_start(mybot_media_pipeline_t *pipeline,
                                const mybot_media_pipeline_callbacks_t *callbacks);
 /**
  * Stop workers, device I/O, and prompts; retain buffers and prompt state until destroy.
- * Returns -1 while any worker remains live.
+ * Returns -1 if a device cannot stop I/O or a worker cannot be joined. Retry before destroy.
  */
 int mybot_media_pipeline_stop(mybot_media_pipeline_t *pipeline);
 /** Release buffers and prompt state after a successful stop and RTC callbacks have drained. */
@@ -116,8 +112,7 @@ void mybot_media_pipeline_set_wake_words_enabled(mybot_media_pipeline_t *pipelin
 #endif
 void mybot_media_pipeline_push_remote_audio(mybot_media_pipeline_t *pipeline, const void *data,
                                             size_t len);
-int mybot_media_pipeline_play_prompt(mybot_media_pipeline_t *pipeline, mybot_prompt_type_t type,
-                                     const void *args);
+int mybot_media_pipeline_play_pair_code(mybot_media_pipeline_t *pipeline, const char *code);
 void mybot_media_pipeline_stop_prompt(mybot_media_pipeline_t *pipeline);
 /** Set playback volume from 0 to 100. */
 int mybot_media_pipeline_set_volume(mybot_media_pipeline_t *pipeline, int volume);

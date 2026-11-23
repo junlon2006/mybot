@@ -122,6 +122,8 @@ Implement all callbacks in `mybot_kv_store_ops_t`.
 
 - `get` returns 0 on success, `MYBOT_ERR_NOT_FOUND` when absent, and negative on failure.
   It must respect `capacity` and set `out_len` only on success.
+  A read failure during credential restoration fails service startup and preserves the record.
+  Once storage recovers, stop and restart MyBot to restore the binding.
 - `set` should survive power loss without exposing a partial replacement.
 - `erase` is idempotent.
 - Protect the device token with appropriate access controls or encryption.
@@ -181,6 +183,9 @@ conversation state from the LCD or maintain a second platform-side state; runtim
 loss is reported as `MYBOT_STATE_WIFI_DISCONNECTED` and the SDK ends the conversation locally.
 
 ### LCD (optional)
+
+If Wi-Fi reconnects while the device is waiting to be claimed, the SDK renders the current pairing
+code again. The LCD adapter can draw each screen from the supplied content.
 
 Implement `mybot_lcd_ops_t` when a display exists. Render receives semantic content from the
 application control owner; the SDK does not invoke it concurrently. Content is borrowed. Add the
@@ -362,6 +367,10 @@ API. The RTSA lifecycle is managed through
 `agora_rtc_init()` / `agora_rtc_fini()`. A host that uses AOSL directly must pair its own
 `aosl_ctor()` and `aosl_dtor()` calls and keep that reference until all of its AOSL users have stopped.
 
+If stopping device I/O or joining a worker fails, the SDK retains the resources and reports
+`MYBOT_STATE_STOPPING`. Call `mybot_stop()` again from the product control thread to complete
+cleanup before restarting.
+
 Use `mybot_get_state()` to decide which product actions are currently available; the returned
 states are defined in [mybot.h](../include/mybot/mybot.h). Do not reconstruct the SDK's private
 device-service state machine in the platform.
@@ -371,6 +380,9 @@ is full, RTM LCD indicators and video bitrate/key-frame notifications are logged
 Failure to queue a key, Wi-Fi, wake-word, or video-start event publishes an exit request:
 `mybot_is_running()` becomes false, and the product control task must call `mybot_stop()`.
 The callback does not tear down resources.
+
+If allocation or queue admission fails for a critical RTC connection or token notification, the
+next control tick ends that conversation through the normal local teardown path.
 
 For an ordinary temporary network outage, keep MyBot running and let the network manager reconnect
 with its existing credentials. The adapter reports the disconnect and subsequent usable connection;

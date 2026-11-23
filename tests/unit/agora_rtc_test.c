@@ -7,6 +7,7 @@
 #include <api/aosl.h>
 #include <api/aosl_atomic.h>
 #include <api/aosl_log.h>
+#include <api/aosl_mpq.h>
 #include <hal/aosl_hal_time.h>
 
 #include <assert.h>
@@ -62,6 +63,7 @@ static pthread_t s_rtm_subscribe_thread;
 static bool s_rtm_subscribe_thread_valid;
 static int s_init_calls;
 static int s_fini_calls;
+static int s_fini_result;
 static int s_create_calls;
 static int s_join_calls;
 static int s_leave_calls;
@@ -154,6 +156,25 @@ static void capture_payload_log(int level, const char *format, va_list args) {
 }
 
 #ifdef MYBOT_TEST_WRAP_RTC_ALLOC
+static const char *s_failed_rtc_call;
+static bool s_fail_rtc_destroy;
+
+int __real_aosl_mpq_call_argv(aosl_mpq_t q, aosl_ref_t ref, const char *name,
+                              aosl_mpq_func_argv_t func, uintptr_t argc, uintptr_t *argv);
+int __real_aosl_mpq_destroy_wait(aosl_mpq_t q);
+
+int __wrap_aosl_mpq_call_argv(aosl_mpq_t q, aosl_ref_t ref, const char *name,
+                              aosl_mpq_func_argv_t func, uintptr_t argc, uintptr_t *argv) {
+    if (s_failed_rtc_call && strcmp(name, s_failed_rtc_call) == 0) {
+        return -1;
+    }
+    return __real_aosl_mpq_call_argv(q, ref, name, func, argc, argv);
+}
+
+int __wrap_aosl_mpq_destroy_wait(aosl_mpq_t q) {
+    return s_fail_rtc_destroy ? -1 : __real_aosl_mpq_destroy_wait(q);
+}
+
 typedef struct {
     unsigned calls;
     unsigned fail_at;
@@ -229,7 +250,7 @@ int agora_rtc_fini(void) {
         assert(thread_ret == 0);
     }
     aosl_dtor();
-    return 0;
+    return s_fini_result;
 }
 
 int agora_rtc_create_connection(connection_id_t *conn_id) {
@@ -655,8 +676,7 @@ static void test_callback_payload_ownership(const mybot_agora_rtc_callbacks_t *c
     assert(s_last_state == MYBOT_RTC_STATE_ERROR);
 
 #ifdef MYBOT_TEST_WRAP_RTC_ALLOC
-    /* Failure to copy the error must free the already allocated event and leave
-     * the active connection untouched. LeakSanitizer also checks this path. */
+    /* An error that cannot be copied must still reach the control worker. */
     block_payload_owner(conn);
     errors_before = s_rtc_error_log.calls;
     callback_allocation_fault_t error_fault = {.fail_at = 2};
@@ -664,6 +684,8 @@ static void test_callback_payload_ownership(const mybot_agora_rtc_callbacks_t *c
     s_handler.on_error(conn, -1, error_message);
     assert(pthread_setspecific(s_allocation_fault_key, NULL) == 0);
     assert(error_fault.failed);
+    assert(mybot_agora_rtc_take_notification_failure());
+    assert(!mybot_agora_rtc_take_notification_failure());
     aosl_atomic_set(&s_release_state_callback, true);
     synchronize_rtc();
     assert(s_rtc_error_log.calls == errors_before);
@@ -789,6 +811,14 @@ static void test_callback_queue_saturation(const mybot_agora_rtc_callbacks_t *ca
     for (int i = 0; i < posted; ++i) {
         s_rtm_handler.on_rtm_data("peer", payload, sizeof(payload), RTM_MESSAGE_TYPE_BINARY, NULL);
     }
+    /* Only the active connection's critical notification must reach control
+     * even while rtc_mpq is full and its owner is still blocked. */
+    s_handler.on_connection_lost(conn + 1);
+    assert(!mybot_agora_rtc_take_notification_failure());
+    s_handler.on_connection_lost(conn);
+    assert(mybot_agora_rtc_take_notification_failure());
+    assert(!mybot_agora_rtc_take_notification_failure());
+    s_handler.on_token_privilege_will_expire(conn, NULL);
     memset(payload, 'x', sizeof(payload));
     aosl_atomic_set(&s_release_state_callback, true);
     /* Wait for two deliveries so the NONBLOCK queue has room for a barrier. */
@@ -809,6 +839,7 @@ static void test_callback_queue_saturation(const mybot_agora_rtc_callbacks_t *ca
     assert(s_rtm_data_calls == callbacks_before + accepted + 1);
     assert(memcmp(s_last_rtm_data, expected, sizeof(expected)) == 0);
     assert(mybot_agora_rtc_leave() == 0);
+    assert(!mybot_agora_rtc_take_notification_failure());
     assert(mybot_agora_rtc_fini() == 0);
 }
 
@@ -965,6 +996,35 @@ static void test_fini_cleanup_failures(const mybot_agora_rtc_callbacks_t *callba
 }
 
 #ifdef MYBOT_TEST_WRAP_RTC_ALLOC
+static void test_fini_queue_retries(const mybot_agora_rtc_callbacks_t *callbacks) {
+    assert(mybot_agora_rtc_init("queue-retry", callbacks) == 0);
+    int finis_before = s_fini_calls;
+    s_failed_rtc_call = "rtc_fini";
+    assert(mybot_agora_rtc_fini() == MYBOT_RTC_FINI_RETRY);
+    assert(s_fini_calls == finis_before);
+    s_failed_rtc_call = "rtc_fini_barrier";
+    assert(mybot_agora_rtc_fini() == MYBOT_RTC_FINI_RETRY);
+    assert(s_fini_calls == finis_before + 1);
+    s_failed_rtc_call = NULL;
+    s_fail_rtc_destroy = true;
+    assert(mybot_agora_rtc_fini() == MYBOT_RTC_FINI_RETRY);
+    assert(mybot_agora_rtc_init("queue-retry", callbacks) < 0);
+    s_fail_rtc_destroy = false;
+    assert(mybot_agora_rtc_fini() == 0);
+    assert(s_fini_calls == finis_before + 1);
+
+    /* RTSA has consumed its cleanup attempt even when it reported failure. */
+    assert(mybot_agora_rtc_init("terminal", callbacks) == 0);
+    s_fini_result = -1;
+    s_fail_rtc_destroy = true;
+    assert(mybot_agora_rtc_fini() == MYBOT_RTC_FINI_RETRY);
+    s_fail_rtc_destroy = false;
+    assert(mybot_agora_rtc_fini() == -1);
+    assert(mybot_agora_rtc_init("after-terminal", callbacks) < 0);
+    assert(mybot_agora_rtc_fini() == -1);
+    assert(s_fini_calls == finis_before + 2);
+}
+
 static void test_notification_allocation_failures(const mybot_agora_rtc_callbacks_t *callbacks) {
     assert(mybot_agora_rtc_init("notification-app", callbacks) == 0);
     assert(mybot_agora_rtc_join("notification-room", "token", "user") == 0);
@@ -988,19 +1048,24 @@ static void test_notification_allocation_failures(const mybot_agora_rtc_callback
 #endif
     for (int kind = 0; kind < notification_count; ++kind) {
         callback_allocation_fault_t fault = {.fail_at = 1};
+        bool critical = false;
         assert(pthread_setspecific(s_allocation_fault_key, &fault) == 0);
         switch (kind) {
         case 0:
             s_handler.on_join_channel_success(conn, 42, 0);
+            critical = true;
             break;
         case 1:
             s_handler.on_reconnecting(conn);
+            critical = true;
             break;
         case 2:
             s_handler.on_connection_lost(conn);
+            critical = true;
             break;
         case 3:
             s_handler.on_rejoin_channel_success(conn, 42, 0);
+            critical = true;
             break;
         case 4:
             s_handler.on_user_joined_with_user_account(conn, &user, 0);
@@ -1010,12 +1075,15 @@ static void test_notification_allocation_failures(const mybot_agora_rtc_callback
             break;
         case 6:
             s_handler.on_error(conn, -1, "allocation-failure");
+            critical = true;
             break;
         case 7:
             s_handler.on_license_validation_failure(conn, 1);
+            critical = true;
             break;
         case 8:
             s_handler.on_token_privilege_will_expire(conn, NULL);
+            critical = true;
             break;
         case 9:
             s_rtm_handler.on_rtm_event("user", RTM_EVENT_TYPE_LOGIN, ERR_RTM_OK);
@@ -1036,6 +1104,8 @@ static void test_notification_allocation_failures(const mybot_agora_rtc_callback
         }
         assert(pthread_setspecific(s_allocation_fault_key, NULL) == 0);
         assert(fault.failed);
+        assert(mybot_agora_rtc_take_notification_failure() == critical);
+        assert(!mybot_agora_rtc_take_notification_failure());
         synchronize_rtc();
         assert(s_state_calls == states_before);
         assert(s_last_state == MYBOT_RTC_STATE_CONNECTED);
@@ -1565,6 +1635,9 @@ int main(void) {
 #endif
 #if MYBOT_ENABLE_VIDEO
     test_video_boundaries(&callbacks);
+#endif
+#ifdef MYBOT_TEST_WRAP_RTC_ALLOC
+    test_fini_queue_retries(&callbacks);
 #endif
 
     join_rtm_login_thread();

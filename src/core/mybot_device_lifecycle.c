@@ -110,38 +110,39 @@ static int persist_device_auth(mybot_device_lifecycle_t *lifecycle) {
     return ret;
 }
 
-static bool load_device_auth(mybot_device_lifecycle_t *lifecycle) {
+/* A missing or invalid record leaves device_token empty so pairing can begin. */
+static int load_device_auth(mybot_device_lifecycle_t *lifecycle) {
     mybot_device_auth_record_t *record =
         (mybot_device_auth_record_t *)aosl_hal_malloc(sizeof(*record));
     size_t len = 0;
     if (!record) {
-        return false;
+        AOSL_LOG_ERR("failed to allocate persisted device credential");
+        return -1;
     }
     memset(record, 0, sizeof(*record));
 
     int ret = mybot_kv_store_get(lifecycle->kv_store, MYBOT_DEVICE_AUTH_KEY, record,
                                  sizeof(*record), &len);
-    if (ret == MYBOT_ERR_NOT_FOUND) {
+    if (ret != 0) {
         aosl_hal_free(record);
-        return false;
+        if (ret == MYBOT_ERR_NOT_FOUND) {
+            return 0;
+        }
+        AOSL_LOG_ERR("failed to read persisted device credential");
+        return -1;
     }
-    if (ret < 0 || len != sizeof(*record) || record->version != MYBOT_DEVICE_AUTH_VERSION ||
+    if (len != sizeof(*record) || record->version != MYBOT_DEVICE_AUTH_VERSION ||
         record->server_base[sizeof(record->server_base) - 1] != '\0' ||
         record->device_id[sizeof(record->device_id) - 1] != '\0' ||
         record->device_token[sizeof(record->device_token) - 1] != '\0' ||
         strcmp(record->server_base, lifecycle->server_base) != 0 ||
         strcmp(record->device_id, lifecycle->device_id) != 0 || record->device_token[0] == '\0') {
-        if (ret < 0) {
-            AOSL_LOG_ERR("failed to read persisted device credential");
-        }
         (void)mybot_kv_store_erase(lifecycle->kv_store, MYBOT_DEVICE_AUTH_KEY);
-        aosl_hal_free(record);
-        return false;
+    } else {
+        strncpy(lifecycle->device_token, record->device_token, sizeof(lifecycle->device_token) - 1);
     }
-
-    strncpy(lifecycle->device_token, record->device_token, sizeof(lifecycle->device_token) - 1);
     aosl_hal_free(record);
-    return true;
+    return 0;
 }
 
 static void clear_device_auth(mybot_device_lifecycle_t *lifecycle) {
@@ -588,7 +589,10 @@ int mybot_device_lifecycle_init(mybot_device_lifecycle_t *lifecycle, mybot_kv_st
         lifecycle->cbs = *cbs;
     }
 
-    if (load_device_auth(lifecycle)) {
+    if (load_device_auth(lifecycle) < 0) {
+        return -1;
+    }
+    if (lifecycle->device_token[0]) {
         lifecycle->runtime_poll_interval = 30;
         set_state(lifecycle, MYBOT_DEVICE_STATE_RUNTIME);
         AOSL_LOG_NTC("restored persisted device credential");
@@ -627,114 +631,101 @@ void mybot_device_lifecycle_service_result(mybot_device_lifecycle_t *lifecycle,
     }
 }
 
+static void tick_conversation(mybot_device_lifecycle_t *lifecycle) {
+    mybot_stop_request_t request =
+        (mybot_stop_request_t)aosl_atomic_xchg(&lifecycle->stop_request, MYBOT_STOP_REQUEST_NONE);
+    if (request != MYBOT_STOP_REQUEST_NONE) {
+        const char *reason = request == MYBOT_STOP_REQUEST_DEVICE_HANGUP
+                                 ? MYBOT_CONVERSATION_STOP_REASON_DEVICE_HANGUP
+                                 : MYBOT_CONVERSATION_STOP_REASON_ERROR;
+        action_stop_conversation(lifecycle, reason);
+        return;
+    }
+
+    if (aosl_atomic_xchg(&lifecycle->rtc_token_renewal_requested, false)) {
+        lifecycle->rtc_token_renewal_pending = true;
+        lifecycle->rtc_token_retry_delay_ticks = 0;
+        lifecycle->rtc_token_retry_ticks_remaining = 0;
+    }
+    if (lifecycle->rtc_token_renewal_pending) {
+        if (lifecycle->rtc_token_retry_ticks_remaining > 0) {
+            lifecycle->rtc_token_retry_ticks_remaining--;
+        }
+        if (lifecycle->rtc_token_retry_ticks_remaining == 0) {
+            action_renew_rtc_token(lifecycle);
+            return;
+        }
+    }
+    tick_runtime_binding_poll(lifecycle);
+}
+
+static void begin_pairing(mybot_device_lifecycle_t *lifecycle) {
+    lifecycle->conversation_requested = false;
+    if (current_state(lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
+        action_stop_conversation(lifecycle, MYBOT_CONVERSATION_STOP_REASON_USER_REQUESTED);
+    }
+    lifecycle->pairing_requested = false;
+    clear_device_auth(lifecycle);
+    lifecycle->conversation_id[0] = '\0';
+    set_state(lifecycle, MYBOT_DEVICE_STATE_PAIRING);
+    action_create_pair_code(lifecycle);
+}
+
+static void tick_device_state(mybot_device_lifecycle_t *lifecycle) {
+    switch (current_state(lifecycle)) {
+    case MYBOT_DEVICE_STATE_UNPROVISIONED:
+        if (lifecycle->pair_retry_ticks_remaining > 0 &&
+            --lifecycle->pair_retry_ticks_remaining == 0) {
+            set_state(lifecycle, MYBOT_DEVICE_STATE_PAIRING);
+            action_create_pair_code(lifecycle);
+        }
+        break;
+    case MYBOT_DEVICE_STATE_PAIRING:
+        /* The synchronous pair-code request completes this transition. */
+        break;
+    case MYBOT_DEVICE_STATE_AWAITING_CLAIM:
+        lifecycle->pair_tick_counter++;
+        if (lifecycle->pair_tick_counter >= lifecycle->pair_poll_interval * 10) {
+            lifecycle->pair_tick_counter = 0;
+            action_poll_binding(lifecycle, MYBOT_DEVICE_SERVICE_PAIR_POLL);
+        }
+        break;
+    case MYBOT_DEVICE_STATE_RUNTIME:
+        if (lifecycle->conversation_requested) {
+            lifecycle->conversation_requested = false;
+            aosl_atomic_set(&lifecycle->stop_request, MYBOT_STOP_REQUEST_NONE);
+            action_start_conversation(lifecycle);
+        } else {
+            tick_runtime_binding_poll(lifecycle);
+        }
+        break;
+    case MYBOT_DEVICE_STATE_IN_CONVERSATION:
+        tick_conversation(lifecycle);
+        break;
+    }
+}
+
 void mybot_device_lifecycle_tick(mybot_device_lifecycle_t *lifecycle) {
     if (aosl_atomic_read(&lifecycle->shutting_down)) {
         return;
     }
 
-    /* Consume every observed network loss even when Wi-Fi reconnects before
-     * this worker gets its next tick. */
-    if (aosl_atomic_xchg(&lifecycle->network_loss_pending, false)) {
+    /* Consume a loss even if connectivity recovered before this tick. */
+    bool lost = aosl_atomic_xchg(&lifecycle->network_loss_pending, false) != 0;
+    if (lost || !aosl_atomic_read(&lifecycle->network_available)) {
         lifecycle->conversation_requested = false;
         aosl_atomic_set(&lifecycle->stop_request, MYBOT_STOP_REQUEST_NONE);
-        if (current_state(lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
+        if (lost && current_state(lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
             complete_conversation_locally(lifecycle);
         }
         return;
     }
 
-    if (!aosl_atomic_read(&lifecycle->network_available)) {
-        lifecycle->conversation_requested = false;
-        aosl_atomic_set(&lifecycle->stop_request, MYBOT_STOP_REQUEST_NONE);
-        return;
-    }
-
-    /* A pending pairing request (first boot, expired pair code, or an explicit
-     * re-pair request) starts a fresh pair-code request from any state. If a
-     * conversation is active, end it first so the RTC connection is torn down
-     * before the device is rebound. */
     if (lifecycle->pairing_requested) {
-        /* Pending start requests belong to the previous binding. */
-        lifecycle->conversation_requested = false;
-        if (current_state(lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
-            action_stop_conversation(lifecycle, MYBOT_CONVERSATION_STOP_REASON_USER_REQUESTED);
-        }
-        lifecycle->pairing_requested = false;
-        clear_device_auth(lifecycle);
-        lifecycle->conversation_id[0] = '\0';
-        set_state(lifecycle, MYBOT_DEVICE_STATE_PAIRING);
-        action_create_pair_code(lifecycle);
+        begin_pairing(lifecycle);
         return;
     }
-
-    if (current_state(lifecycle) == MYBOT_DEVICE_STATE_UNPROVISIONED) {
-        if (lifecycle->pair_retry_ticks_remaining > 0) {
-            lifecycle->pair_retry_ticks_remaining--;
-            if (lifecycle->pair_retry_ticks_remaining == 0) {
-                set_state(lifecycle, MYBOT_DEVICE_STATE_PAIRING);
-                action_create_pair_code(lifecycle);
-            }
-        }
-        return;
-    }
-
-    if (current_state(lifecycle) == MYBOT_DEVICE_STATE_PAIRING) {
-        /* This state is transient — action_create_pair_code(lifecycle) moves out */
-        return;
-    }
-
-    if (current_state(lifecycle) == MYBOT_DEVICE_STATE_AWAITING_CLAIM) {
-        lifecycle->pair_tick_counter++;
-        /* Convert the poll interval using the 100 ms tick period. */
-        int interval_ticks = lifecycle->pair_poll_interval * 10;
-        if (lifecycle->pair_tick_counter >= interval_ticks) {
-            lifecycle->pair_tick_counter = 0;
-            action_poll_binding(lifecycle, MYBOT_DEVICE_SERVICE_PAIR_POLL);
-        }
-        return;
-    }
-
-    if (current_state(lifecycle) == MYBOT_DEVICE_STATE_RUNTIME) {
-        /* Check for user requests */
-        if (lifecycle->conversation_requested) {
-            lifecycle->conversation_requested = false;
-            aosl_atomic_set(&lifecycle->stop_request, MYBOT_STOP_REQUEST_NONE);
-            action_start_conversation(lifecycle);
-            return;
-        }
-
-        tick_runtime_binding_poll(lifecycle);
-        return;
-    }
-
-    if (current_state(lifecycle) == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
-        mybot_stop_request_t request = (mybot_stop_request_t)aosl_atomic_xchg(
-            &lifecycle->stop_request, MYBOT_STOP_REQUEST_NONE);
-        if (request != MYBOT_STOP_REQUEST_NONE) {
-            const char *reason = request == MYBOT_STOP_REQUEST_DEVICE_HANGUP
-                                     ? MYBOT_CONVERSATION_STOP_REASON_DEVICE_HANGUP
-                                     : MYBOT_CONVERSATION_STOP_REASON_ERROR;
-            action_stop_conversation(lifecycle, reason);
-            return;
-        }
-
-        if (aosl_atomic_xchg(&lifecycle->rtc_token_renewal_requested, false)) {
-            lifecycle->rtc_token_renewal_pending = true;
-            lifecycle->rtc_token_retry_delay_ticks = 0;
-            lifecycle->rtc_token_retry_ticks_remaining = 0;
-        }
-        if (lifecycle->rtc_token_renewal_pending) {
-            if (lifecycle->rtc_token_retry_ticks_remaining > 0) {
-                lifecycle->rtc_token_retry_ticks_remaining--;
-            }
-            if (lifecycle->rtc_token_retry_ticks_remaining == 0) {
-                action_renew_rtc_token(lifecycle);
-                return;
-            }
-        }
-        tick_runtime_binding_poll(lifecycle);
-        return;
-    }
+    tick_device_state(lifecycle);
 }
 
 void mybot_device_lifecycle_set_network_available(mybot_device_lifecycle_t *lifecycle,

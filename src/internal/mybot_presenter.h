@@ -16,12 +16,13 @@ typedef struct {
     mybot_lcd_t lcd;
     bool active;
     uint32_t indicators;
+    char pair_code[MYBOT_LCD_PAIR_CODE_CAPACITY];
 } mybot_presenter_t;
 
 int mybot_presenter_init(mybot_presenter_t *presenter);
 void mybot_presenter_deinit(mybot_presenter_t *presenter);
 void mybot_presenter_show_screen(mybot_presenter_t *presenter, mybot_lcd_screen_t screen);
-void mybot_presenter_show_pair_code(mybot_presenter_t *presenter, const char *code);
+void mybot_presenter_set_pair_code(mybot_presenter_t *presenter, const char *code);
 /** Set the voice-print registration indicator for the active conversation. */
 void mybot_presenter_set_vp_registered(mybot_presenter_t *presenter, bool registered);
 /** Update one mutually exclusive server-state indicator. */
