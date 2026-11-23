@@ -259,7 +259,9 @@ static void test_container_validation_and_depth(void) {
     assert(root != NULL);
     assert(mybot_json_get_object_item(root, "first") == root->child);
     assert(mybot_json_get_object_item(root, "LAST") == root->child->next);
-    assert(root->child->prev == NULL && root->child->next->prev == root->child);
+    char *printed = mybot_json_print_unformatted(root);
+    assert(printed && strcmp(printed, "{\"FiRsT\":1,\"last\":[true]}") == 0);
+    mybot_json_free_string(printed);
     assert(mybot_json_get_object_item(NULL, "first") == NULL);
     assert(mybot_json_get_object_item(root, NULL) == NULL);
     int64_t integer = 7;
