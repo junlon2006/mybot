@@ -37,12 +37,10 @@ static void test_valid_commands(void) {
     mybot_device_command_t command;
     assert(parse(VALID_ACTION, &command));
     assert(command.type == MYBOT_DEVICE_COMMAND_SET_VOLUME && command.value == 50);
-    assert(strcmp(command.message_id, "msg-1") == 0);
     assert(strcmp(command.command_id, "cmd-1") == 0);
     assert(strcmp(command.conversation_id, "conv-1") == 0);
     assert(parse(VALID_ADJUST, &command));
     assert(command.type == MYBOT_DEVICE_COMMAND_ADJUST_VOLUME && command.value == -10);
-    assert(strcmp(command.message_id, "msg-1") == 0);
     assert(strcmp(command.command_id, "cmd-1") == 0);
     assert(strcmp(command.conversation_id, "conv-1") == 0);
 }
@@ -318,7 +316,6 @@ static void test_allocation_and_ownership(void) {
         assert(s_allocation_count == allocations_before);
         mybot_json_delete(root);
         assert(s_live_allocations == 0);
-        assert(strcmp(command.message_id, "msg-1") == 0);
         assert(strcmp(command.command_id, "cmd-1") == 0);
         assert(strcmp(command.conversation_id, "conv-1") == 0);
         assert(command.type == commands[index].type && command.value == commands[index].value);

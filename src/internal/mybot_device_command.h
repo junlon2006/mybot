@@ -15,7 +15,6 @@ typedef enum {
 
 typedef struct {
     mybot_device_command_type_t type;
-    char message_id[MYBOT_DEVICE_COMMAND_ID_CAPACITY];
     char command_id[MYBOT_DEVICE_COMMAND_ID_CAPACITY];
     char conversation_id[MYBOT_DEVICE_COMMAND_ID_CAPACITY];
     int value;

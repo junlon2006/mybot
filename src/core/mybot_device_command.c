@@ -41,7 +41,9 @@ static bool read_id(const mybot_json_t *value, char *destination) {
     if (length == 0 || length >= MYBOT_DEVICE_COMMAND_ID_CAPACITY) {
         return false;
     }
-    memcpy(destination, text, length + 1);
+    if (destination) {
+        memcpy(destination, text, length + 1);
+    }
     return true;
 }
 
@@ -68,7 +70,7 @@ bool mybot_device_command_parse(const mybot_json_t *root, mybot_device_command_t
         return false;
     }
     memset(command, 0, sizeof(*command));
-    if (!read_id(fields[3], command->message_id) || !read_id(fields[4], command->command_id) ||
+    if (!read_id(fields[3], NULL) || !read_id(fields[4], command->command_id) ||
         !read_id(fields[5], command->conversation_id)) {
         return false;
     }
