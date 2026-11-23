@@ -100,7 +100,7 @@ int mybot_media_pipeline_start(mybot_media_pipeline_t *pipeline,
                                const mybot_media_pipeline_callbacks_t *callbacks);
 /**
  * Stop workers, device I/O, and prompts; retain buffers and prompt state until destroy.
- * Returns -1 while any worker remains live.
+ * Returns -1 if a device cannot stop I/O or a worker cannot be joined. Retry before destroy.
  */
 int mybot_media_pipeline_stop(mybot_media_pipeline_t *pipeline);
 /** Release buffers and prompt state after a successful stop and RTC callbacks have drained. */

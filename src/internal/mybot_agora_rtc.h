@@ -81,9 +81,11 @@ int mybot_agora_rtc_leave(void);
  * A failure applies only to the active connection and is cleared when it leaves. */
 bool mybot_agora_rtc_take_notification_failure(void);
 
-/** Finalize the process-wide RTSA service. Call after RTC control and media workers stop.
- * Returns zero when all vendor resources were released; a negative result leaves the
- * service available for a later retry. */
+#define MYBOT_RTC_FINI_RETRY (-2)
+
+/** Finalize RTSA and join its forwarding worker. MYBOT_RTC_FINI_RETRY retains the
+ * queue for a later call. After the queue is joined, return 0 on success or -1
+ * for a vendor cleanup error. Vendor finalization runs at most once per service. */
 int mybot_agora_rtc_fini(void);
 
 /** Send one PCM payload on the active connection. */

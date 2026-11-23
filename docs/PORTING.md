@@ -367,6 +367,10 @@ API. The RTSA lifecycle is managed through
 `agora_rtc_init()` / `agora_rtc_fini()`. A host that uses AOSL directly must pair its own
 `aosl_ctor()` and `aosl_dtor()` calls and keep that reference until all of its AOSL users have stopped.
 
+If stopping device I/O or joining a worker fails, the SDK retains the resources and reports
+`MYBOT_STATE_STOPPING`. Call `mybot_stop()` again from the product control thread to complete
+cleanup before restarting.
+
 Use `mybot_get_state()` to decide which product actions are currently available; the returned
 states are defined in [mybot.h](../include/mybot/mybot.h). Do not reconstruct the SDK's private
 device-service state machine in the platform.

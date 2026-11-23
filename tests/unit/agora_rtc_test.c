@@ -7,6 +7,7 @@
 #include <api/aosl.h>
 #include <api/aosl_atomic.h>
 #include <api/aosl_log.h>
+#include <api/aosl_mpq.h>
 #include <hal/aosl_hal_time.h>
 
 #include <assert.h>
@@ -62,6 +63,7 @@ static pthread_t s_rtm_subscribe_thread;
 static bool s_rtm_subscribe_thread_valid;
 static int s_init_calls;
 static int s_fini_calls;
+static int s_fini_result;
 static int s_create_calls;
 static int s_join_calls;
 static int s_leave_calls;
@@ -154,6 +156,25 @@ static void capture_payload_log(int level, const char *format, va_list args) {
 }
 
 #ifdef MYBOT_TEST_WRAP_RTC_ALLOC
+static const char *s_failed_rtc_call;
+static bool s_fail_rtc_destroy;
+
+int __real_aosl_mpq_call_argv(aosl_mpq_t q, aosl_ref_t ref, const char *name,
+                              aosl_mpq_func_argv_t func, uintptr_t argc, uintptr_t *argv);
+int __real_aosl_mpq_destroy_wait(aosl_mpq_t q);
+
+int __wrap_aosl_mpq_call_argv(aosl_mpq_t q, aosl_ref_t ref, const char *name,
+                              aosl_mpq_func_argv_t func, uintptr_t argc, uintptr_t *argv) {
+    if (s_failed_rtc_call && strcmp(name, s_failed_rtc_call) == 0) {
+        return -1;
+    }
+    return __real_aosl_mpq_call_argv(q, ref, name, func, argc, argv);
+}
+
+int __wrap_aosl_mpq_destroy_wait(aosl_mpq_t q) {
+    return s_fail_rtc_destroy ? -1 : __real_aosl_mpq_destroy_wait(q);
+}
+
 typedef struct {
     unsigned calls;
     unsigned fail_at;
@@ -229,7 +250,7 @@ int agora_rtc_fini(void) {
         assert(thread_ret == 0);
     }
     aosl_dtor();
-    return 0;
+    return s_fini_result;
 }
 
 int agora_rtc_create_connection(connection_id_t *conn_id) {
@@ -975,6 +996,35 @@ static void test_fini_cleanup_failures(const mybot_agora_rtc_callbacks_t *callba
 }
 
 #ifdef MYBOT_TEST_WRAP_RTC_ALLOC
+static void test_fini_queue_retries(const mybot_agora_rtc_callbacks_t *callbacks) {
+    assert(mybot_agora_rtc_init("queue-retry", callbacks) == 0);
+    int finis_before = s_fini_calls;
+    s_failed_rtc_call = "rtc_fini";
+    assert(mybot_agora_rtc_fini() == MYBOT_RTC_FINI_RETRY);
+    assert(s_fini_calls == finis_before);
+    s_failed_rtc_call = "rtc_fini_barrier";
+    assert(mybot_agora_rtc_fini() == MYBOT_RTC_FINI_RETRY);
+    assert(s_fini_calls == finis_before + 1);
+    s_failed_rtc_call = NULL;
+    s_fail_rtc_destroy = true;
+    assert(mybot_agora_rtc_fini() == MYBOT_RTC_FINI_RETRY);
+    assert(mybot_agora_rtc_init("queue-retry", callbacks) < 0);
+    s_fail_rtc_destroy = false;
+    assert(mybot_agora_rtc_fini() == 0);
+    assert(s_fini_calls == finis_before + 1);
+
+    /* RTSA has consumed its cleanup attempt even when it reported failure. */
+    assert(mybot_agora_rtc_init("terminal", callbacks) == 0);
+    s_fini_result = -1;
+    s_fail_rtc_destroy = true;
+    assert(mybot_agora_rtc_fini() == MYBOT_RTC_FINI_RETRY);
+    s_fail_rtc_destroy = false;
+    assert(mybot_agora_rtc_fini() == -1);
+    assert(mybot_agora_rtc_init("after-terminal", callbacks) < 0);
+    assert(mybot_agora_rtc_fini() == -1);
+    assert(s_fini_calls == finis_before + 2);
+}
+
 static void test_notification_allocation_failures(const mybot_agora_rtc_callbacks_t *callbacks) {
     assert(mybot_agora_rtc_init("notification-app", callbacks) == 0);
     assert(mybot_agora_rtc_join("notification-room", "token", "user") == 0);
@@ -1585,6 +1635,9 @@ int main(void) {
 #endif
 #if MYBOT_ENABLE_VIDEO
     test_video_boundaries(&callbacks);
+#endif
+#ifdef MYBOT_TEST_WRAP_RTC_ALLOC
+    test_fini_queue_retries(&callbacks);
 #endif
 
     join_rtm_login_thread();

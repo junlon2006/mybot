@@ -153,7 +153,8 @@ target_compile_definitions(mybot_agora_rtc_test PRIVATE
 target_link_libraries(mybot_agora_rtc_test PRIVATE aosl ${MYBOT_TEST_SYSTEM_LIBS})
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_definitions(mybot_agora_rtc_test PRIVATE MYBOT_TEST_WRAP_RTC_ALLOC=1)
-    target_link_options(mybot_agora_rtc_test PRIVATE -Wl,--wrap=aosl_hal_malloc)
+    target_link_options(mybot_agora_rtc_test PRIVATE
+        -Wl,--wrap=aosl_hal_malloc,--wrap=aosl_mpq_call_argv,--wrap=aosl_mpq_destroy_wait)
 endif()
 
 mybot_add_test(mybot_app_test

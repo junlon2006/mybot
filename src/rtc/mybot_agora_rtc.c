@@ -35,6 +35,7 @@
 
 typedef struct {
     mybot_rtc_state_t state;
+    bool vendor_fini_failed;
     connection_id_t conn_id;
     aosl_atomic_t notification_failed;
     mybot_agora_rtc_callbacks_t callbacks;
@@ -52,6 +53,8 @@ typedef struct {
 
 static mybot_agora_rtc_t s_rtc = {.conn_id = CONNECTION_ID_INVALID};
 static aosl_atomic_t s_rtc_mpq_id = AOSL_MPQ_INVALID;
+/* The control owner retains the vendor result until the forwarding worker is joined. */
+static int s_fini_result = MYBOT_RTC_FINI_RETRY;
 static aosl_atomic_t s_rtm_login_done;
 static aosl_atomic_t s_rtm_login_ok;
 static aosl_atomic_t s_rtm_login_generation;
@@ -1500,6 +1503,10 @@ static int rtc_leave_impl(void) {
 }
 
 static int rtc_fini_impl(void) {
+    if (s_rtc.vendor_fini_failed) {
+        /* RTSA already consumed its process-global teardown attempt. */
+        return -1;
+    }
     if (s_rtc.state == MYBOT_RTC_STATE_IDLE) {
         return 0;
     }
@@ -1510,6 +1517,7 @@ static int rtc_fini_impl(void) {
     if (ret < 0) {
         AOSL_LOG_ERR("agora_rtc_fini failed; RTSA source does not guarantee retry: %s",
                      agora_rtc_err_2_str(ret));
+        s_rtc.vendor_fini_failed = true;
         s_rtc.state = MYBOT_RTC_STATE_ERROR;
         return -1;
     }
@@ -1691,9 +1699,11 @@ int mybot_agora_rtc_init(const char *app_id, const mybot_agora_rtc_callbacks_t *
                                   AOSL_THRD_PRI_NORMAL, 8192, 1000, "mybot_rtc", NULL, NULL, NULL);
         if (q == AOSL_MPQ_INVALID)
             return -1;
+        s_fini_result = MYBOT_RTC_FINI_RETRY;
         aosl_atomic_set(&s_rtc_mpq_id, q);
-        set_callbacks_enabled(true);
     }
+    if (s_fini_result != MYBOT_RTC_FINI_RETRY)
+        return -1;
     set_callbacks_enabled(true);
     int result = -1;
     uintptr_t argv[] = {(uintptr_t)&result, (uintptr_t)app_id, (uintptr_t)callbacks};
@@ -1718,28 +1728,23 @@ int mybot_agora_rtc_fini(void) {
     aosl_mpq_t q = (aosl_mpq_t)aosl_atomic_read(&s_rtc_mpq_id);
     if (q == AOSL_MPQ_INVALID)
         return 0;
-    int result = -1;
-    uintptr_t argv[] = {(uintptr_t)&result};
-    if (rtc_call("rtc_fini", cmd_fini, 1, argv) < 0)
-        return -1;
-    if (result < 0) {
-        /* agora_rtc_fini() clears RTSA's process-global queue even when its
-         * destroy reports an error; callbacks are disabled above, so retire
-         * our forwarding queue too and expose the terminal failure. */
-        if (aosl_mpq_destroy_wait(q) == 0) {
-            aosl_atomic_set(&s_rtc_mpq_id, AOSL_MPQ_INVALID);
+    if (s_fini_result == MYBOT_RTC_FINI_RETRY) {
+        int result = -1;
+        uintptr_t argv[] = {(uintptr_t)&result};
+        if (rtc_call("rtc_fini", cmd_fini, 1, argv) < 0) {
+            return MYBOT_RTC_FINI_RETRY;
         }
-        return -1;
+        s_fini_result = result;
     }
     if (rtc_call("rtc_fini_barrier", cmd_barrier, 0, NULL) < 0)
-        return -1;
+        return MYBOT_RTC_FINI_RETRY;
     int destroy_ret = aosl_mpq_destroy_wait(q);
     if (destroy_ret < 0) {
         AOSL_LOG_ERR("failed to destroy RTC forwarding MPQ; resources retained");
-        return -1;
+        return MYBOT_RTC_FINI_RETRY;
     }
     aosl_atomic_set(&s_rtc_mpq_id, AOSL_MPQ_INVALID);
-    return 0;
+    return s_fini_result;
 }
 int mybot_agora_rtc_send_audio(const void *data, size_t len) {
     int result = -1;

@@ -124,6 +124,8 @@ static bool s_control_destroy_fails;
 static bool s_service_create_fails;
 static bool s_service_destroy_fails;
 static const char *s_media_create_failure;
+static const char *s_media_destroy_failure;
+static aosl_mpq_t s_media_unjoinable = AOSL_MPQ_INVALID;
 static aosl_mpq_t s_wrapped_control_mpq = AOSL_MPQ_INVALID;
 static aosl_mpq_t s_wrapped_service_mpq = AOSL_MPQ_INVALID;
 static int s_control_destroy_failures;
@@ -150,6 +152,7 @@ static bool s_block_video_start;
 static bool s_video_start_entered;
 static bool s_video_start_in_progress;
 static aosl_atomic_t s_video_init_fails;
+static aosl_atomic_t s_video_stop_fails;
 static aosl_atomic_t s_video_init_calls;
 static aosl_atomic_t s_video_start_calls;
 static aosl_atomic_t s_video_stop_calls;
@@ -196,7 +199,7 @@ static int video_stop(void *ctx) {
     assert(!s_video_start_in_progress);
     mock_unlock();
     aosl_atomic_inc(&s_video_stop_calls);
-    return 0;
+    return aosl_atomic_read(&s_video_stop_fails) ? -1 : 0;
 }
 
 static void video_target_bitrate(void *ctx, uint32_t target_bps) {
@@ -260,6 +263,7 @@ static int s_rtc_init_calls;
 static int s_rtc_join_calls;
 static int s_rtc_leave_calls;
 static int s_rtc_fini_calls;
+static bool s_rtc_fini_retry;
 static int s_rtc_send_calls;
 static int s_rtc_renew_calls;
 static int s_token_renewal_requests;
@@ -351,6 +355,9 @@ aosl_mpq_t __wrap_aosl_mpq_create_flags(int flags, int pri, int stack_size, int 
     if (service) {
         s_wrapped_service_mpq = mpq;
     }
+    if (s_media_destroy_failure && name && strcmp(name, s_media_destroy_failure) == 0) {
+        s_media_unjoinable = mpq;
+    }
     return mpq;
 }
 
@@ -367,6 +374,9 @@ int __wrap_aosl_mpq_call(aosl_mpq_t mpq, aosl_ref_t ref, const char *name,
 }
 
 int __wrap_aosl_mpq_destroy_wait(aosl_mpq_t mpq) {
+    if (mpq == s_media_unjoinable) {
+        return -1;
+    }
     if (mpq == s_wrapped_control_mpq && s_control_destroy_fails) {
         s_control_destroy_failures++;
         return -1;
@@ -1587,6 +1597,10 @@ int mybot_agora_rtc_leave(void) {
 int mybot_agora_rtc_fini(void) {
     observe_control_thread(0);
     mock_lock();
+    if (s_rtc_fini_retry) {
+        mock_unlock();
+        return MYBOT_RTC_FINI_RETRY;
+    }
     if (!s_rtc_initialized) {
         mock_unlock();
         return 0;
@@ -2053,6 +2067,50 @@ static void test_background_service_requests(const mybot_config_t *config) {
 }
 
 #if MYBOT_TEST_WRAP_APP_MPQ
+static void test_media_join_retries(const mybot_config_t *config) {
+    const char *queues[] = {"cap_mpq", "pb_mpq", "mybot_mpq"};
+    for (size_t i = 0; i < sizeof(queues) / sizeof(queues[0]); ++i) {
+        int captures = read_counter(&s_capture_destroy_calls);
+        int playbacks = read_counter(&s_playback_destroy_calls);
+        s_media_destroy_failure = queues[i];
+        assert(mybot_start(config) == 0);
+        emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
+        assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
+        assert(!aosl_mpq_invalid(s_media_unjoinable));
+
+        mybot_stop();
+        assert(!mybot_is_running());
+        assert(mybot_get_state() == MYBOT_STATE_STOPPING);
+        assert(read_counter(&s_capture_destroy_calls) == captures);
+        assert(read_counter(&s_playback_destroy_calls) == playbacks);
+        assert(mybot_start(config) < 0);
+
+        s_media_unjoinable = AOSL_MPQ_INVALID;
+        s_media_destroy_failure = NULL;
+        mybot_stop();
+        assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+        assert(read_counter(&s_capture_destroy_calls) == captures + 1);
+        assert(read_counter(&s_playback_destroy_calls) == playbacks + 1);
+    }
+
+    assert(mybot_start(config) == 0);
+    emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
+    assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
+    emit_key_event(MYBOT_KEY_EVENT_CONVERSATION_START);
+    assert(wait_for_app_state(MYBOT_STATE_IN_CONVERSATION, 1000));
+    mock_lock();
+    s_rtc_fini_retry = true;
+    mock_unlock();
+    mybot_stop();
+    assert(mybot_get_state() == MYBOT_STATE_STOPPING);
+    assert(mybot_start(config) < 0);
+    mock_lock();
+    s_rtc_fini_retry = false;
+    mock_unlock();
+    mybot_stop();
+    assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+}
+
 static void test_control_queue_failures(const mybot_config_t *config) {
     int wifi_before = read_counter(&s_wifi_init_calls);
     s_control_create_fails = true;
@@ -2103,7 +2161,8 @@ static void test_control_queue_failures(const mybot_config_t *config) {
     mybot_stop();
     assert(!mybot_is_running());
     assert(s_control_destroy_failures == 1);
-    assert(read_counter(&s_capture_destroy_calls) == destroys_before);
+    assert(mybot_get_state() == MYBOT_STATE_STOPPING);
+    assert(read_counter(&s_capture_destroy_calls) == destroys_before + 1);
     assert(mybot_start(config) < 0);
     s_control_destroy_fails = false;
     mybot_stop();
@@ -2115,6 +2174,7 @@ static void test_control_queue_failures(const mybot_config_t *config) {
     s_control_destroy_fails = true;
     assert(mybot_start(config) < 0);
     assert(s_control_destroy_failures == 2);
+    assert(mybot_get_state() == MYBOT_STATE_STOPPING);
     assert(mybot_start(config) < 0);
     s_control_call_fails = false;
     s_control_destroy_fails = false;
@@ -2136,6 +2196,7 @@ static void test_control_queue_failures(const mybot_config_t *config) {
     mock_unlock();
     mybot_stop();
     assert(!mybot_is_running());
+    assert(mybot_get_state() == MYBOT_STATE_STOPPING);
     assert(read_counter(&s_service_destroy_failures) > service_failures_before);
     assert(mybot_start(config) < 0);
     mock_lock();
@@ -3103,6 +3164,24 @@ int main(void) {
     mybot_stop();
     assert(aosl_atomic_read(&s_video_destroy_calls) == video_destroys_before + 1);
 
+    /* Keep the original encoder owner for a retry after a failed stop. */
+    assert(mybot_start(&config) == 0);
+    emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
+    assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
+    intptr_t starts_before_retry = aosl_atomic_read(&s_video_start_calls);
+    video_destroys_before = aosl_atomic_read(&s_video_destroy_calls);
+    emit_key_event(MYBOT_KEY_EVENT_CONVERSATION_START);
+    assert(wait_for_video_counter(&s_video_start_calls, starts_before_retry + 1));
+    aosl_atomic_set(&s_video_stop_fails, true);
+    mybot_stop();
+    assert(mybot_get_state() == MYBOT_STATE_STOPPING);
+    assert(mybot_start(&config) < 0);
+    assert(aosl_atomic_read(&s_video_destroy_calls) == video_destroys_before);
+    aosl_atomic_set(&s_video_stop_fails, false);
+    mybot_stop();
+    assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+    assert(aosl_atomic_read(&s_video_destroy_calls) == video_destroys_before + 1);
+
     /* Shutdown must wait for a platform start already executing on control,
      * rather than invoking stop/destroy concurrently from another thread. */
     assert(mybot_start(&config) == 0);
@@ -3146,6 +3225,7 @@ int main(void) {
     test_service_startup_failures(&config);
     test_background_service_requests(&config);
 #if MYBOT_TEST_WRAP_APP_MPQ
+    test_media_join_retries(&config);
     test_control_queue_failures(&config);
 #endif
 

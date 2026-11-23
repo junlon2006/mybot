@@ -21,6 +21,8 @@ static aosl_atomic_t s_last_send_len;
 static int s_capture_mode;
 static int s_playback_mode;
 static bool s_capture_init_fail;
+static bool s_capture_stop_fail;
+static bool s_playback_stop_fail;
 static int s_announce_init_calls;
 static int s_announce_destroy_calls;
 static int s_device_volume = MYBOT_AUDIO_VOLUME_DEFAULT;
@@ -137,7 +139,7 @@ static int capture_read(void *ctx, void *buf, int frames) {
     return frames;
 }
 static int capture_stop(void *ctx) {
-    return ctx == &s_capture_ctx ? 0 : -1;
+    return ctx == &s_capture_ctx && !s_capture_stop_fail ? 0 : -1;
 }
 static void capture_destroy(void *ctx) {
     assert(ctx == &s_capture_ctx);
@@ -181,7 +183,7 @@ static int playback_write(void *ctx, const void *buf, int frames) {
     return frames;
 }
 static int playback_stop(void *ctx) {
-    return ctx == &s_playback_ctx ? 0 : -1;
+    return ctx == &s_playback_ctx && !s_playback_stop_fail ? 0 : -1;
 }
 static void playback_destroy(void *ctx) {
     assert(ctx == &s_playback_ctx);
@@ -718,6 +720,15 @@ int main(void) {
     mybot_media_pipeline_push_remote_audio(&pipeline, rtc_frame, sizeof(rtc_frame));
     assert(mybot_media_pipeline_flush_session(&pipeline) == 0);
     assert(mybot_media_pipeline_play_prompt(&pipeline, MYBOT_PROMPT_PAIR_CODE, "1") == 0);
+    s_capture_stop_fail = true;
+    s_playback_stop_fail = true;
+    assert(mybot_media_pipeline_stop(&pipeline) < 0);
+    assert(pipeline.cap_started && pipeline.pb_started);
+    assert(mybot_media_pipeline_destroy(&pipeline) < 0);
+    s_capture_stop_fail = false;
+    assert(mybot_media_pipeline_stop(&pipeline) < 0);
+    assert(!pipeline.cap_started && pipeline.pb_started);
+    s_playback_stop_fail = false;
     assert(mybot_media_pipeline_stop(&pipeline) == 0);
     /* In-flight RTC callbacks can still query the initialized prompt after workers stop. */
     assert(pipeline.announce.active && pipeline.announce.lock);

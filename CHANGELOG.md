@@ -8,6 +8,8 @@ headers.
 
 ### Fixed
 
+- Keep shutdown in `STOPPING` when device I/O or a worker cannot stop. A later `mybot_stop()`
+  resumes cleanup before the SDK can restart.
 - End the affected conversation if the RTC worker cannot receive a critical connection or token
   notification.
 - Restore the current pairing code on the LCD after Wi-Fi reconnects while the device awaits a claim.

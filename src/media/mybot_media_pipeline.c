@@ -450,7 +450,7 @@ int mybot_media_pipeline_stop(mybot_media_pipeline_t *pipeline) {
     if (!pipeline) {
         return -1;
     }
-    if (pipeline->stop_complete) {
+    if (!pipeline->initialized || pipeline->stop_complete) {
         return 0;
     }
     aosl_atomic_set(&pipeline->running, false);
@@ -462,12 +462,14 @@ int mybot_media_pipeline_stop(mybot_media_pipeline_t *pipeline) {
     /* Interrupt both device directions before waiting for any worker. A platform read/write may
      * be blocked inside its worker and relies on stop() being called from this shutdown thread. */
     if (pipeline->cap_started && cap_ops) {
-        (void)cap_ops->stop(pipeline->cap_ctx);
-        pipeline->cap_started = false;
+        pipeline->cap_started = cap_ops->stop(pipeline->cap_ctx) < 0;
     }
     if (pipeline->pb_started && pb_ops) {
-        (void)pb_ops->stop(pipeline->pb_ctx);
-        pipeline->pb_started = false;
+        pipeline->pb_started = pb_ops->stop(pipeline->pb_ctx) < 0;
+    }
+    if (pipeline->cap_started || pipeline->pb_started) {
+        AOSL_LOG_ERR("audio I/O stop incomplete; retaining workers and device contexts");
+        return -1;
     }
 
     if (!aosl_mpq_invalid(pipeline->send_mpq)) {
@@ -514,6 +516,9 @@ int mybot_media_pipeline_stop(mybot_media_pipeline_t *pipeline) {
 int mybot_media_pipeline_destroy(mybot_media_pipeline_t *pipeline) {
     if (!pipeline) {
         return -1;
+    }
+    if (!pipeline->initialized) {
+        return 0;
     }
     if (!pipeline->stop_complete) {
         AOSL_LOG_ERR("cannot destroy media pipeline before workers stop");

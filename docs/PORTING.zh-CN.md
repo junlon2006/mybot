@@ -320,6 +320,9 @@ RTC 回调队列全部销毁后最后释放该引用。RTC 生命周期、状态
 RTSA 生命周期通过 `agora_rtc_init()` / `agora_rtc_fini()` 管理。宿主若直接使用 AOSL，
 必须自行配对 `aosl_ctor()` 与 `aosl_dtor()`，并在所有 AOSL 用户停止前保持该引用。
 
+如果停止设备 I/O 或等待工作线程退出失败，SDK 会保留资源并报告 `MYBOT_STATE_STOPPING`。
+从产品控制线程再次调用 `mybot_stop()`，待清理完成后再启动。
+
 使用 `mybot_get_state()` 决定当前可执行的产品操作，返回状态的含义以
 [mybot.h](../include/mybot/mybot.h) 为准。不要在平台侧重建 SDK 私有的设备服务状态机。
 
