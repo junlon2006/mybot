@@ -436,7 +436,7 @@ done:
 }
 
 int mybot_device_client_start_conversation(const char *base_url, const char *device_id,
-                                           const char *device_token, const char *body_params,
+                                           const char *device_token,
                                            mybot_device_conversation_t *resp) {
     if (!base_url || !device_id || !device_token || !resp) {
         return -1;
@@ -448,17 +448,10 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
         return -1;
     }
 
-    /* Build body: use caller-provided or construct from config macros */
-    char *generated_body = NULL;
-    const char *body = body_params;
-
+    char *body = build_conversation_start_body();
     if (!body) {
-        generated_body = build_conversation_start_body();
-        body = generated_body;
-        if (!generated_body) {
-            AOSL_LOG_ERR("failed to build request body");
-            return -1;
-        }
+        AOSL_LOG_ERR("failed to build request body");
+        return -1;
     }
 
     AOSL_LOG_NTC("POST %s request body length=%zu", url, strlen(body));
@@ -469,7 +462,7 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
     int result = -1;
 
     int ret = post_device_json(url, device_token, body, &raw);
-    mybot_json_free_string(generated_body);
+    mybot_json_free_string(body);
     if (ret < 0) {
         AOSL_LOG_ERR("POST %s failed (http)", url);
         goto done;

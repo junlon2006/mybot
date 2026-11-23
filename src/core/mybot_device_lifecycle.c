@@ -403,7 +403,7 @@ static void action_start_conversation(mybot_device_lifecycle_t *lifecycle) {
     }
 
     int ret = mybot_device_client_start_conversation(lifecycle->server_base, lifecycle->device_id,
-                                                     lifecycle->device_token, NULL, resp);
+                                                     lifecycle->device_token, resp);
     if (!network_request_is_current(lifecycle, network_generation)) {
         AOSL_LOG_WRN("discarding conversation response after network change");
         aosl_hal_free(resp);
