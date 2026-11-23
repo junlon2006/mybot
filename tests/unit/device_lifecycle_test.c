@@ -1450,15 +1450,19 @@ int main(void) {
     invalid_auth.device_token[0] = '\0';
     expect_auth_record_rejected(&invalid_auth, sizeof(invalid_auth));
 
+    /* A storage failure preserves the original binding for the next startup. */
     install_auth_record(&valid_auth, sizeof(valid_auth));
     s_kv_store_get_result = -1;
-    lifecycle_init(&s_lifecycle, &s_kv_store, "http://server", "device-1", NULL, NULL, NULL);
-    s_kv_store_get_result = 0;
-    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_UNPROVISIONED);
-    assert(!s_kv_store_present);
+    assert(mybot_device_lifecycle_init(&s_lifecycle, &s_kv_store, "http://server", "device-1", NULL,
+                                       NULL, NULL) < 0);
+    assert(s_kv_store_present);
+    assert(s_kv_store_len == sizeof(valid_auth));
+    assert(memcmp(s_kv_store_data, &valid_auth, sizeof(valid_auth)) == 0);
 
-    install_auth_record(&valid_auth, sizeof(valid_auth));
+    s_kv_store_get_result = 0;
     lifecycle_init(&s_lifecycle, &s_kv_store, "http://server", "device-1", NULL, NULL, NULL);
+    assert(lifecycle_state(&s_lifecycle) == MYBOT_DEVICE_STATE_RUNTIME);
+    assert(strcmp(s_lifecycle.device_token, valid_auth.device_token) == 0);
     s_kv_store_erase_fails = true;
     mybot_device_lifecycle_request_pair(&s_lifecycle);
     lifecycle_tick(&s_lifecycle);

@@ -6,6 +6,11 @@ headers.
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve the stored device credential if startup cannot read it. Restarting after storage
+  recovers restores the original binding.
+
 ### Changed
 
 - Refresh the Chinese and English pairing-code prompt and digit audio.

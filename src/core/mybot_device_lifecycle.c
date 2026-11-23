@@ -110,38 +110,39 @@ static int persist_device_auth(mybot_device_lifecycle_t *lifecycle) {
     return ret;
 }
 
-static bool load_device_auth(mybot_device_lifecycle_t *lifecycle) {
+/* A missing or invalid record leaves device_token empty so pairing can begin. */
+static int load_device_auth(mybot_device_lifecycle_t *lifecycle) {
     mybot_device_auth_record_t *record =
         (mybot_device_auth_record_t *)aosl_hal_malloc(sizeof(*record));
     size_t len = 0;
     if (!record) {
-        return false;
+        AOSL_LOG_ERR("failed to allocate persisted device credential");
+        return -1;
     }
     memset(record, 0, sizeof(*record));
 
     int ret = mybot_kv_store_get(lifecycle->kv_store, MYBOT_DEVICE_AUTH_KEY, record,
                                  sizeof(*record), &len);
-    if (ret == MYBOT_ERR_NOT_FOUND) {
+    if (ret != 0) {
         aosl_hal_free(record);
-        return false;
+        if (ret == MYBOT_ERR_NOT_FOUND) {
+            return 0;
+        }
+        AOSL_LOG_ERR("failed to read persisted device credential");
+        return -1;
     }
-    if (ret < 0 || len != sizeof(*record) || record->version != MYBOT_DEVICE_AUTH_VERSION ||
+    if (len != sizeof(*record) || record->version != MYBOT_DEVICE_AUTH_VERSION ||
         record->server_base[sizeof(record->server_base) - 1] != '\0' ||
         record->device_id[sizeof(record->device_id) - 1] != '\0' ||
         record->device_token[sizeof(record->device_token) - 1] != '\0' ||
         strcmp(record->server_base, lifecycle->server_base) != 0 ||
         strcmp(record->device_id, lifecycle->device_id) != 0 || record->device_token[0] == '\0') {
-        if (ret < 0) {
-            AOSL_LOG_ERR("failed to read persisted device credential");
-        }
         (void)mybot_kv_store_erase(lifecycle->kv_store, MYBOT_DEVICE_AUTH_KEY);
-        aosl_hal_free(record);
-        return false;
+    } else {
+        strncpy(lifecycle->device_token, record->device_token, sizeof(lifecycle->device_token) - 1);
     }
-
-    strncpy(lifecycle->device_token, record->device_token, sizeof(lifecycle->device_token) - 1);
     aosl_hal_free(record);
-    return true;
+    return 0;
 }
 
 static void clear_device_auth(mybot_device_lifecycle_t *lifecycle) {
@@ -588,7 +589,10 @@ int mybot_device_lifecycle_init(mybot_device_lifecycle_t *lifecycle, mybot_kv_st
         lifecycle->cbs = *cbs;
     }
 
-    if (load_device_auth(lifecycle)) {
+    if (load_device_auth(lifecycle) < 0) {
+        return -1;
+    }
+    if (lifecycle->device_token[0]) {
         lifecycle->runtime_poll_interval = 30;
         set_state(lifecycle, MYBOT_DEVICE_STATE_RUNTIME);
         AOSL_LOG_NTC("restored persisted device credential");

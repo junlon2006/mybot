@@ -122,6 +122,8 @@ Implement all callbacks in `mybot_kv_store_ops_t`.
 
 - `get` returns 0 on success, `MYBOT_ERR_NOT_FOUND` when absent, and negative on failure.
   It must respect `capacity` and set `out_len` only on success.
+  A read failure during credential restoration fails service startup and preserves the record.
+  Once storage recovers, stop and restart MyBot to restore the binding.
 - `set` should survive power loss without exposing a partial replacement.
 - `erase` is idempotent.
 - Protect the device token with appropriate access controls or encryption.
