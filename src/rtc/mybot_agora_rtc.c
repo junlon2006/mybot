@@ -1333,24 +1333,8 @@ static int rtc_logout_rtm_impl(void) {
     return (unsubscribe_ret < 0 || ret < 0) ? -1 : 0;
 }
 
-static int rtc_join_impl(const char *channel, const char *token, const char *user_account,
-                         uint32_t video_min_bps, uint32_t video_max_bps) {
-    if (!channel || !channel[0] || strlen(channel) >= AGORA_RTC_CHANNEL_NAME_MAX_LEN ||
-        !user_account || !user_account[0]) {
-        AOSL_LOG_ERR("[RTC] join rejected: invalid channel or user account");
-        return -1;
-    }
-#if MYBOT_ENABLE_VIDEO
-    if (video_max_bps == 0 || video_max_bps < video_min_bps) {
-        AOSL_LOG_ERR("[RTC] join rejected: invalid video bitrate range (min=%u, max=%u)",
-                     (unsigned int)video_min_bps, (unsigned int)video_max_bps);
-        return -1;
-    }
-#else
-    (void)video_min_bps;
-    (void)video_max_bps;
-#endif
-    bool rtm_started_for_join = false;
+static int prepare_rtm_for_join(const char *channel, const char *token, const char *user_account,
+                                bool *logout_on_failure) {
     if (s_rtc.rtm_login_requested) {
         if (strcmp(s_rtc.rtm_uid, user_account) != 0) {
             AOSL_LOG_ERR("[RTC] join rejected: RTM UID does not match RTC user account");
@@ -1360,31 +1344,29 @@ static int rtc_join_impl(const char *channel, const char *token, const char *use
         if (login_rtm(user_account, token) < 0) {
             return -1;
         }
-        rtm_started_for_join = true;
+        *logout_on_failure = true;
     }
 
     if (wait_for_rtm_login(user_account) < 0) {
-        if (rtm_started_for_join) {
-            (void)rtc_logout_rtm_impl();
-        }
         return -1;
     }
 
-    bool rtm_subscription_started_for_join = false;
-    int ret = -1;
     if (s_rtc.state != MYBOT_RTC_STATE_INITIALIZED || s_rtc.conn_id != CONNECTION_ID_INVALID ||
         !s_rtc.rtm_logged_in || strcmp(s_rtc.rtm_uid, user_account) != 0) {
         AOSL_LOG_ERR("[RTC] join rejected after RTM wait (state=%s, conn_id=%u, rtm_logged_in=%d)",
                      state_name(s_rtc.state), s_rtc.conn_id, s_rtc.rtm_logged_in ? 1 : 0);
-        goto out;
+        return -1;
     }
-    rtm_subscription_started_for_join = !s_rtc.rtm_subscribe_requested;
+    if (!s_rtc.rtm_subscribe_requested) {
+        *logout_on_failure = true;
+    }
     if (subscribe_rtm(channel) < 0) {
-        goto out;
+        return -1;
     }
 
     if (wait_for_rtm_subscription(channel) < 0) {
-        (void)rtc_logout_rtm_impl();
+        /* A subscription without confirmation must be revoked even if it was reused. */
+        *logout_on_failure = true;
         return -1;
     }
 
@@ -1395,35 +1377,31 @@ static int rtc_join_impl(const char *channel, const char *token, const char *use
                      "rtm_logged_in=%d, rtm_subscribed=%d)",
                      state_name(s_rtc.state), s_rtc.conn_id, s_rtc.rtm_logged_in ? 1 : 0,
                      s_rtc.rtm_subscribed ? 1 : 0);
-        goto out;
+        return -1;
     }
 
-    connection_id_t conn_id = CONNECTION_ID_INVALID;
-    ret = agora_rtc_create_connection(&conn_id);
-    if (ret < 0) {
-        AOSL_LOG_ERR("create_connection failed: %s", agora_rtc_err_2_str(ret));
-        goto out;
-    }
-    AOSL_LOG_NTC("[RTC] connection created (conn_id=%u)", conn_id);
+    return 0;
+}
 
-    rtc_channel_options_t channel_options;
-    memset(&channel_options, 0, sizeof(channel_options));
-    channel_options.auto_subscribe_audio = true;
+static void configure_rtc_connection(connection_id_t conn_id, rtc_channel_options_t *options,
+                                     uint32_t video_min_bps, uint32_t video_max_bps) {
+    memset(options, 0, sizeof(*options));
+    options->auto_subscribe_audio = true;
     /* MyBot only uplinks device video; the service never sends video back. */
-    channel_options.auto_subscribe_video = false;
-    channel_options.enable_audio_jitter_buffer = true;
-    channel_options.enable_audio_decode = true;
+    options->auto_subscribe_video = false;
+    options->enable_audio_jitter_buffer = true;
+    options->enable_audio_decode = true;
 #if MYBOT_CLOUD_AEC
-    channel_options.enable_audio_downlink_aec = true;
+    options->enable_audio_downlink_aec = true;
 #endif
 #if MYBOT_AI_QOS
-    channel_options.enable_audio_ai_qos = true;
+    options->enable_audio_ai_qos = true;
 #endif
-    channel_options.audio_codec_opt.audio_codec_type = AUDIO_CODEC_TYPE_G722;
-    channel_options.audio_codec_opt.pcm_sample_rate = 16000;
+    options->audio_codec_opt.audio_codec_type = AUDIO_CODEC_TYPE_G722;
+    options->audio_codec_opt.pcm_sample_rate = 16000;
     /* RTSA cloud AEC pairs microphone and reference data while PCM remains mono. */
-    channel_options.audio_codec_opt.pcm_channel_num = 1;
-    channel_options.audio_codec_opt.pcm_duration = MYBOT_AUDIO_PTIME_MS;
+    options->audio_codec_opt.pcm_channel_num = 1;
+    options->audio_codec_opt.pcm_duration = MYBOT_AUDIO_PTIME_MS;
 
 #if MYBOT_ENABLE_VIDEO
     uint32_t bwe_start_bps = video_min_bps + (video_max_bps - video_min_bps) / 2U;
@@ -1431,8 +1409,25 @@ static int rtc_join_impl(const char *channel, const char *token, const char *use
     if (bwe_ret < 0) {
         AOSL_LOG_WRN("set_bwe_param failed: %s", agora_rtc_err_2_str(bwe_ret));
     }
+#else
+    (void)conn_id;
+    (void)video_min_bps;
+    (void)video_max_bps;
 #endif
+}
 
+static int join_rtc_channel(const char *channel, const char *token, const char *user_account,
+                            uint32_t video_min_bps, uint32_t video_max_bps) {
+    connection_id_t conn_id = CONNECTION_ID_INVALID;
+    int ret = agora_rtc_create_connection(&conn_id);
+    if (ret < 0) {
+        AOSL_LOG_ERR("create_connection failed: %s", agora_rtc_err_2_str(ret));
+        return ret;
+    }
+    AOSL_LOG_NTC("[RTC] connection created (conn_id=%u)", conn_id);
+
+    rtc_channel_options_t channel_options;
+    configure_rtc_connection(conn_id, &channel_options, video_min_bps, video_max_bps);
     set_connection(conn_id);
     set_state(MYBOT_RTC_STATE_CONNECTING);
     ret = agora_rtc_join_channel_with_user_account(
@@ -1451,9 +1446,30 @@ static int rtc_join_impl(const char *channel, const char *token, const char *use
         AOSL_LOG_NTC("[RTC] join requested (conn_id=%u, channel=%s, user=%s)", conn_id, channel,
                      user_account);
     }
+    return ret;
+}
 
-out:
-    if (ret < 0 && (rtm_started_for_join || rtm_subscription_started_for_join)) {
+static int rtc_join_impl(const char *channel, const char *token, const char *user_account,
+                         uint32_t video_min_bps, uint32_t video_max_bps) {
+    if (!channel || !channel[0] || strlen(channel) >= AGORA_RTC_CHANNEL_NAME_MAX_LEN ||
+        !user_account || !user_account[0]) {
+        AOSL_LOG_ERR("[RTC] join rejected: invalid channel or user account");
+        return -1;
+    }
+#if MYBOT_ENABLE_VIDEO
+    if (video_max_bps == 0 || video_max_bps < video_min_bps) {
+        AOSL_LOG_ERR("[RTC] join rejected: invalid video bitrate range (min=%u, max=%u)",
+                     (unsigned int)video_min_bps, (unsigned int)video_max_bps);
+        return -1;
+    }
+#endif
+
+    bool logout_on_failure = false;
+    int ret = prepare_rtm_for_join(channel, token, user_account, &logout_on_failure);
+    if (ret == 0) {
+        ret = join_rtc_channel(channel, token, user_account, video_min_bps, video_max_bps);
+    }
+    if (ret < 0 && logout_on_failure) {
         (void)rtc_logout_rtm_impl();
     }
     return ret;
