@@ -37,7 +37,6 @@ static bool s_fail_header;
 static void *s_header_allocation;
 static int s_header_alloc_calls;
 static int s_header_free_calls;
-static const char *s_borrowed_body;
 
 void *__real_aosl_hal_malloc(size_t size);
 void __real_aosl_hal_free(void *ptr);
@@ -59,7 +58,6 @@ void *__wrap_aosl_hal_malloc(size_t size) {
 }
 
 void __wrap_aosl_hal_free(void *ptr) {
-    assert(!s_borrowed_body || ptr != s_borrowed_body);
     if (s_track_header && ptr && ptr == s_header_allocation) {
         s_header_free_calls++;
         s_header_allocation = NULL;
@@ -155,9 +153,6 @@ int mybot_http_client_post_ex(const char *url, const char *content_type, const c
 #ifdef MYBOT_TEST_WRAP_DEVICE_HEADERS
     if (s_track_header) {
         assert(extra_headers == s_header_allocation);
-        if (s_borrowed_body) {
-            assert(body == s_borrowed_body);
-        }
     }
 #endif
     s_post_ex_call_count++;
@@ -207,14 +202,12 @@ static void test_required_arguments(void) {
     assert(mybot_device_client_get_binding_status("http://server", "device", "Pair token", NULL) <
            0);
 
-    assert(mybot_device_client_start_conversation(NULL, "device", "token", "{}", &conversation) <
+    assert(mybot_device_client_start_conversation(NULL, "device", "token", &conversation) < 0);
+    assert(mybot_device_client_start_conversation("http://server", NULL, "token", &conversation) <
            0);
-    assert(mybot_device_client_start_conversation("http://server", NULL, "token", "{}",
-                                                  &conversation) < 0);
-    assert(mybot_device_client_start_conversation("http://server", "device", NULL, "{}",
-                                                  &conversation) < 0);
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}", NULL) <
+    assert(mybot_device_client_start_conversation("http://server", "device", NULL, &conversation) <
            0);
+    assert(mybot_device_client_start_conversation("http://server", "device", "token", NULL) < 0);
 
     assert(mybot_device_client_renew_rtc_token(NULL, "device", "token", "channel", "uid", &token) <
            0);
@@ -272,7 +265,7 @@ static int call_parsed_response(parsed_call_t operation, parsed_output_t *output
         return mybot_device_client_get_binding_status("http://server", "device", "Device token",
                                                       &output->binding);
     case PARSED_START:
-        return mybot_device_client_start_conversation("http://server", "device", "token", NULL,
+        return mybot_device_client_start_conversation("http://server", "device", "token",
                                                       &output->conversation);
     case PARSED_RENEW:
         return mybot_device_client_renew_rtc_token("http://server", "device", "token", "channel-1",
@@ -388,7 +381,7 @@ static int call_generated_request(request_build_t operation, parsed_output_t *ou
         return mybot_device_client_create_pair_code("http://server", "device", "firmware", "model",
                                                     &output->pair);
     case BUILD_START:
-        return mybot_device_client_start_conversation("http://server", "device", "token", NULL,
+        return mybot_device_client_start_conversation("http://server", "device", "token",
                                                       &output->conversation);
     case BUILD_RENEW:
         return mybot_device_client_renew_rtc_token("http://server", "device", "token", "channel-1",
@@ -459,7 +452,6 @@ static void test_binding_optional_fields(void) {
     assert(mybot_device_client_get_binding_status("http://server", "device", "Pair token",
                                                   &binding) == 0);
     assert(binding.status[0] == '\0' && binding.device_token[0] == '\0');
-    assert(binding.agent_id[0] == '\0' && binding.agent_name[0] == '\0');
     assert(binding.poll_after_seconds == INT_MIN);
 
     static const struct {
@@ -467,8 +459,8 @@ static void test_binding_optional_fields(void) {
         size_t capacity;
     } fields[] = {{"status", sizeof(binding.status)},
                   {"device_token", sizeof(binding.device_token)},
-                  {"agent_id", sizeof(binding.agent_id)},
-                  {"agent_name", sizeof(binding.agent_name)}};
+                  {"agent_id", MYBOT_DEVICE_CLIENT_MAX_ID},
+                  {"agent_name", MYBOT_DEVICE_CLIENT_MAX_ID}};
     char value[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 1];
     char response[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 128];
     for (size_t i = 0; i < sizeof(fields) / sizeof(fields[0]); ++i) {
@@ -507,7 +499,7 @@ static void test_rtc_account_types(void) {
                                    agent ? ",\"uid\":\"device\"" : field);
             assert(written > 0 && (size_t)written < sizeof(response));
             reset_http_mock(response);
-            assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+            assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                           &conversation) == -1);
         }
     }
@@ -515,7 +507,7 @@ static void test_rtc_account_types(void) {
     reset_http_mock("{\"data\":{\"conversation_id\":\"c-1\",\"agent_uid\":9223372036854775807,"
                     "\"rtc\":{\"app_id\":\"app\",\"channel\":\"channel\","
                     "\"uid\":-9223372036854775808,\"token\":null}}}");
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) == 0);
     assert(strcmp(conversation.rtc_uid, "-9223372036854775808") == 0);
     assert(strcmp(conversation.rtc_agent_uid, "9223372036854775807") == 0);
@@ -523,7 +515,7 @@ static void test_rtc_account_types(void) {
     reset_http_mock("{\"data\":{\"conversation_id\":\"c-1\",\"agent_uid\":\"agent\","
                     "\"rtc\":{\"app_id\":\"app\",\"channel\":\"channel\",\"uid\":\"device\","
                     "\"token\":false}}}");
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) == -1);
 }
 
@@ -586,8 +578,6 @@ static void test_binding_failures(void) {
     assert(strcmp(s_request_url, "http://server/devices/device%2Fone/binding-status") == 0);
     assert(strcmp(s_request_headers, "Authorization: Pair pair-token\r\n") == 0);
     assert(strcmp(binding.device_token, "device-token") == 0);
-    assert(strcmp(binding.agent_id, "agent-1") == 0);
-    assert(strcmp(binding.agent_name, "Agent") == 0);
     assert(binding.poll_after_seconds == 7);
 
     calls = s_get_ex_call_count;
@@ -628,6 +618,34 @@ static void test_binding_failures(void) {
                                                   &binding) < 0);
 }
 
+static void check_conversation_request_body(void) {
+    mybot_json_t *root = mybot_json_parse(s_request_body);
+    assert(root != NULL);
+    mybot_json_t *audio = mybot_json_get_object_item(root, "audio");
+    assert(audio != NULL);
+
+    int64_t ptime = 0;
+    assert(mybot_json_get_integer(mybot_json_get_object_item(audio, "p_time"), &ptime));
+    assert(ptime == MYBOT_AUDIO_PTIME_MS);
+    assert(strcmp(mybot_json_get_string(mybot_json_get_object_item(audio, "codec")), "G722") == 0);
+
+    const mybot_json_t *features = mybot_json_get_object_item(root, "features");
+    const mybot_json_t *aec = mybot_json_get_object_item(features, "cloud_aec");
+    const mybot_json_t *qos = mybot_json_get_object_item(features, "ai_qos");
+    assert(aec && aec->type == (MYBOT_CLOUD_AEC ? MYBOT_JSON_TRUE : MYBOT_JSON_FALSE));
+    assert(qos && qos->type == (MYBOT_AI_QOS ? MYBOT_JSON_TRUE : MYBOT_JSON_FALSE));
+    const mybot_json_t *multiplier = mybot_json_get_object_item(features, "fast_send_multiplier");
+#if MYBOT_AI_QOS
+    int64_t fast_send;
+    assert(mybot_json_get_integer(multiplier, &fast_send) &&
+           fast_send == MYBOT_FAST_SEND_MULTIPLIER);
+#else
+    assert(multiplier == NULL);
+#endif
+
+    mybot_json_delete(root);
+}
+
 static void test_conversation_failures(void) {
     mybot_device_conversation_t conversation;
     char long_base[700];
@@ -640,25 +658,23 @@ static void test_conversation_failures(void) {
 
     reset_http_mock(s_valid_response_body);
     assert(mybot_device_client_start_conversation("http://server", "device", "token",
-                                                  "{\"custom\":true}", &conversation) == 0);
+                                                  &conversation) == 0);
     assert(strcmp(conversation.rtc_agent_uid, "agent-uid") == 0);
-    assert(strcmp(s_request_body, "{\"custom\":true}") == 0);
+    check_conversation_request_body();
     assert(strcmp(s_request_content_type, "application/json") == 0);
 
     calls = s_post_ex_call_count;
-    assert(mybot_device_client_start_conversation("http://server", "", "token", "{}",
-                                                  &conversation) < 0);
-    assert(mybot_device_client_start_conversation("http://server", "device", "", "{}",
-                                                  &conversation) < 0);
+    assert(mybot_device_client_start_conversation("http://server", "", "token", &conversation) < 0);
+    assert(mybot_device_client_start_conversation("http://server", "device", "", &conversation) <
+           0);
     memset(long_base, 'u', sizeof(long_base) - 1);
     long_base[sizeof(long_base) - 1] = '\0';
-    assert(mybot_device_client_start_conversation(long_base, "device", "token", "{}",
-                                                  &conversation) < 0);
+    assert(mybot_device_client_start_conversation(long_base, "device", "token", &conversation) < 0);
     assert(s_post_ex_call_count == calls);
 
     reset_http_mock(s_valid_response_body);
     s_http_result = -1;
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) < 0);
 
     assert(snprintf(oversized_rtc_response, sizeof(oversized_rtc_response),
@@ -666,52 +682,52 @@ static void test_conversation_failures(void) {
                     "\"app_id\":\"%064d\",\"channel\":\"channel\",\"uid\":\"uid\"}}}",
                     0) > 0);
     reset_http_mock(oversized_rtc_response);
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) < 0);
     assert(snprintf(oversized_rtc_response, sizeof(oversized_rtc_response),
                     "{\"data\":{\"conversation_id\":\"c-1\",\"rtc\":{"
                     "\"app_id\":\"app-1\",\"channel\":\"%0128d\",\"uid\":\"uid\"}}}",
                     0) > 0);
     reset_http_mock(oversized_rtc_response);
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) < 0);
     reset_http_mock(s_valid_response_body);
     s_response_status = 401;
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) == 401);
     reset_http_mock(s_valid_response_body);
     s_response_status = 0;
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) < 0);
     reset_http_mock(NULL);
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) < 0);
     reset_http_mock("invalid-json");
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) < 0);
     reset_http_mock("{}");
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) < 0);
     reset_http_mock("{\"data\":{\"conversation_id\":\"c-1\"}}");
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) < 0);
     reset_http_mock("{\"data\":{\"conversation_id\":\"c-1\","
                     "\"rtc\":{\"channel\":\"\",\"uid\":\"uid\"}}}");
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) < 0);
     reset_http_mock("{\"data\":{\"conversation_id\":\"c-1\","
                     "\"rtc\":{\"channel\":\"channel\"}}}");
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) < 0);
     /* app_id and agent_uid are required identity fields. */
     reset_http_mock("{\"data\":{\"conversation_id\":\"c-1\","
                     "\"rtc\":{\"channel\":\"channel\",\"uid\":\"uid\"}}}");
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) < 0);
     reset_http_mock("{\"data\":{\"conversation_id\":\"c-1\",\"agent_uid\":\"agent\","
                     "\"rtc\":{\"app_id\":\"app\",\"channel\":\"channel\","
                     "\"uid\":\"uid\"}}}");
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) == 0);
     assert(strcmp(conversation.rtc_app_id, "app") == 0);
     assert(strcmp(conversation.rtc_channel, "channel") == 0);
@@ -719,7 +735,7 @@ static void test_conversation_failures(void) {
     assert(conversation.rtc_token[0] == '\0');
 
     reset_http_mock(s_valid_response_body);
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) == 0);
     assert(strcmp(conversation.rtc_agent_uid, "agent-uid") == 0);
 
@@ -733,7 +749,7 @@ static void test_conversation_failures(void) {
                     "\"uid\":\"uid\",\"token\":\"%s\"}}}",
                     token) > 0);
     reset_http_mock(token_response);
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) == 0);
     assert(strlen(conversation.rtc_token) == sizeof(token) - 1);
     memset(oversized_token, 't', sizeof(oversized_token) - 1);
@@ -744,7 +760,7 @@ static void test_conversation_failures(void) {
                     "\"uid\":\"uid\",\"token\":\"%s\"}}}",
                     oversized_token) > 0);
     reset_http_mock(token_response);
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) < 0);
 
     /* RTM peer accounts must not be silently truncated at the 64-byte limit. */
@@ -753,7 +769,7 @@ static void test_conversation_failures(void) {
                     "\"rtc\":{\"channel\":\"channel\",\"uid\":\"uid\"}}}",
                     0) > 0);
     reset_http_mock(oversized_agent_response);
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) < 0);
 
     char oversized_local_response[512];
@@ -762,13 +778,13 @@ static void test_conversation_failures(void) {
                     "\"rtc\":{\"channel\":\"channel\",\"uid\":\"%064d\"}}}",
                     0) > 0);
     reset_http_mock(oversized_local_response);
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) < 0);
 
     reset_http_mock("{\"data\":{\"conversation_id\":\"c-1\",\"agent_uid\":12345,"
                     "\"rtc\":{\"app_id\":\"app\",\"channel\":\"channel\","
                     "\"uid\":67890}}}");
-    assert(mybot_device_client_start_conversation("http://server", "device", "token", "{}",
+    assert(mybot_device_client_start_conversation("http://server", "device", "token",
                                                   &conversation) == 0);
     assert(strcmp(conversation.rtc_uid, "67890") == 0);
     assert(strcmp(conversation.rtc_agent_uid, "12345") == 0);
@@ -889,17 +905,15 @@ static void test_stop_conversation(void) {
 }
 
 #ifdef MYBOT_TEST_WRAP_DEVICE_HEADERS
-typedef enum { POST_START_BORROWED, POST_START_GENERATED, POST_RENEW, POST_STOP } device_post_t;
+typedef enum { POST_START, POST_RENEW, POST_STOP } device_post_t;
 
-static int call_device_post(device_post_t operation, const char *credential, const char *body) {
+static int call_device_post(device_post_t operation, const char *credential) {
     mybot_device_conversation_t conversation;
     mybot_device_rtc_token_t token;
     switch (operation) {
-    case POST_START_BORROWED:
-    case POST_START_GENERATED:
-        return mybot_device_client_start_conversation(
-            "http://server", "device", credential, operation == POST_START_BORROWED ? body : NULL,
-            &conversation);
+    case POST_START:
+        return mybot_device_client_start_conversation("http://server", "device", credential,
+                                                      &conversation);
     case POST_RENEW:
         return mybot_device_client_renew_rtc_token("http://server", "device", credential,
                                                    "channel-1", "device-uid", &token);
@@ -910,12 +924,11 @@ static int call_device_post(device_post_t operation, const char *credential, con
     return -1;
 }
 
-static void begin_header_tracking(device_post_t operation, const char *body, bool fail) {
+static void begin_header_tracking(device_post_t operation, bool fail) {
     assert(s_header_allocation == NULL);
     s_header_alloc_calls = 0;
     s_header_free_calls = 0;
     s_fail_header = fail;
-    s_borrowed_body = operation == POST_START_BORROWED ? body : NULL;
     s_track_header = true;
     reset_http_mock(operation == POST_STOP    ? NULL
                     : operation == POST_RENEW ? s_valid_renew_response_body
@@ -928,7 +941,6 @@ static void end_header_tracking(int expected_frees) {
     assert(s_header_allocation == NULL);
     s_track_header = false;
     s_fail_header = false;
-    s_borrowed_body = NULL;
 }
 
 static void test_device_post_header_ownership(void) {
@@ -937,31 +949,26 @@ static void test_device_post_header_ownership(void) {
         int status;
         int expected;
     } responses[] = {{-1, 200, -1}, {0, 401, 401}, {0, 503, 503}, {0, 0, -1}, {0, 200, 0}};
-    char body[] = "{\"custom\":true}";
-    for (int operation = POST_START_BORROWED; operation <= POST_STOP; ++operation) {
-        begin_header_tracking((device_post_t)operation, body, true);
+    for (int operation = POST_START; operation <= POST_STOP; ++operation) {
+        begin_header_tracking((device_post_t)operation, true);
         int calls_before = s_post_ex_call_count;
-        assert(call_device_post((device_post_t)operation, "token", body) == -1);
+        assert(call_device_post((device_post_t)operation, "token") == -1);
         assert(s_post_ex_call_count == calls_before);
-        assert(strcmp(body, "{\"custom\":true}") == 0);
         end_header_tracking(0);
 
-        begin_header_tracking((device_post_t)operation, body, false);
+        begin_header_tracking((device_post_t)operation, false);
         calls_before = s_post_ex_call_count;
-        assert(call_device_post((device_post_t)operation, "token\nInjected", body) == -1);
+        assert(call_device_post((device_post_t)operation, "token\nInjected") == -1);
         assert(s_post_ex_call_count == calls_before);
-        assert(strcmp(body, "{\"custom\":true}") == 0);
         end_header_tracking(1);
 
         for (size_t i = 0; i < sizeof(responses) / sizeof(responses[0]); ++i) {
-            begin_header_tracking((device_post_t)operation, body, false);
+            begin_header_tracking((device_post_t)operation, false);
             s_http_result = responses[i].transport_result;
             s_response_status = responses[i].status;
             calls_before = s_post_ex_call_count;
-            assert(call_device_post((device_post_t)operation, "token", body) ==
-                   responses[i].expected);
+            assert(call_device_post((device_post_t)operation, "token") == responses[i].expected);
             assert(s_post_ex_call_count == calls_before + 1);
-            assert(strcmp(body, "{\"custom\":true}") == 0);
             end_header_tracking(1);
         }
     }
@@ -1007,28 +1014,28 @@ int main(void) {
     char long_id[MYBOT_DEVICE_CLIENT_MAX_ID + 1];
     char long_id_response_body[1024];
     reset_http_mock(s_valid_response_body);
-    assert(mybot_device_client_start_conversation("http://server", "device-1", "token", NULL,
+    assert(mybot_device_client_start_conversation("http://server", "device-1", "token",
                                                   &conversation) == 0);
     assert(strcmp(conversation.conversation_id, "conversation-1") == 0);
     assert(strcmp(s_request_url, "http://server/devices/device-1/conversations/start") == 0);
     assert(strcmp(s_request_headers, "Authorization: Device token\r\n") == 0);
 
     assert(mybot_device_client_start_conversation("http://server", "dev/../x?y#z\r\n", "token",
-                                                  NULL, &conversation) == 0);
+                                                  &conversation) == 0);
     assert(strcmp(s_request_url,
                   "http://server/devices/dev%2F..%2Fx%3Fy%23z%0D%0A/conversations/start") == 0);
 
     char max_device_id[MYBOT_DEVICE_CLIENT_MAX_ID];
     memset(max_device_id, '/', sizeof(max_device_id) - 1);
     max_device_id[sizeof(max_device_id) - 1] = '\0';
-    assert(mybot_device_client_start_conversation("http://server", max_device_id, "token", NULL,
+    assert(mybot_device_client_start_conversation("http://server", max_device_id, "token",
                                                   &conversation) == 0);
     assert(strstr(s_request_url, "/devices/%2F%2F%2F") != NULL);
     assert(strlen(s_request_url) < MYBOT_DEVICE_CLIENT_MAX_URL);
 
     int post_calls = s_post_ex_call_count;
-    assert(mybot_device_client_start_conversation(
-               "http://server", "device-1", "token\r\nX-Injected: yes", NULL, &conversation) < 0);
+    assert(mybot_device_client_start_conversation("http://server", "device-1",
+                                                  "token\r\nX-Injected: yes", &conversation) < 0);
     assert(s_post_ex_call_count == post_calls);
 
     mybot_device_rtc_token_t renewed;
@@ -1082,10 +1089,10 @@ int main(void) {
                                                   &binding) < 0);
 
     reset_http_mock(s_missing_id_response_body);
-    assert(mybot_device_client_start_conversation("http://server", "device-1", "token", NULL,
+    assert(mybot_device_client_start_conversation("http://server", "device-1", "token",
                                                   &conversation) < 0);
     reset_http_mock(s_empty_id_response_body);
-    assert(mybot_device_client_start_conversation("http://server", "device-1", "token", NULL,
+    assert(mybot_device_client_start_conversation("http://server", "device-1", "token",
                                                   &conversation) < 0);
 
     memset(long_id, 'x', sizeof(long_id) - 1);
@@ -1096,20 +1103,9 @@ int main(void) {
                     "\"token\":\"token-1\",\"uid\":\"device-uid\"}}}",
                     long_id) < (int)sizeof(long_id_response_body));
     reset_http_mock(long_id_response_body);
-    assert(mybot_device_client_start_conversation("http://server", "device-1", "token", NULL,
+    assert(mybot_device_client_start_conversation("http://server", "device-1", "token",
                                                   &conversation) < 0);
 
-    mybot_json_t *root = mybot_json_parse(s_request_body);
-    assert(root != NULL);
-    mybot_json_t *audio = mybot_json_get_object_item(root, "audio");
-    assert(audio != NULL);
-
-    int64_t ptime = 0;
-    assert(mybot_json_get_integer(mybot_json_get_object_item(audio, "p_time"), &ptime));
-    assert(ptime == MYBOT_AUDIO_PTIME_MS);
-    assert(strcmp(mybot_json_get_string(mybot_json_get_object_item(audio, "codec")), "G722") == 0);
-
-    mybot_json_delete(root);
     test_pair_code_failures();
     test_binding_failures();
     test_conversation_failures();

@@ -49,9 +49,9 @@ extern "C" {
 
 /* The mybot_json_t structure: */
 typedef struct mybot_json {
-    struct mybot_json *next, *prev; /* linked children for arrays and objects */
-    struct mybot_json *child;       /* An array or object item will have a child pointer pointing
-                                              to a chain of the items in the array/object. */
+    struct mybot_json *next;  /* linked children for arrays and objects */
+    struct mybot_json *child; /* An array or object item will have a child pointer pointing
+                                        to a chain of the items in the array/object. */
 
     int type; /* The type of the item, as above. */
 

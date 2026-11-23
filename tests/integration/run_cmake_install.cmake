@@ -1,3 +1,5 @@
+include("${CMAKE_CURRENT_LIST_DIR}/run_checked.cmake")
+
 if(NOT MYBOT_SOURCE_DIR OR NOT MYBOT_BINARY_DIR OR NOT MYBOT_TEST_CONFIG_DIR)
     message(FATAL_ERROR "MYBOT_SOURCE_DIR, MYBOT_BINARY_DIR and MYBOT_TEST_CONFIG_DIR are required")
 endif()
@@ -12,34 +14,22 @@ file(REMOVE_RECURSE "${consumer_dir}")
 
 # Install from a clean non-sanitized build: the outer build may enable ASAN,
 # and sanitizer flags do not propagate through the installed package.
-execute_process(
-    COMMAND "${CMAKE_COMMAND}" -S "${MYBOT_SOURCE_DIR}" -B "${source_build_dir}"
-            -C "${MYBOT_TEST_CONFIG_DIR}/config.cmake"
-            -DMYBOT_BUILD_LINUX_PLATFORM=OFF
-            -DMYBOT_BUILD_EXAMPLES=OFF
-            -DMYBOT_BUILD_TESTS=OFF
-            -DMYBOT_ENABLE_ASAN=OFF
-    RESULT_VARIABLE source_configure_result
+run_checked("install source configure"
+    "${CMAKE_COMMAND}" -S "${MYBOT_SOURCE_DIR}" -B "${source_build_dir}"
+    -C "${MYBOT_TEST_CONFIG_DIR}/config.cmake"
+    -DMYBOT_BUILD_LINUX_PLATFORM=OFF
+    -DMYBOT_BUILD_EXAMPLES=OFF
+    -DMYBOT_BUILD_TESTS=OFF
+    -DMYBOT_ENABLE_ASAN=OFF
 )
-if(NOT source_configure_result EQUAL 0)
-    message(FATAL_ERROR "install source configure failed: ${source_configure_result}")
-endif()
 
-execute_process(
-    COMMAND "${CMAKE_COMMAND}" --build "${source_build_dir}" --target mybot_sdk
-    RESULT_VARIABLE source_build_result
+run_checked("install source build"
+    "${CMAKE_COMMAND}" --build "${source_build_dir}" --target mybot_sdk
 )
-if(NOT source_build_result EQUAL 0)
-    message(FATAL_ERROR "install source build failed: ${source_build_result}")
-endif()
 
-execute_process(
-    COMMAND "${CMAKE_COMMAND}" --install "${source_build_dir}" --prefix "${install_prefix}"
-    RESULT_VARIABLE install_result
+run_checked("cmake --install"
+    "${CMAKE_COMMAND}" --install "${source_build_dir}" --prefix "${install_prefix}"
 )
-if(NOT install_result EQUAL 0)
-    message(FATAL_ERROR "cmake --install failed: ${install_result}")
-endif()
 
 foreach(required_document LICENSE THIRD_PARTY_NOTICES.md aosl-LICENSE)
     if(NOT EXISTS "${install_prefix}/share/doc/mybot/${required_document}")
@@ -52,29 +42,17 @@ if(installed_pkg_config)
     message(FATAL_ERROR "CMake package installation must not install mybot.pc")
 endif()
 
-execute_process(
-    COMMAND "${CMAKE_COMMAND}" -S "${MYBOT_SOURCE_DIR}/tests/integration/cmake_install_consumer"
-            -C "${MYBOT_TEST_CONFIG_DIR}/config.cmake"
-            -B "${consumer_dir}"
-            -DCMAKE_PREFIX_PATH=${install_prefix}
-    RESULT_VARIABLE configure_result
+run_checked("install consumer configure"
+    "${CMAKE_COMMAND}" -S "${MYBOT_SOURCE_DIR}/tests/integration/cmake_install_consumer"
+    -C "${MYBOT_TEST_CONFIG_DIR}/config.cmake"
+    -B "${consumer_dir}"
+    -DCMAKE_PREFIX_PATH=${install_prefix}
 )
-if(NOT configure_result EQUAL 0)
-    message(FATAL_ERROR "install consumer configure failed: ${configure_result}")
-endif()
 
-execute_process(
-    COMMAND "${CMAKE_COMMAND}" --build "${consumer_dir}"
-    RESULT_VARIABLE build_result
+run_checked("install consumer build"
+    "${CMAKE_COMMAND}" --build "${consumer_dir}"
 )
-if(NOT build_result EQUAL 0)
-    message(FATAL_ERROR "install consumer build failed: ${build_result}")
-endif()
 
-execute_process(
-    COMMAND "${consumer_dir}/mybot_install_consumer_check"
-    RESULT_VARIABLE run_result
+run_checked("install consumer check"
+    "${consumer_dir}/mybot_install_consumer_check"
 )
-if(NOT run_result EQUAL 0)
-    message(FATAL_ERROR "install consumer check failed: ${run_result}")
-endif()

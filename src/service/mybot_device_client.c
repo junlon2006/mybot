@@ -76,17 +76,21 @@ static int post_device_json(const char *url, const char *device_token, const cha
     return ret;
 }
 
-static int copy_optional_json_string(const mybot_json_t *object, const char *name,
-                                     char *destination, size_t destination_size) {
-    mybot_json_t *item = mybot_json_get_object_item(object, name);
+/* A missing or null optional string has the same representation as an empty string. */
+static const char *optional_json_string(const mybot_json_t *object, const char *name,
+                                        size_t capacity) {
+    const mybot_json_t *item = mybot_json_get_object_item(object, name);
     if (!item || item->type == MYBOT_JSON_NULL) {
-        return 0;
+        return "";
     }
     const char *value = mybot_json_get_string(item);
+    return value && strlen(value) < capacity ? value : NULL;
+}
+
+static int copy_optional_json_string(const mybot_json_t *object, const char *name,
+                                     char *destination, size_t capacity) {
+    const char *value = optional_json_string(object, name, capacity);
     if (!value) {
-        return -1;
-    }
-    if (!destination || destination_size == 0 || strlen(value) >= destination_size) {
         return -1;
     }
     memcpy(destination, value, strlen(value) + 1);
@@ -411,18 +415,17 @@ int mybot_device_client_get_binding_status(const char *base_url, const char *dev
         goto done;
     }
 
-    if (copy_optional_json_string(data, "status", resp->status, sizeof(resp->status)) < 0 ||
+    const char *agent_name = optional_json_string(data, "agent_name", MYBOT_DEVICE_CLIENT_MAX_ID);
+    if (!agent_name || !optional_json_string(data, "agent_id", MYBOT_DEVICE_CLIENT_MAX_ID) ||
+        copy_optional_json_string(data, "status", resp->status, sizeof(resp->status)) < 0 ||
         copy_optional_json_string(data, "device_token", resp->device_token,
-                                  sizeof(resp->device_token)) < 0 ||
-        copy_optional_json_string(data, "agent_id", resp->agent_id, sizeof(resp->agent_id)) < 0 ||
-        copy_optional_json_string(data, "agent_name", resp->agent_name, sizeof(resp->agent_name)) <
-            0) {
+                                  sizeof(resp->device_token)) < 0) {
         goto done;
     }
     copy_json_integer(data, "poll_after_seconds", &resp->poll_after_seconds);
 
-    AOSL_LOG_DBG("binding: status=%s agent=%s has_token=%d poll=%ds", resp->status,
-                 resp->agent_name, resp->device_token[0] ? 1 : 0, resp->poll_after_seconds);
+    AOSL_LOG_DBG("binding: status=%s agent=%s has_token=%d poll=%ds", resp->status, agent_name,
+                 resp->device_token[0] ? 1 : 0, resp->poll_after_seconds);
     result = 0;
 
 done:
@@ -433,7 +436,7 @@ done:
 }
 
 int mybot_device_client_start_conversation(const char *base_url, const char *device_id,
-                                           const char *device_token, const char *body_params,
+                                           const char *device_token,
                                            mybot_device_conversation_t *resp) {
     if (!base_url || !device_id || !device_token || !resp) {
         return -1;
@@ -445,17 +448,10 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
         return -1;
     }
 
-    /* Build body: use caller-provided or construct from config macros */
-    char *generated_body = NULL;
-    const char *body = body_params;
-
+    char *body = build_conversation_start_body();
     if (!body) {
-        generated_body = build_conversation_start_body();
-        body = generated_body;
-        if (!generated_body) {
-            AOSL_LOG_ERR("failed to build request body");
-            return -1;
-        }
+        AOSL_LOG_ERR("failed to build request body");
+        return -1;
     }
 
     AOSL_LOG_NTC("POST %s request body length=%zu", url, strlen(body));
@@ -466,7 +462,7 @@ int mybot_device_client_start_conversation(const char *base_url, const char *dev
     int result = -1;
 
     int ret = post_device_json(url, device_token, body, &raw);
-    mybot_json_free_string(generated_body);
+    mybot_json_free_string(body);
     if (ret < 0) {
         AOSL_LOG_ERR("POST %s failed (http)", url);
         goto done;

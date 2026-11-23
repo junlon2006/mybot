@@ -373,7 +373,6 @@ static void clear_rtc_token_renewal(mybot_device_lifecycle_t *lifecycle) {
     lifecycle->rtc_token_retry_ticks_remaining = 0;
     lifecycle->rtc_channel[0] = '\0';
     lifecycle->rtc_uid[0] = '\0';
-    lifecycle->rtc_agent_uid[0] = '\0';
 }
 
 static void schedule_rtc_token_retry(mybot_device_lifecycle_t *lifecycle) {
@@ -404,7 +403,7 @@ static void action_start_conversation(mybot_device_lifecycle_t *lifecycle) {
     }
 
     int ret = mybot_device_client_start_conversation(lifecycle->server_base, lifecycle->device_id,
-                                                     lifecycle->device_token, NULL, resp);
+                                                     lifecycle->device_token, resp);
     if (!network_request_is_current(lifecycle, network_generation)) {
         AOSL_LOG_WRN("discarding conversation response after network change");
         aosl_hal_free(resp);
@@ -434,7 +433,6 @@ static void action_start_conversation(mybot_device_lifecycle_t *lifecycle) {
     clear_rtc_token_renewal(lifecycle);
     snprintf(lifecycle->rtc_channel, sizeof(lifecycle->rtc_channel), "%s", resp->rtc_channel);
     snprintf(lifecycle->rtc_uid, sizeof(lifecycle->rtc_uid), "%s", resp->rtc_uid);
-    snprintf(lifecycle->rtc_agent_uid, sizeof(lifecycle->rtc_agent_uid), "%s", resp->rtc_agent_uid);
 
     AOSL_LOG_NTC("conversation started: %s, channel=%s, uid=%s", lifecycle->conversation_id,
                  resp->rtc_channel, resp->rtc_uid);

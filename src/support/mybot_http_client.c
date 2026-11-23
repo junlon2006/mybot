@@ -93,48 +93,6 @@ static bool extra_headers_are_safe(const char *headers) {
 }
 
 static aosl_fd_t tcp_connect(const char *host, int port, uint64_t deadline);
-static int parse_content_length(const char *value, const char *end, size_t *out_length);
-
-/* Return true once a response with a complete Content-Length body is in the
- * receive buffer. This avoids waiting for a peer to close the connection
- * after the framed body has already arrived. */
-static bool response_content_length_complete(const char *buf, size_t len) {
-    size_t header_end = 0;
-    for (size_t i = 3; i < len; ++i) {
-        if (buf[i - 3] == '\r' && buf[i - 2] == '\n' && buf[i - 1] == '\r' && buf[i] == '\n') {
-            header_end = i + 1;
-            break;
-        }
-    }
-    if (header_end == 0) {
-        return false;
-    }
-
-    size_t content_length = 0;
-    bool found = false;
-    const char *line = buf;
-    const char *headers_end = buf + header_end - 4;
-    while (line < headers_end) {
-        const char *line_end = strstr(line, "\r\n");
-        if (!line_end || line_end > headers_end) {
-            break;
-        }
-        size_t line_len = (size_t)(line_end - line);
-        if (line_len >= 15 && ascii_case_equal_n(line, "Content-Length:", 15)) {
-            size_t value;
-            /* Include the terminating CR, matching the final parser's LF endpoint. */
-            if (parse_content_length(line + 15, line_end + 1, &value) < 0 ||
-                (found && content_length != value)) {
-                return false;
-            }
-            content_length = value;
-            found = true;
-        }
-        line = line_end + 2;
-    }
-    return found && content_length <= len - header_end;
-}
-
 typedef struct {
     bool use_tls;
     aosl_fd_t fd;
@@ -334,72 +292,6 @@ static int send_all(http_stream_t *stream, const char *data, size_t len, uint64_
  * ---------------------------------------------------------- */
 
 /*
- * Read a response into a bounded dynamic buffer. Stop when the Content-Length body is
- * complete, the connection closes, or the shared deadline expires; fail on receive or
- * allocation errors.
- */
-static char *read_all(http_stream_t *stream, size_t *out_len, int *out_closed, uint64_t deadline) {
-    size_t cap = RECV_BUF_SIZE;
-    size_t len = 0;
-    char *buf = (char *)aosl_hal_malloc(cap);
-    *out_closed = 0;
-    if (!buf) {
-        return NULL;
-    }
-
-    while (deadline_remaining_ms(deadline) > 0) {
-        size_t capacity = cap - len - 1;
-        /* At the cap, distinguish a clean EOF from an oversized response
-         * without issuing a zero-length receive or overwriting the NUL. */
-        char overflow_byte;
-        int ret = stream_recv(stream, capacity ? buf + len : &overflow_byte,
-                              capacity ? capacity : 1, deadline);
-        if (ret > 0) {
-            if (capacity == 0 || (size_t)ret > capacity) {
-                goto fail;
-            }
-            len += (size_t)ret;
-            buf[len] = '\0';
-
-            if (response_content_length_complete(buf, len)) {
-                break;
-            }
-
-            /* Grow the buffer if needed, bounded by RECV_BUF_MAX so a
-             * misbehaving server cannot cause unbounded memory growth. */
-            if (cap < RECV_BUF_MAX && cap - len < RECV_BUF_SIZE / 2) {
-                cap *= 2;
-                if (cap > RECV_BUF_MAX) {
-                    cap = RECV_BUF_MAX;
-                }
-                char *nb = (char *)aosl_hal_realloc(buf, cap);
-                if (!nb) {
-                    goto fail;
-                }
-                buf = nb;
-            }
-        } else if (ret == 0) {
-            *out_closed = 1;
-            break;
-        } else if (!stream->use_tls && ret == AOSL_HAL_RET_EAGAIN) {
-            /* No data right now (non-blocking socket). Wait briefly and retry;
-             * the deadline bounds the total wait even if the peer is silent. */
-            aosl_hal_msleep(10);
-        } else {
-            /* A non-retryable receive error. */
-            goto fail;
-        }
-    }
-
-    *out_len = len;
-    return buf;
-
-fail:
-    aosl_hal_free(buf);
-    return NULL;
-}
-
-/*
  * Parse an HTTP status line such as "HTTP/1.1 200 OK\r\n".
  */
 static int parse_status_line(const char *line) {
@@ -413,100 +305,6 @@ static int parse_status_line(const char *line) {
         return -1;
     }
     return (line[9] - '0') * 100 + (line[10] - '0') * 10 + (line[11] - '0');
-}
-
-/*
- * Decode a "Transfer-Encoding: chunked" body into a contiguous buffer.
- * Returns a malloc'd, NUL-terminated buffer (caller frees) and sets *out_len,
- * or NULL if the body is malformed or truncated.
- */
-static char *dechunk_body(const char *body, size_t body_len, size_t *out_len) {
-    const char *p = body;
-    const char *end = body + body_len;
-    size_t cap = body_len + 1; /* Decoded data never exceeds the raw body. */
-    char *out = (char *)aosl_hal_malloc(cap);
-    size_t len = 0;
-
-    if (!out) {
-        return NULL;
-    }
-
-    for (;;) {
-        size_t chunk_size = 0;
-        int has_digit = 0;
-
-        while (p < end) {
-            unsigned int digit;
-            if (*p >= '0' && *p <= '9') {
-                digit = (unsigned int)(*p - '0');
-            } else if (*p >= 'a' && *p <= 'f') {
-                digit = (unsigned int)(*p - 'a' + 10);
-            } else if (*p >= 'A' && *p <= 'F') {
-                digit = (unsigned int)(*p - 'A' + 10);
-            } else {
-                break;
-            }
-            if (chunk_size > (SIZE_MAX - digit) / 16) {
-                goto fail;
-            }
-            chunk_size = chunk_size * 16 + digit;
-            has_digit = 1;
-            p++;
-        }
-
-        if (!has_digit) {
-            goto fail;
-        }
-        if (p < end && *p == ';') {
-            while (p < end && *p != '\r' && *p != '\n') {
-                p++;
-            }
-        }
-        if ((size_t)(end - p) < 2 || p[0] != '\r' || p[1] != '\n') {
-            goto fail;
-        }
-        p += 2;
-
-        if (chunk_size == 0) {
-            /* Consume optional trailer fields and require their final CRLF. */
-            for (;;) {
-                const char *line_end = p;
-                while ((size_t)(end - line_end) >= 2 &&
-                       !(line_end[0] == '\r' && line_end[1] == '\n')) {
-                    line_end++;
-                }
-                if ((size_t)(end - line_end) < 2) {
-                    goto fail;
-                }
-                if (line_end == p) {
-                    p = line_end + 2;
-                    if (p != end) {
-                        goto fail;
-                    }
-                    out[len] = '\0';
-                    *out_len = len;
-                    return out;
-                }
-                p = line_end + 2;
-            }
-        }
-
-        if (chunk_size > (size_t)(end - p) || chunk_size > cap - len - 1) {
-            goto fail;
-        }
-        memcpy(out + len, p, chunk_size);
-        len += chunk_size;
-        p += chunk_size;
-
-        if ((size_t)(end - p) < 2 || p[0] != '\r' || p[1] != '\n') {
-            goto fail;
-        }
-        p += 2;
-    }
-
-fail:
-    aosl_hal_free(out);
-    return NULL;
 }
 
 static int parse_content_length(const char *value, const char *end, size_t *out_length) {
@@ -539,123 +337,245 @@ static int parse_content_length(const char *value, const char *end, size_t *out_
     return 0;
 }
 
-/*
- * Parse a complete HTTP response from raw data.
- * Any non-empty response body is returned in a separately allocated buffer.
- */
-static int parse_response(const char *raw, size_t raw_len, int stream_closed,
-                          mybot_http_client_response_t *resp) {
-    memset(resp, 0, sizeof(*resp));
+typedef enum {
+    HTTP_STATUS_LINE,
+    HTTP_HEADERS,
+    HTTP_FIXED_BODY,
+    HTTP_EOF_BODY,
+    HTTP_CHUNK_SIZE,
+    HTTP_CHUNK_DATA,
+    HTTP_CHUNK_TRAILERS,
+} http_response_phase_t;
 
-    const char *p = raw;
-    const char *end = raw + raw_len;
+/* Offsets survive receive-buffer growth. Completed chunks are compacted into the body area. */
+typedef struct {
+    http_response_phase_t phase;
+    size_t offset;
+    size_t scan;
+    size_t body_start;
+    size_t body_len;
+    size_t chunk_size;
+    bool has_length;
+    bool chunked;
+    int status_code;
+} http_response_parser_t;
 
-    /* Parse the status line. */
-    const char *nl = (const char *)memchr(p, '\n', (size_t)(end - p));
-    if (!nl || (size_t)(nl - p) < 13U) {
+static bool has_chunked_encoding(const char *val, const char *nl) {
+    while (val < nl) {
+        while (val < nl && (*val == ' ' || *val == '\t' || *val == ',')) {
+            val++;
+        }
+        const char *token = val;
+        while (val < nl && *val != ',' && *val != ';' && *val != ' ' && *val != '\t' &&
+               *val != '\r' && *val != '\n') {
+            val++;
+        }
+        size_t token_len = (size_t)(val - token);
+        if (token_len == 7 && ascii_case_equal_n(token, "chunked", 7)) {
+            return true;
+        }
+        while (val < nl && *val != ',') {
+            val++;
+        }
+    }
+    return false;
+}
+
+static int parse_header(http_response_parser_t *parser, const char *line, const char *nl) {
+    size_t len = (size_t)(nl - line);
+    if (len >= 15 && ascii_case_equal_n(line, "Content-Length:", 15)) {
+        size_t length;
+        if (parse_content_length(line + 15, nl, &length) < 0 ||
+            (parser->has_length && parser->body_len != length)) {
+            return -1;
+        }
+        parser->has_length = true;
+        parser->body_len = length;
+    } else if (len > 18 && ascii_case_equal_n(line, "Transfer-Encoding:", 18) &&
+               has_chunked_encoding(line + 18, nl)) {
+        parser->chunked = true;
+    }
+    return 0;
+}
+
+static int parse_chunk_size(const char *line, const char *end, size_t *size) {
+    size_t length = 0;
+    const char *p = line;
+    while (p < end && *p != ';') {
+        unsigned digit;
+        if (*p >= '0' && *p <= '9') {
+            digit = (unsigned)(*p - '0');
+        } else if (*p >= 'a' && *p <= 'f') {
+            digit = (unsigned)(*p - 'a') + 10U;
+        } else if (*p >= 'A' && *p <= 'F') {
+            digit = (unsigned)(*p - 'A') + 10U;
+        } else {
+            return -1;
+        }
+        if (length > (SIZE_MAX - digit) / 16U) {
+            return -1;
+        }
+        length = length * 16U + digit;
+        ++p;
+    }
+    if (p == line || memchr(p, '\r', (size_t)(end - p))) {
         return -1;
     }
-    resp->status_code = parse_status_line(p);
-    if (resp->status_code < 0) {
+    *size = length;
+    return 0;
+}
+
+static int parse_response_line(http_response_parser_t *parser, const char *line, const char *nl,
+                               size_t len) {
+    if (parser->phase == HTTP_STATUS_LINE) {
+        if (nl - line < 13) {
+            return -1;
+        }
+        parser->status_code = parse_status_line(line);
+        parser->phase = HTTP_HEADERS;
+        return parser->status_code > 0 ? 0 : -1;
+    }
+    if (parser->phase == HTTP_HEADERS) {
+        if (nl != line && (nl - line != 1 || *line != '\r')) {
+            return parse_header(parser, line, nl);
+        }
+        parser->body_start = parser->offset;
+        if (parser->chunked) {
+            parser->body_len = 0;
+            parser->phase = HTTP_CHUNK_SIZE;
+        } else {
+            parser->phase = parser->has_length ? HTTP_FIXED_BODY : HTTP_EOF_BODY;
+        }
+        return 0;
+    }
+
+    if (nl == line || nl[-1] != '\r') {
         return -1;
     }
-    p = nl + 1;
-
-    /* Parse headers. */
-    size_t body_offset = 0;
-    size_t content_length = 0;
-    int has_content_length = 0;
-    int chunked = 0;
-    int headers_complete = 0;
-
-    while (p < end) {
-        nl = (const char *)memchr(p, '\n', (size_t)(end - p));
-        if (!nl) {
-            break;
+    if (parser->phase == HTTP_CHUNK_TRAILERS) {
+        if (nl - line == 1) {
+            return parser->offset == len ? 1 : -1;
         }
+        return 0;
+    }
+    if (parse_chunk_size(line, nl - 1, &parser->chunk_size) < 0) {
+        return -1;
+    }
+    parser->phase = parser->chunk_size ? HTTP_CHUNK_DATA : HTTP_CHUNK_TRAILERS;
+    return 0;
+}
 
-        size_t hdr_len = (size_t)(nl - p);
-        /* An empty line terminates the headers. */
-        if (hdr_len == 0 || (hdr_len == 1 && *p == '\r')) {
-            p = nl + 1;
-            body_offset = (size_t)(p - raw);
-            headers_complete = 1;
-            break;
+/* Return 1 when the response is complete, 0 when another fragment is needed, or -1 on error. */
+static int advance_response(http_response_parser_t *parser, char *raw, size_t len, bool closed) {
+    for (;;) {
+        size_t available = len - parser->offset;
+        if (parser->phase == HTTP_FIXED_BODY) {
+            return available >= parser->body_len;
         }
-
-        /* Parse Content-Length without signed overflow. Repeated fields
-         * are accepted only when they carry the same value. */
-        if (hdr_len >= 15 && ascii_case_equal_n(p, "Content-Length:", 15)) {
-            size_t parsed_length;
-            if (parse_content_length(p + 15, nl, &parsed_length) < 0 ||
-                (has_content_length && content_length != parsed_length)) {
+        if (parser->phase == HTTP_EOF_BODY) {
+            parser->body_len = available;
+            return closed;
+        }
+        if (parser->phase == HTTP_CHUNK_DATA) {
+            size_t size = parser->chunk_size;
+            if (available < size || available - size < 2) {
+                return 0;
+            }
+            if (memcmp(raw + parser->offset + size, "\r\n", 2) != 0) {
                 return -1;
             }
-            content_length = parsed_length;
-            has_content_length = 1;
+            memmove(raw + parser->body_start + parser->body_len, raw + parser->offset, size);
+            parser->body_len += size;
+            parser->offset += size + 2;
+            parser->scan = parser->offset;
+            parser->phase = HTTP_CHUNK_SIZE;
+            continue;
         }
 
-        /* Parse Transfer-Encoding, which takes precedence over Content-Length. */
-        if (hdr_len > 18 && ascii_case_equal_n(p, "Transfer-Encoding:", 18)) {
-            const char *val = p + 18;
-            while (val < nl) {
-                while (val < nl && (*val == ' ' || *val == '\t' || *val == ',')) {
-                    val++;
-                }
-                const char *token = val;
-                while (val < nl && *val != ',' && *val != ';' && *val != ' ' && *val != '\t' &&
-                       *val != '\r' && *val != '\n') {
-                    val++;
-                }
-                size_t token_len = (size_t)(val - token);
-                if (token_len == 7 && ascii_case_equal_n(token, "chunked", 7)) {
-                    chunked = 1;
-                    break;
-                }
-                while (val < nl && *val != ',') {
-                    val++;
-                }
-            }
+        const char *nl = memchr(raw + parser->scan, '\n', len - parser->scan);
+        if (!nl) {
+            parser->scan = len;
+            return 0;
         }
+        const char *line = raw + parser->offset;
+        parser->offset = (size_t)(nl - raw) + 1;
+        parser->scan = parser->offset;
 
-        p = nl + 1;
-        if (p < end && *p == '\r') {
-            p++;
+        int result = parse_response_line(parser, line, nl, len);
+        if (result != 0) {
+            return result;
         }
     }
+}
 
-    if (!headers_complete || resp->status_code == 0) {
-        return -1;
-    }
-
-    size_t avail = raw_len - body_offset;
-    if (chunked) {
-        resp->body = dechunk_body(raw + body_offset, avail, &resp->body_len);
-        return resp->body ? 0 : -1;
-    }
-
-    if (has_content_length) {
-        if (content_length > avail) {
-            return -1;
-        }
-        resp->body_len = content_length;
-    } else {
-        if (!stream_closed) {
-            return -1;
-        }
-        resp->body_len = avail;
-    }
-
-    if (resp->body_len > 0) {
-        resp->body = (char *)aosl_hal_malloc(resp->body_len + 1);
+static int copy_response(const http_response_parser_t *parser, const char *raw,
+                         mybot_http_client_response_t *resp) {
+    if (parser->body_len > 0 || parser->chunked) {
+        resp->body = (char *)aosl_hal_malloc(parser->body_len + 1);
         if (!resp->body) {
             return -1;
         }
-        memcpy(resp->body, raw + body_offset, resp->body_len);
-        resp->body[resp->body_len] = '\0';
+        memcpy(resp->body, raw + parser->body_start, parser->body_len);
+        resp->body[parser->body_len] = '\0';
+    }
+    resp->status_code = parser->status_code;
+    resp->body_len = parser->body_len;
+    return 0;
+}
+
+static int read_response(http_stream_t *stream, uint64_t deadline,
+                         mybot_http_client_response_t *resp) {
+    http_response_parser_t parser = {0};
+    size_t cap = RECV_BUF_SIZE;
+    size_t len = 0;
+    char *buf = (char *)aosl_hal_malloc(cap);
+    if (!buf) {
+        return -1;
     }
 
-    return 0;
+    memset(resp, 0, sizeof(*resp));
+    int result = -1;
+    while (deadline_remaining_ms(deadline) > 0) {
+        size_t capacity = cap - len - 1;
+        /* At the cap, distinguish a clean EOF from an oversized response
+         * without issuing a zero-length receive or overwriting the NUL. */
+        char overflow_byte;
+        int ret = stream_recv(stream, capacity ? buf + len : &overflow_byte,
+                              capacity ? capacity : 1, deadline);
+        if (!stream->use_tls && ret == AOSL_HAL_RET_EAGAIN) {
+            aosl_hal_msleep(10);
+            continue;
+        }
+        if (ret < 0 || (size_t)ret > capacity) {
+            break;
+        }
+        len += (size_t)ret;
+        buf[len] = '\0';
+
+        int progress = advance_response(&parser, buf, len, ret == 0);
+        if (progress > 0) {
+            result = copy_response(&parser, buf, resp);
+            break;
+        }
+        if (ret == 0 || progress < 0) {
+            break;
+        }
+
+        if (cap < RECV_BUF_MAX && cap - len < RECV_BUF_SIZE / 2) {
+            cap *= 2;
+            if (cap > RECV_BUF_MAX) {
+                cap = RECV_BUF_MAX;
+            }
+            char *larger = (char *)aosl_hal_realloc(buf, cap);
+            if (!larger) {
+                break;
+            }
+            buf = larger;
+        }
+    }
+
+    aosl_hal_free(buf);
+    return result;
 }
 
 /* ----------------------------------------------------------
@@ -737,20 +657,8 @@ static int http_request(const char *method, const char *url, const char *content
         return -1;
     }
 
-    /* Read the response. */
-    size_t raw_len = 0;
-    int stream_closed = 0;
-    char *raw = read_all(&stream, &raw_len, &stream_closed, deadline);
+    ret = read_response(&stream, deadline, resp);
     stream_close(&stream);
-
-    if (!raw) {
-        return -1;
-    }
-
-    /* Parse the response. */
-    ret = parse_response(raw, raw_len, stream_closed, resp);
-    aosl_hal_free(raw);
-
     return ret;
 }
 

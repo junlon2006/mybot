@@ -1,0 +1,6 @@
+function(run_checked step)
+    execute_process(COMMAND ${ARGN} RESULT_VARIABLE result)
+    if(NOT "${result}" STREQUAL "0")
+        message(FATAL_ERROR "${step} failed: ${result}")
+    endif()
+endfunction()

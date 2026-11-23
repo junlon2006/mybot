@@ -108,8 +108,7 @@ static void process_connection_lost(connection_id_t);
 static void process_rejoin_channel_success(connection_id_t, uint32_t, int);
 static void process_user_joined(connection_id_t, const user_info_t *, int);
 static void process_user_offline(connection_id_t, const user_info_t *, int);
-static void process_audio_data(connection_id_t, uint32_t, uint16_t, const void *, size_t,
-                               const audio_frame_info_t *);
+static void process_audio_data(connection_id_t, uint32_t, const void *);
 #if MYBOT_ENABLE_VIDEO
 static void process_video_key_frame_request(connection_id_t, uint32_t, int);
 static void process_video_target_bitrate(connection_id_t, uint32_t);
@@ -192,12 +191,6 @@ typedef struct {
         struct {
             user_info_t user;
         } user;
-        struct {
-            uint16_t sent_ts;
-            audio_frame_info_t audio_info;
-            bool has_audio_info;
-            size_t len;
-        } audio;
 #if MYBOT_ENABLE_VIDEO
         struct {
             uint32_t target_bps;
@@ -276,9 +269,7 @@ static void rtc_event_process(const aosl_ts_t *ts, aosl_refobj_t ref, uintptr_t 
         process_user_offline(e->conn_id, &e->payload.user.user, e->value);
         break;
     case RTC_EVENT_AUDIO:
-        process_audio_data(e->conn_id, e->uid, e->payload.audio.sent_ts, e->data,
-                           e->payload.audio.len,
-                           e->payload.audio.has_audio_info ? &e->payload.audio.audio_info : NULL);
+        process_audio_data(e->conn_id, e->uid, e->data);
         break;
 #if MYBOT_ENABLE_VIDEO
     case RTC_EVENT_VIDEO_KEY_FRAME_REQUEST:
@@ -927,24 +918,10 @@ static void process_user_offline(connection_id_t conn_id, const user_info_t *use
                  reason);
 }
 
-static void process_audio_data(connection_id_t conn_id, uint32_t uid, uint16_t sent_ts,
-                               const void *data, size_t len, const audio_frame_info_t *info) {
-    (void)sent_ts;
-    if (!connection_is_active(conn_id)) {
-        return;
-    }
-    /* The selected RTSA build emits one decoded PCM frame per callback; its
-     * frame duration is tied to MYBOT_AUDIO_PTIME_MS at configuration time. */
-    if (!data || !info || info->data_type != AUDIO_DATA_TYPE_PCM || len == 0 ||
-        (len % MYBOT_RTC_PCM_BYTES_PER_SAMPLE) != 0 || len != MYBOT_RTC_PCM_FRAME_BYTES) {
-        AOSL_LOG_WRN(
-            "[RTC] dropped invalid downlink audio (len=%zu, info=%s, type=%d, expected=%u)", len,
-            info ? "present" : "missing", info ? (int)info->data_type : -1,
-            (unsigned int)MYBOT_RTC_PCM_FRAME_BYTES);
-        return;
-    }
-    if (s_rtc.callbacks.on_remote_audio) {
-        s_rtc.callbacks.on_remote_audio(uid, data, len, s_rtc.callbacks.user_data);
+static void process_audio_data(connection_id_t conn_id, uint32_t uid, const void *pcm) {
+    if (connection_is_active(conn_id) && s_rtc.callbacks.on_remote_audio) {
+        s_rtc.callbacks.on_remote_audio(uid, pcm, MYBOT_RTC_PCM_FRAME_BYTES,
+                                        s_rtc.callbacks.user_data);
     }
 }
 
@@ -1172,8 +1149,9 @@ static void on_user_offline(connection_id_t c, const user_info_t *u, int reason)
 }
 static void on_audio_data(connection_id_t c, uint32_t uid, uint16_t ts, const void *d, size_t len,
                           const audio_frame_info_t *i) {
-    if (!d || !i || i->data_type != AUDIO_DATA_TYPE_PCM || len == 0 ||
-        (len % MYBOT_RTC_PCM_BYTES_PER_SAMPLE) != 0 || len != MYBOT_RTC_PCM_FRAME_BYTES) {
+    (void)ts;
+    /* RTSA delivers one decoded frame of the configured PCM duration per callback. */
+    if (!d || !i || i->data_type != AUDIO_DATA_TYPE_PCM || len != MYBOT_RTC_PCM_FRAME_BYTES) {
         AOSL_LOG_WRN("[RTC] ignored invalid downlink audio callback (len=%zu, info=%s, type=%d, "
                      "expected=%u)",
                      len, i ? "present" : "missing", i ? (int)i->data_type : -1,
@@ -1184,10 +1162,6 @@ static void on_audio_data(connection_id_t c, uint32_t uid, uint16_t ts, const vo
     if (e) {
         e->conn_id = c;
         e->uid = uid;
-        e->payload.audio.sent_ts = ts;
-        e->payload.audio.audio_info = *i;
-        e->payload.audio.has_audio_info = true;
-        e->payload.audio.len = len;
         if (!rtc_event_copy_data(e, d, len)) {
             rtc_event_free(e);
             return;

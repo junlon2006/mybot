@@ -651,7 +651,6 @@ static const char *parse_array(mybot_json_t *item, const char *value, unsigned d
         if (!new_item)
             return 0; /* memory fail */
         child->next = new_item;
-        new_item->prev = child;
         child = new_item;
         value = skip(parse_value(child, skip(value + 1), depth + 1));
         if (!value)
@@ -770,7 +769,6 @@ static const char *parse_object(mybot_json_t *item, const char *value, unsigned 
         if (!new_item)
             return 0; /* memory fail */
         child->next = new_item;
-        new_item->prev = child;
         child = new_item;
         value = skip(parse_string(child, skip(value + 1)));
         if (!value)
@@ -904,11 +902,6 @@ bool mybot_json_get_integer(const mybot_json_t *value, int64_t *result) {
     return true;
 }
 
-/* Utility for array list handling. */
-static void suffix_object(mybot_json_t *prev, mybot_json_t *item) {
-    prev->next = item;
-    item->prev = prev;
-}
 /* Add an owned item to an object. */
 static int add_item_to_object(mybot_json_t *object, const char *string, mybot_json_t *item) {
     if (!object || !string || !item)
@@ -927,7 +920,7 @@ static int add_item_to_object(mybot_json_t *object, const char *string, mybot_js
     } else {
         while (child->next)
             child = child->next;
-        suffix_object(child, item);
+        child->next = item;
     }
     return 0;
 }

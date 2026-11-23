@@ -36,8 +36,6 @@ typedef struct {
 typedef struct {
     char status[16]; /* pending | bound | unbound | expired | failed */
     char device_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
-    char agent_id[MYBOT_DEVICE_CLIENT_MAX_ID];
-    char agent_name[128];
     int poll_after_seconds;
 } mybot_device_binding_t;
 
@@ -72,10 +70,9 @@ int mybot_device_client_create_pair_code(const char *base_url, const char *devic
 int mybot_device_client_get_binding_status(const char *base_url, const char *device_id,
                                            const char *auth_header, mybot_device_binding_t *resp);
 
-/** Start a conversation. body_params is a complete JSON request body; pass
- *  NULL to generate one from the build configuration. */
+/** Start a conversation using the SDK build configuration. */
 int mybot_device_client_start_conversation(const char *base_url, const char *device_id,
-                                           const char *device_token, const char *body_params,
+                                           const char *device_token,
                                            mybot_device_conversation_t *resp);
 
 /** Renew the RTC token for an active channel and local UID. */
