@@ -184,6 +184,11 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(mybot_public_headers_test PRIVATE -Wall -Wextra -Werror)
 endif()
 
+if(MYBOT_ENABLE_HTTPS)
+    mybot_add_test(mybot_pairing_reconnect_test integration/pairing_reconnect_test.c)
+    target_link_libraries(mybot_pairing_reconnect_test PRIVATE mybot::sdk)
+endif()
+
 add_test(NAME mybot_cmake_host_integration
     COMMAND ${CMAKE_COMMAND}
         -DMYBOT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/..
