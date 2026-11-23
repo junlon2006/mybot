@@ -286,7 +286,6 @@ static int mock_submit_service_request(mybot_device_service_request_t *request, 
         assert(s_lifecycle.conversation_id[0] == '\0');
         assert(s_lifecycle.rtc_channel[0] == '\0');
         assert(s_lifecycle.rtc_uid[0] == '\0');
-        assert(s_lifecycle.rtc_agent_uid[0] == '\0');
         assert(!s_lifecycle.rtc_token_renewal_pending);
         assert(aosl_atomic_read(&s_lifecycle.rtc_token_renewal_requested) == 0);
         assert(s_lifecycle.rtc_token_retry_delay_ticks == 0);
@@ -718,7 +717,6 @@ static void test_renewal_without_callback(const mybot_device_lifecycle_callbacks
     assert(s_lifecycle.rtc_token_retry_ticks_remaining == 0);
     assert(s_lifecycle.rtc_channel[0] == '\0');
     assert(s_lifecycle.rtc_uid[0] == '\0');
-    assert(s_lifecycle.rtc_agent_uid[0] == '\0');
 
     start_conversation();
     tick_many(20);

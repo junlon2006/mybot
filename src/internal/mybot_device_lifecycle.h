@@ -94,7 +94,6 @@ typedef struct {
     char conversation_id[MYBOT_DEVICE_CLIENT_MAX_ID];
     char rtc_channel[128];
     char rtc_uid[64];
-    char rtc_agent_uid[64];
     bool conversation_requested;
     aosl_atomic_t stop_request;
     aosl_atomic_t rtc_token_renewal_requested;
