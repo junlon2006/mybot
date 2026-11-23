@@ -1481,7 +1481,9 @@ void mybot_device_lifecycle_request_stop(mybot_device_lifecycle_t *lifecycle) {
 void mybot_device_lifecycle_notify_conversation_ended(mybot_device_lifecycle_t *lifecycle) {
     assert(lifecycle == s_device_lifecycle);
     mock_lock();
-    s_device_state = MYBOT_DEVICE_STATE_RUNTIME;
+    if (s_device_state == MYBOT_DEVICE_STATE_IN_CONVERSATION) {
+        s_device_stop_requested = true;
+    }
     s_conversation_ended_notifications++;
     mock_unlock();
 }
@@ -1492,6 +1494,12 @@ void mybot_device_lifecycle_request_rtc_token_renewal(mybot_device_lifecycle_t *
     s_token_renewal_requests++;
     s_device_token_renewal_requested = true;
     mock_unlock();
+}
+
+static aosl_atomic_t s_rtc_notification_failed;
+
+bool mybot_agora_rtc_take_notification_failure(void) {
+    return aosl_atomic_xchg(&s_rtc_notification_failed, false) != 0;
 }
 
 int mybot_agora_rtc_init(const char *app_id, const mybot_agora_rtc_callbacks_t *callbacks) {
@@ -2541,6 +2549,21 @@ static void test_device_commands(void) {
     assert(read_counter(&s_last_media_volume) == 100);
 }
 
+static void test_lost_rtc_notification(const mybot_config_t *config) {
+    int joins = read_counter(&s_rtc_join_calls);
+    int ended = read_counter(&s_conversation_ended_notifications);
+    assert(mybot_start(config) == 0);
+    emit_wifi_event(MYBOT_WIFI_EVENT_STA_CONNECTED);
+    assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
+    emit_key_event(MYBOT_KEY_EVENT_CONVERSATION_START);
+    assert(wait_for_counter(&s_rtc_join_calls, joins + 1, 1000));
+    aosl_atomic_set(&s_rtc_notification_failed, true);
+    assert(wait_for_counter(&s_conversation_ended_notifications, ended + 1, 1000));
+    assert(wait_for_app_state(MYBOT_STATE_READY, 1000));
+    mybot_stop();
+    assert(mybot_get_state() == MYBOT_STATE_STOPPED);
+}
+
 int main(void) {
     mybot_config_t config;
     memset(&config, 0, sizeof(config));
@@ -3119,6 +3142,7 @@ int main(void) {
 #endif
 
     test_control_queue_saturation(&config);
+    test_lost_rtc_notification(&config);
     test_service_startup_failures(&config);
     test_background_service_requests(&config);
 #if MYBOT_TEST_WRAP_APP_MPQ

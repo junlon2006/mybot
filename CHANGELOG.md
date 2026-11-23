@@ -8,6 +8,8 @@ headers.
 
 ### Fixed
 
+- End the affected conversation if the RTC worker cannot receive a critical connection or token
+  notification.
 - Restore the current pairing code on the LCD after Wi-Fi reconnects while the device awaits a claim.
 - Preserve the stored device credential if startup cannot read it. Restarting after storage
   recovers restores the original binding.

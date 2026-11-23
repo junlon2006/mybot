@@ -77,6 +77,10 @@ int mybot_agora_rtc_join(const char *channel, const char *token, const char *use
 /** Leave and destroy the active connection while keeping RTSA initialized. */
 int mybot_agora_rtc_leave(void);
 
+/** Called by the control worker to consume a lost state or token notification.
+ * A failure applies only to the active connection and is cleared when it leaves. */
+bool mybot_agora_rtc_take_notification_failure(void);
+
 /** Finalize the process-wide RTSA service. Call after RTC control and media workers stop.
  * Returns zero when all vendor resources were released; a negative result leaves the
  * service available for a later retry. */

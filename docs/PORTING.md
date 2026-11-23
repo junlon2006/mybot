@@ -377,6 +377,9 @@ Failure to queue a key, Wi-Fi, wake-word, or video-start event publishes an exit
 `mybot_is_running()` becomes false, and the product control task must call `mybot_stop()`.
 The callback does not tear down resources.
 
+If allocation or queue admission fails for a critical RTC connection or token notification, the
+next control tick ends that conversation through the normal local teardown path.
+
 For an ordinary temporary network outage, keep MyBot running and let the network manager reconnect
 with its existing credentials. The adapter reports the disconnect and subsequent usable connection;
 do not turn every link loss into a provisioning restart. The SDK ends the interrupted conversation

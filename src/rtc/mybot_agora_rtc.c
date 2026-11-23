@@ -36,6 +36,7 @@
 typedef struct {
     mybot_rtc_state_t state;
     connection_id_t conn_id;
+    aosl_atomic_t notification_failed;
     mybot_agora_rtc_callbacks_t callbacks;
     char app_id[64];
     char rtm_uid[MYBOT_RTM_UID_MAX_LEN];
@@ -74,6 +75,19 @@ static void set_callbacks_enabled(bool enabled) {
     callback_gate_lock();
     aosl_atomic_set(&s_rtc_callbacks_enabled, enabled);
     callback_gate_unlock();
+}
+
+/* The RTC worker changes the connection under the same gate used by failed
+ * vendor callbacks, so an old connection cannot publish into the next one. */
+static void set_connection(connection_id_t conn_id) {
+    callback_gate_lock();
+    s_rtc.conn_id = conn_id;
+    aosl_atomic_set(&s_rtc.notification_failed, false);
+    callback_gate_unlock();
+}
+
+bool mybot_agora_rtc_take_notification_failure(void) {
+    return aosl_atomic_xchg(&s_rtc.notification_failed, false) != 0;
 }
 
 static void clear_rtm_subscription(void);
@@ -318,15 +332,25 @@ static rtc_event_t *rtc_event_new(rtc_event_type_t type) {
 }
 
 static void queue_rtc_notification(rtc_event_type_t type, connection_id_t conn_id, uint32_t uid,
-                                   int value) {
+                                   int value, const char *message) {
     rtc_event_t *event = rtc_event_new(type);
-    if (!event) {
-        return;
+    if (event) {
+        event->conn_id = conn_id;
+        event->uid = uid;
+        event->value = value;
+        if (message && !rtc_event_copy_data(event, message, strlen(message) + 1U)) {
+            rtc_event_free(event);
+        } else if (rtc_event_queue(event)) {
+            return;
+        }
     }
-    event->conn_id = conn_id;
-    event->uid = uid;
-    event->value = value;
-    (void)rtc_event_queue(event);
+
+    callback_gate_lock();
+    if (aosl_atomic_read(&s_rtc_callbacks_enabled) && conn_id != CONNECTION_ID_INVALID &&
+        conn_id == s_rtc.conn_id) {
+        aosl_atomic_set(&s_rtc.notification_failed, true);
+    }
+    callback_gate_unlock();
 }
 
 static const char *state_name(mybot_rtc_state_t state) {
@@ -1110,16 +1134,16 @@ static void on_rtm_subscribe_data(const char *channel, const char *uid, const vo
     (void)rtc_event_queue(e);
 }
 static void on_join_channel_success(connection_id_t c, uint32_t uid, int elapsed) {
-    queue_rtc_notification(RTC_EVENT_JOIN_SUCCESS, c, uid, elapsed);
+    queue_rtc_notification(RTC_EVENT_JOIN_SUCCESS, c, uid, elapsed, NULL);
 }
 static void on_reconnecting(connection_id_t c) {
-    queue_rtc_notification(RTC_EVENT_RECONNECTING, c, 0, 0);
+    queue_rtc_notification(RTC_EVENT_RECONNECTING, c, 0, 0, NULL);
 }
 static void on_connection_lost(connection_id_t c) {
-    queue_rtc_notification(RTC_EVENT_CONNECTION_LOST, c, 0, 0);
+    queue_rtc_notification(RTC_EVENT_CONNECTION_LOST, c, 0, 0, NULL);
 }
 static void on_rejoin_channel_success(connection_id_t c, uint32_t uid, int elapsed) {
-    queue_rtc_notification(RTC_EVENT_REJOIN_SUCCESS, c, uid, elapsed);
+    queue_rtc_notification(RTC_EVENT_REJOIN_SUCCESS, c, uid, elapsed, NULL);
 }
 static void on_user_joined(connection_id_t c, const user_info_t *u, int elapsed) {
     if (!u)
@@ -1199,27 +1223,18 @@ static void on_key_frame_gen_req(connection_id_t c, uint32_t uid, video_stream_t
 }
 #endif
 static void on_error(connection_id_t c, int code, const char *m) {
-    rtc_event_t *e = rtc_event_new(RTC_EVENT_ERROR);
-    if (e) {
-        e->conn_id = c;
-        e->value = code;
-        if (m && !rtc_event_copy_data(e, m, strlen(m) + 1U)) {
-            rtc_event_free(e);
-            return;
-        }
-        (void)rtc_event_queue(e);
-    }
+    queue_rtc_notification(RTC_EVENT_ERROR, c, 0, code, m);
 }
 static void on_license_failed(connection_id_t c, int reason) {
-    queue_rtc_notification(RTC_EVENT_LICENSE, c, 0, reason);
+    queue_rtc_notification(RTC_EVENT_LICENSE, c, 0, reason, NULL);
 }
 static void on_token_will_expire(connection_id_t c, const char *t) {
     (void)t;
-    queue_rtc_notification(RTC_EVENT_TOKEN, c, 0, 0);
+    queue_rtc_notification(RTC_EVENT_TOKEN, c, 0, 0, NULL);
 }
 
 static void clear_runtime_state(void) {
-    s_rtc.conn_id = CONNECTION_ID_INVALID;
+    set_connection(CONNECTION_ID_INVALID);
     memset(&s_rtc.callbacks, 0, sizeof(s_rtc.callbacks));
     s_rtc.app_id[0] = '\0';
     clear_rtm_login();
@@ -1418,13 +1433,13 @@ static int rtc_join_impl(const char *channel, const char *token, const char *use
     }
 #endif
 
-    s_rtc.conn_id = conn_id;
+    set_connection(conn_id);
     set_state(MYBOT_RTC_STATE_CONNECTING);
     ret = agora_rtc_join_channel_with_user_account(
         conn_id, channel, user_account, token && token[0] ? token : NULL, &channel_options);
     if (ret < 0) {
         AOSL_LOG_ERR("join_channel failed: %s", agora_rtc_err_2_str(ret));
-        s_rtc.conn_id = CONNECTION_ID_INVALID;
+        set_connection(CONNECTION_ID_INVALID);
         int destroy_ret = agora_rtc_destroy_connection(conn_id);
         if (destroy_ret < 0) {
             AOSL_LOG_ERR("destroy_connection failed: %s", agora_rtc_err_2_str(destroy_ret));
@@ -1451,7 +1466,7 @@ static int rtc_leave_impl(void) {
         return rtc_logout_rtm_impl();
     }
 
-    s_rtc.conn_id = CONNECTION_ID_INVALID;
+    set_connection(CONNECTION_ID_INVALID);
     AOSL_LOG_NTC("[RTC] leaving connection (conn_id=%u)", conn_id);
     int leave_ret = agora_rtc_leave_channel(conn_id);
     if (leave_ret < 0) {

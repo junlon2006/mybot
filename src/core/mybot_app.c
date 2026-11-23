@@ -879,6 +879,10 @@ static void control_tick_timer(aosl_timer_t id, const aosl_ts_t *now, uintptr_t 
 
     mybot_runtime_t *runtime = (mybot_runtime_t *)argv[0];
     if (runtime_is_running(runtime)) {
+        if (mybot_agora_rtc_take_notification_failure()) {
+            AOSL_LOG_ERR("lost critical RTC notification; ending conversation");
+            mybot_device_lifecycle_notify_conversation_ended(&runtime->lifecycle);
+        }
         mybot_device_lifecycle_tick(&runtime->lifecycle);
     }
 }
