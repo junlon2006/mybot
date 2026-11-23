@@ -8,6 +8,8 @@ headers.
 
 ### Fixed
 
+- Finish reading a chunked HTTP response as soon as its trailers end, including when the TLS
+  peer keeps the connection open.
 - Keep shutdown in `STOPPING` when device I/O or a worker cannot stop. A later `mybot_stop()`
   resumes cleanup before the SDK can restart.
 - End the affected conversation if the RTC worker cannot receive a critical connection or token

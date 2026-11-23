@@ -155,6 +155,8 @@ verification for development certificates; install the required CA in the device
 
 The SDK's HTTP receive buffer grows to at most 32 KiB and reserves one byte for its terminating
 NUL, leaving 32767 bytes for the raw response, including HTTP headers and any chunk framing.
+The client completes a chunked response when it receives the zero-size chunk and the empty line
+ending its trailers. Only a close-delimited body requires a clean peer close.
 The 2 KiB free-space threshold only triggers buffer growth; remaining space at the allocation
 limit is still usable regardless of how the response is split across receive calls. A full buffer
 that still needs an end-of-stream check uses a one-byte probe under the existing request deadline

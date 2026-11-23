@@ -129,6 +129,22 @@ static const mybot_https_ops_t s_fake_tls_ops = {
     .close = fake_tls_close,
 };
 
+static int parse_response(const char *raw, size_t len, bool closed,
+                          mybot_http_client_response_t *resp) {
+    char *copy = malloc(len + 1);
+    assert(copy != NULL);
+    memcpy(copy, raw, len);
+    copy[len] = '\0';
+    memset(resp, 0, sizeof(*resp));
+    http_response_parser_t parser = {0};
+    int result = -1;
+    if (advance_response(&parser, copy, len, closed) == 1) {
+        result = copy_response(&parser, copy, resp);
+    }
+    free(copy);
+    return result;
+}
+
 static void expect_success(const char *raw, int stream_closed, const char *expected_body) {
     mybot_http_client_response_t resp;
     int rc = parse_response(raw, strlen(raw), stream_closed, &resp);
@@ -296,6 +312,12 @@ static void test_status_and_chunk_framing(void) {
                    "A\r\n0123456789\r\na\r\nabcdefghij\r\n0\r\n\r\n",
                    0, "0123456789abcdefghij");
     expect_success("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n", 0, "");
+    const char binary[] = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+                          "8\r\n\0\r\n0\r\n\r\n\r\n0\r\n\r\n";
+    mybot_http_client_response_t response;
+    assert(parse_response(binary, sizeof(binary) - 1, false, &response) == 0);
+    assert(response.body_len == 8 && memcmp(response.body, "\0\r\n0\r\n\r\n", 8) == 0);
+    mybot_http_client_response_free(&response);
     const char *invalid_chunks[] = {
         "",       "1",        "1\n",       "1;extension",    "1;extension\n",
         "1\r\na", "1\r\na\r", "1\r\na\rX", "0\r\nX: trailer"};
@@ -382,8 +404,6 @@ static void test_content_length_consistency(void) {
         int written = snprintf(raw, sizeof(raw), "HTTP/1.1 200 OK\r\n%s\r\n%s", cases[i].headers,
                                cases[i].body);
         assert(written > 0 && (size_t)written < sizeof(raw));
-        assert(response_content_length_complete(raw, (size_t)written) ==
-               (cases[i].expected_body != NULL));
         for (int closed = 0; closed <= 1; ++closed) {
             mybot_http_client_response_t response;
             int ret = parse_response(raw, (size_t)written, closed, &response);
@@ -400,6 +420,31 @@ static void test_content_length_consistency(void) {
             } else {
                 assert(ret < 0 && response.body == NULL);
             }
+            mybot_http_client_response_free(&response);
+        }
+    }
+}
+
+static void test_tls_chunked_completion(void) {
+    const char *responses[] = {
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n "
+        "world\r\n0\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nContent-Length: 1\r\nTransfer-Encoding: chunked\r\n\r\n"
+        "5;ext=yes\r\nhello\r\n6\r\n world\r\n0\r\nX-Checksum: ok\r\n\r\n",
+    };
+    const int fragments[] = {1, 7, 256};
+    for (size_t i = 0; i < sizeof(responses) / sizeof(responses[0]); ++i) {
+        for (size_t j = 0; j < sizeof(fragments) / sizeof(fragments[0]); ++j) {
+            reset_tls_script(responses[i]);
+            s_tls_recv_limit = fragments[j];
+            /* The peer holds TLS open after the complete message. Another read times out. */
+            int reads = (int)((strlen(responses[i]) - 1) / (size_t)fragments[j]) + 1;
+            s_tls_recv_fail_at = reads + 1;
+            mybot_http_client_response_t response = {0};
+            assert(mybot_http_client_get_ex("https://api.example.test/chunked", NULL, &response) ==
+                   0);
+            assert(s_tls_recv_count == reads && response.status_code == 200);
+            assert(response.body_len == 11 && strcmp(response.body, "hello world") == 0);
             mybot_http_client_response_free(&response);
         }
     }
@@ -538,7 +583,7 @@ static void test_receive_capacity_boundaries(void) {
                     check_large_body(&response, body_len);
                     assert(s_tls_response_offset == raw_lengths[length]);
                     if (raw_lengths[length] == RECV_BUF_MAX - 1) {
-                        assert(s_tls_probe_count == (framing == RESPONSE_CONTENT_LENGTH ? 0 : 1));
+                        assert(s_tls_probe_count == (framing == RESPONSE_EOF ? 1 : 0));
                     }
                 } else {
                     assert(ret < 0);
@@ -563,7 +608,7 @@ static void test_receive_capacity_failures(void) {
         mybot_http_client_response_t response = {0};
         int ret = mybot_http_client_get_ex("https://api.example.test/probe-error", NULL, &response);
         assert(s_tls_closed == closes_before + 1);
-        if (framing == RESPONSE_CONTENT_LENGTH) {
+        if (framing != RESPONSE_EOF) {
             assert(ret == 0 && s_tls_probe_count == 0);
             check_large_body(&response, body_len);
         } else {
@@ -823,7 +868,7 @@ int main(void) {
     assert(strncmp(s_tls_request, "GET /status HTTP/1.1\r\n", 22) == 0);
     assert(strstr(s_tls_request, "Host: api.example.test:8443\r\n") != NULL);
     assert(response.status_code == 200);
-    assert(strcmp(response.body, "secure") == 0);
+    assert(response.body && strcmp(response.body, "secure") == 0);
     assert(s_tls_closed == 1);
     assert(s_tls_connect_count == connect_count + 1);
     mybot_http_client_response_free(&response);
@@ -834,6 +879,7 @@ int main(void) {
     test_content_length_consistency();
 #if MYBOT_ENABLE_HTTPS
     test_tls_transport_and_requests();
+    test_tls_chunked_completion();
     test_receive_capacity_boundaries();
     test_receive_capacity_failures();
     test_parse_fuzz();
