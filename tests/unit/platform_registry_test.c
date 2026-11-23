@@ -1,31 +1,8 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #include "mybot_platform_registry.h"
+#include "platform_test.h"
 
 #include <assert.h>
-#include <string.h>
-
-static int init_simple(void **ctx) {
-    *ctx = ctx;
-    return 0;
-}
-
-static void destroy_simple(void *ctx) {
-    (void)ctx;
-}
-
-static int wifi_init(void **ctx, const char *device_id, mybot_wifi_event_handler_t emit,
-                     void *user_data) {
-    (void)device_id;
-    (void)emit;
-    (void)user_data;
-    return init_simple(ctx);
-}
-
-static int key_init(void **ctx, mybot_key_event_handler_t emit, void *user_data) {
-    (void)emit;
-    (void)user_data;
-    return init_simple(ctx);
-}
 
 static int lcd_render(void *ctx, const mybot_lcd_content_t *content) {
     (void)ctx;
@@ -43,7 +20,7 @@ static int https_connect(void **connection, const char *host, uint16_t port, int
     (void)host;
     (void)port;
     (void)timeout_ms;
-    return init_simple(connection);
+    return mybot_test_kv_init(connection);
 }
 
 static int https_send(void *connection, const void *data, size_t len, int timeout_ms) {
@@ -86,7 +63,7 @@ static int wake_words_init(void **ctx, int sample_rate, int channels, int bits_p
     (void)bits_per_sample;
     (void)handler;
     (void)user_data;
-    return init_simple(ctx);
+    return mybot_test_kv_init(ctx);
 }
 
 static int wake_words_process(void *ctx, const void *pcm, int frames) {
@@ -96,288 +73,151 @@ static int wake_words_process(void *ctx, const void *pcm, int frames) {
     return 0;
 }
 
-static int kv_get(void *ctx, const char *key, void *value, size_t capacity, size_t *out_len) {
-    (void)ctx;
-    (void)key;
-    (void)value;
-    (void)capacity;
-    (void)out_len;
-    return -1;
-}
-
-static int kv_set(void *ctx, const char *key, const void *value, size_t len) {
-    (void)ctx;
-    (void)key;
-    (void)value;
-    (void)len;
-    return 0;
-}
-
-static int kv_erase(void *ctx, const char *key) {
-    (void)ctx;
-    (void)key;
-    return 0;
-}
-
-static int audio_init(void **ctx, int rate, int channels, int bits) {
-    (void)rate;
-    (void)channels;
-    (void)bits;
-    return init_simple(ctx);
-}
-
-static int audio_start(void *ctx) {
-    (void)ctx;
-    return 0;
-}
-
-static int audio_read(void *ctx, void *buffer, int frames) {
-    (void)ctx;
-    (void)buffer;
-    return frames;
-}
-
-static int audio_write(void *ctx, const void *buffer, int frames) {
-    (void)ctx;
-    (void)buffer;
-    return frames;
-}
-
-static int audio_stop(void *ctx) {
-    (void)ctx;
-    return 0;
-}
-
-#if MYBOT_ENABLE_VIDEO
-static int video_init(void **ctx, mybot_video_frame_handler_t handler, void *user_data) {
-    (void)handler;
-    (void)user_data;
-    *ctx = ctx;
-    return 0;
-}
-
-static int video_start(void *ctx) {
-    (void)ctx;
-    return 0;
-}
-
-static int video_stop(void *ctx) {
-    (void)ctx;
-    return 0;
-}
-
-static void video_target_bitrate(void *ctx, uint32_t target_bps) {
-    (void)ctx;
-    (void)target_bps;
-}
-
-static void video_destroy(void *ctx) {
-    (void)ctx;
-}
-#endif
-
-static const mybot_wifi_ops_t s_wifi = {
-    .init = wifi_init,
-    .destroy = destroy_simple,
-};
-static const mybot_kv_store_ops_t s_kv = {
-    .init = init_simple,
-    .get = kv_get,
-    .set = kv_set,
-    .erase = kv_erase,
-    .destroy = destroy_simple,
-};
-static const mybot_key_ops_t s_key = {
-    .init = key_init,
-    .destroy = destroy_simple,
-};
 static const mybot_lcd_ops_t s_lcd = {
-    .init = init_simple,
+    .init = mybot_test_kv_init,
     .render = lcd_render,
-    .destroy = destroy_simple,
+    .destroy = mybot_test_destroy,
 };
 static const mybot_audio_volume_ops_t s_volume = {
-    .init = init_simple,
+    .init = mybot_test_kv_init,
     .set_volume = volume_set,
-    .destroy = destroy_simple,
+    .destroy = mybot_test_destroy,
 };
 static const mybot_https_ops_t s_https = {
     .connect = https_connect,
     .send = https_send,
     .recv = https_recv,
-    .close = destroy_simple,
+    .close = mybot_test_destroy,
 };
 static const mybot_announce_ops_t s_announce = {
-    .init = init_simple,
+    .init = mybot_test_kv_init,
     .open = announce_open,
     .read = announce_read,
     .close = announce_close,
-    .destroy = destroy_simple,
+    .destroy = mybot_test_destroy,
 };
 static const mybot_wake_words_ops_t s_wake_words = {
     .init = wake_words_init,
     .process = wake_words_process,
-    .destroy = destroy_simple,
+    .destroy = mybot_test_destroy,
 };
-static const mybot_audio_capture_ops_t s_capture = {
-    .init = audio_init,
-    .start = audio_start,
-    .read = audio_read,
-    .stop = audio_stop,
-    .destroy = destroy_simple,
-};
-static const mybot_audio_playback_ops_t s_playback = {
-    .init = audio_init,
-    .start = audio_start,
-    .write = audio_write,
-    .stop = audio_stop,
-    .destroy = destroy_simple,
-};
-#if MYBOT_ENABLE_VIDEO
-static const mybot_video_ops_t s_video = {
-    .min_bps = 32000,
-    .max_bps = 256000,
-    .init = video_init,
-    .start = video_start,
-    .stop = video_stop,
-    .on_target_bitrate_changed = video_target_bitrate,
-    .destroy = video_destroy,
-};
-#endif
-
-static mybot_platform_descriptor_t complete_descriptor(void) {
-    mybot_platform_descriptor_t descriptor;
-    memset(&descriptor, 0, sizeof(descriptor));
-    descriptor.wifi = &s_wifi;
-    descriptor.kv_store = &s_kv;
-    descriptor.key = &s_key;
-    descriptor.audio_capture = &s_capture;
-    descriptor.audio_playback = &s_playback;
-#if MYBOT_ENABLE_VIDEO
-    descriptor.video = &s_video;
-#endif
-    return descriptor;
-}
-
 int main(void) {
+    const mybot_platform_descriptor_t required = mybot_test_platform_descriptor();
     mybot_platform_descriptor_t descriptor;
 
     assert(mybot_platform_register(NULL) < 0);
     assert(!mybot_platform_registry_is_registered());
 
-    descriptor = complete_descriptor();
+    descriptor = required;
     descriptor.key = NULL;
     assert(mybot_platform_register(&descriptor) < 0);
     assert(!mybot_platform_registry_is_registered());
 
-    mybot_wifi_ops_t invalid_wifi = s_wifi;
+    mybot_wifi_ops_t invalid_wifi = *required.wifi;
     invalid_wifi.init = NULL;
-    descriptor = complete_descriptor();
+    descriptor = required;
     descriptor.wifi = &invalid_wifi;
     assert(mybot_platform_register(&descriptor) < 0);
 
-    mybot_kv_store_ops_t invalid_kv = s_kv;
+    mybot_kv_store_ops_t invalid_kv = *required.kv_store;
     invalid_kv.get = NULL;
-    descriptor = complete_descriptor();
+    descriptor = required;
     descriptor.kv_store = &invalid_kv;
     assert(mybot_platform_register(&descriptor) < 0);
 
-    mybot_key_ops_t invalid_key = s_key;
+    mybot_key_ops_t invalid_key = *required.key;
     invalid_key.init = NULL;
-    descriptor = complete_descriptor();
+    descriptor = required;
     descriptor.key = &invalid_key;
     assert(mybot_platform_register(&descriptor) < 0);
 
-    mybot_audio_capture_ops_t invalid_capture = s_capture;
+    mybot_audio_capture_ops_t invalid_capture = *required.audio_capture;
     invalid_capture.read = NULL;
-    descriptor = complete_descriptor();
+    descriptor = required;
     descriptor.audio_capture = &invalid_capture;
     assert(mybot_platform_register(&descriptor) < 0);
 
-    mybot_audio_playback_ops_t invalid_playback = s_playback;
+    mybot_audio_playback_ops_t invalid_playback = *required.audio_playback;
     invalid_playback.write = NULL;
-    descriptor = complete_descriptor();
+    descriptor = required;
     descriptor.audio_playback = &invalid_playback;
     assert(mybot_platform_register(&descriptor) < 0);
 
 #if MYBOT_ENABLE_VIDEO
-    descriptor = complete_descriptor();
+    descriptor = required;
     descriptor.video = NULL;
     assert(mybot_platform_register(&descriptor) < 0);
 
-    mybot_video_ops_t invalid_video = s_video;
+    mybot_video_ops_t invalid_video = *required.video;
     invalid_video.on_target_bitrate_changed = NULL;
-    descriptor = complete_descriptor();
+    descriptor = required;
     descriptor.video = &invalid_video;
     assert(mybot_platform_register(&descriptor) < 0);
 
-    invalid_video = s_video;
+    invalid_video = *required.video;
     invalid_video.max_bps = 0;
-    descriptor = complete_descriptor();
+    descriptor = required;
     descriptor.video = &invalid_video;
     assert(mybot_platform_register(&descriptor) < 0);
 
-    invalid_video = s_video;
+    invalid_video = *required.video;
     invalid_video.min_bps = invalid_video.max_bps + 1U;
-    descriptor = complete_descriptor();
+    descriptor = required;
     descriptor.video = &invalid_video;
     assert(mybot_platform_register(&descriptor) < 0);
 #endif
 
     mybot_audio_volume_ops_t invalid_volume = s_volume;
     invalid_volume.set_volume = NULL;
-    descriptor = complete_descriptor();
+    descriptor = required;
     descriptor.audio_volume = &invalid_volume;
     assert(mybot_platform_register(&descriptor) < 0);
 
     mybot_https_ops_t invalid_https = s_https;
     invalid_https.recv = NULL;
-    descriptor = complete_descriptor();
+    descriptor = required;
     descriptor.https = &invalid_https;
     assert(mybot_platform_register(&descriptor) < 0);
 
     mybot_lcd_ops_t invalid_lcd = s_lcd;
     invalid_lcd.render = NULL;
-    descriptor = complete_descriptor();
+    descriptor = required;
     descriptor.lcd = &invalid_lcd;
     assert(mybot_platform_register(&descriptor) < 0);
 
     mybot_announce_ops_t invalid_announce = s_announce;
     invalid_announce.read = NULL;
-    descriptor = complete_descriptor();
+    descriptor = required;
     descriptor.announce = &invalid_announce;
     assert(mybot_platform_register(&descriptor) < 0);
 
     mybot_wake_words_ops_t invalid_wake_words = s_wake_words;
     invalid_wake_words.process = NULL;
-    descriptor = complete_descriptor();
+    descriptor = required;
     descriptor.wake_words = &invalid_wake_words;
     assert(mybot_platform_register(&descriptor) < 0);
 
-    descriptor = complete_descriptor();
+    descriptor = required;
     descriptor.audio_volume = &s_volume;
     descriptor.https = &s_https;
     descriptor.lcd = &s_lcd;
     descriptor.announce = &s_announce;
     descriptor.wake_words = &s_wake_words;
-#if MYBOT_ENABLE_VIDEO
-    descriptor.video = &s_video;
-#endif
     assert(mybot_platform_register(&descriptor) == 0);
     assert(mybot_platform_registry_is_registered());
     const mybot_platform_descriptor_t *registered = mybot_platform_registry_get();
-    assert(registered->wifi == &s_wifi);
-    assert(registered->kv_store == &s_kv);
-    assert(registered->key == &s_key);
-    assert(registered->audio_capture == &s_capture);
-    assert(registered->audio_playback == &s_playback);
+    assert(registered->wifi == required.wifi);
+    assert(registered->kv_store == required.kv_store);
+    assert(registered->key == required.key);
+    assert(registered->audio_capture == required.audio_capture);
+    assert(registered->audio_playback == required.audio_playback);
     assert(registered->audio_volume == &s_volume);
     assert(registered->https == &s_https);
     assert(registered->lcd == &s_lcd);
     assert(registered->announce == &s_announce);
     assert(registered->wake_words == &s_wake_words);
 #if MYBOT_ENABLE_VIDEO
-    assert(registered->video == &s_video);
+    assert(registered->video == required.video);
 #endif
 
     /* Registration is process-wide and succeeds only once. */
