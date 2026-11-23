@@ -459,7 +459,6 @@ static void test_binding_optional_fields(void) {
     assert(mybot_device_client_get_binding_status("http://server", "device", "Pair token",
                                                   &binding) == 0);
     assert(binding.status[0] == '\0' && binding.device_token[0] == '\0');
-    assert(binding.agent_id[0] == '\0' && binding.agent_name[0] == '\0');
     assert(binding.poll_after_seconds == INT_MIN);
 
     static const struct {
@@ -467,8 +466,8 @@ static void test_binding_optional_fields(void) {
         size_t capacity;
     } fields[] = {{"status", sizeof(binding.status)},
                   {"device_token", sizeof(binding.device_token)},
-                  {"agent_id", sizeof(binding.agent_id)},
-                  {"agent_name", sizeof(binding.agent_name)}};
+                  {"agent_id", MYBOT_DEVICE_CLIENT_MAX_ID},
+                  {"agent_name", MYBOT_DEVICE_CLIENT_MAX_ID}};
     char value[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 1];
     char response[MYBOT_DEVICE_CLIENT_MAX_TOKEN + 128];
     for (size_t i = 0; i < sizeof(fields) / sizeof(fields[0]); ++i) {
@@ -586,8 +585,6 @@ static void test_binding_failures(void) {
     assert(strcmp(s_request_url, "http://server/devices/device%2Fone/binding-status") == 0);
     assert(strcmp(s_request_headers, "Authorization: Pair pair-token\r\n") == 0);
     assert(strcmp(binding.device_token, "device-token") == 0);
-    assert(strcmp(binding.agent_id, "agent-1") == 0);
-    assert(strcmp(binding.agent_name, "Agent") == 0);
     assert(binding.poll_after_seconds == 7);
 
     calls = s_get_ex_call_count;

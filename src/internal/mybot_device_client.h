@@ -36,8 +36,6 @@ typedef struct {
 typedef struct {
     char status[16]; /* pending | bound | unbound | expired | failed */
     char device_token[MYBOT_DEVICE_CLIENT_MAX_TOKEN];
-    char agent_id[MYBOT_DEVICE_CLIENT_MAX_ID];
-    char agent_name[128];
     int poll_after_seconds;
 } mybot_device_binding_t;
 
