@@ -701,7 +701,7 @@ static void dev_on_pair_code(const char *code, void *user_data) {
     }
 
     AOSL_LOG_NTC("pair code: %s", code);
-    mybot_presenter_show_pair_code(&runtime->presenter, code);
+    mybot_presenter_set_pair_code(&runtime->presenter, code);
     (void)mybot_media_pipeline_play_prompt(&runtime->media, MYBOT_PROMPT_PAIR_CODE, code);
 }
 

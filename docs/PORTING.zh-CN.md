@@ -160,6 +160,9 @@ Linux 参考平台仅在 `MYBOT_ENABLE_HTTPS=ON` 时编译并链接 OpenSSL。
 
 ### LCD（可选）
 
+设备等待认领期间，如果 Wi-Fi 断开后重新连接，SDK 会再次下发当前配对码。LCD 适配器可根据
+每次收到的内容绘制屏幕。
+
 存在显示设备时实现 `mybot_lcd_ops_t`。渲染由应用 control owner 调用，SDK 不会并发调用。
 内容为借用。将 ops 表加入平台描述符。
 

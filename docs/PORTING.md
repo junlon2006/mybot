@@ -184,6 +184,9 @@ loss is reported as `MYBOT_STATE_WIFI_DISCONNECTED` and the SDK ends the convers
 
 ### LCD (optional)
 
+If Wi-Fi reconnects while the device is waiting to be claimed, the SDK renders the current pairing
+code again. The LCD adapter can draw each screen from the supplied content.
+
 Implement `mybot_lcd_ops_t` when a display exists. Render receives semantic content from the
 application control owner; the SDK does not invoke it concurrently. Content is borrowed. Add the
 operations table to the platform descriptor.

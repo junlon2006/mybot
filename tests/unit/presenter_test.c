@@ -44,7 +44,7 @@ int main(void) {
     assert(mybot_presenter_init(NULL) < 0);
     mybot_presenter_deinit(NULL);
     mybot_presenter_show_screen(NULL, MYBOT_LCD_SCREEN_READY);
-    mybot_presenter_show_pair_code(NULL, "1");
+    mybot_presenter_set_pair_code(NULL, "1");
     mybot_presenter_set_vp_registered(NULL, true);
     mybot_presenter_update_server_indicator(NULL, MYBOT_LCD_INDICATOR_LISTENING, true);
     mybot_presenter_clear_server_indicators(NULL);
@@ -57,8 +57,7 @@ int main(void) {
     mybot_presenter_set_vp_registered(&presenter, true);
     mybot_presenter_show_screen(&presenter, MYBOT_LCD_SCREEN_IN_CONVERSATION);
     assert(presenter.indicators == MYBOT_LCD_INDICATOR_VP_REGISTERED);
-    mybot_presenter_show_pair_code(&presenter, "123456");
-    assert(presenter.indicators == MYBOT_LCD_INDICATOR_NONE);
+    mybot_presenter_set_pair_code(&presenter, "123456");
     mybot_presenter_deinit(&presenter);
     assert(s_init_count == 0);
     assert(s_render_count == 0);
@@ -87,10 +86,6 @@ int main(void) {
     mybot_presenter_show_screen(&presenter, MYBOT_LCD_SCREEN_COUNT);
     assert(s_render_count == renders_before_invalid_screen);
 
-    mybot_presenter_show_pair_code(&presenter, "123456");
-    assert(s_last_content.screen == MYBOT_LCD_SCREEN_PAIR_CODE);
-    assert(strcmp(s_last_content.pair_code, "123456") == 0);
-
     mybot_state_model_reset(&state_model);
     assert(mybot_state_model_begin_start(&state_model));
     assert(mybot_state_model_begin_services(&state_model));
@@ -113,10 +108,18 @@ int main(void) {
     assert(mybot_state_model_set_device_state(&state_model, MYBOT_DEVICE_STATE_PAIRING));
     mybot_presenter_render_state(&presenter, &state_model);
     assert(s_last_content.screen == MYBOT_LCD_SCREEN_PAIRING);
-    int renders_before_awaiting_claim = s_render_count;
+    mybot_presenter_set_pair_code(&presenter, "123456");
     assert(mybot_state_model_set_device_state(&state_model, MYBOT_DEVICE_STATE_AWAITING_CLAIM));
     mybot_presenter_render_state(&presenter, &state_model);
-    assert(s_render_count == renders_before_awaiting_claim);
+    assert(s_last_content.screen == MYBOT_LCD_SCREEN_PAIR_CODE);
+    assert(strcmp(s_last_content.pair_code, "123456") == 0);
+    assert(mybot_state_model_network_lost(&state_model));
+    mybot_presenter_show_screen(&presenter, MYBOT_LCD_SCREEN_WIFI_DISCONNECTED);
+    assert(s_last_content.screen == MYBOT_LCD_SCREEN_WIFI_DISCONNECTED);
+    assert(mybot_state_model_network_restored(&state_model));
+    mybot_presenter_render_state(&presenter, &state_model);
+    assert(s_last_content.screen == MYBOT_LCD_SCREEN_PAIR_CODE);
+    assert(strcmp(s_last_content.pair_code, "123456") == 0);
     assert(mybot_state_model_set_device_state(&state_model, MYBOT_DEVICE_STATE_RUNTIME));
     mybot_presenter_render_state(&presenter, &state_model);
     assert(s_last_content.screen == MYBOT_LCD_SCREEN_READY);
@@ -160,12 +163,15 @@ int main(void) {
     mybot_presenter_show_screen(&presenter, MYBOT_LCD_SCREEN_IN_CONVERSATION);
     assert(presenter.active);
     assert(presenter.indicators == MYBOT_LCD_INDICATOR_VP_REGISTERED);
-    mybot_presenter_show_pair_code(&presenter, "654321");
+    assert(mybot_state_model_set_device_state(&state_model, MYBOT_DEVICE_STATE_AWAITING_CLAIM));
+    mybot_presenter_set_pair_code(&presenter, "654321");
+    mybot_presenter_render_state(&presenter, &state_model);
     assert(presenter.active);
     assert(presenter.indicators == MYBOT_LCD_INDICATOR_NONE);
     assert(s_render_count == renders_before_failure + 2);
     s_render_result = 0;
-    mybot_presenter_show_pair_code(&presenter, "123456");
+    mybot_presenter_set_pair_code(&presenter, "123456");
+    mybot_presenter_render_state(&presenter, &state_model);
     assert(strcmp(s_last_content.pair_code, "123456") == 0);
     mybot_presenter_render_state(&presenter, NULL);
     assert(s_render_count == renders_before_failure + 3);

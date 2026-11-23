@@ -8,6 +8,7 @@ headers.
 
 ### Fixed
 
+- Restore the current pairing code on the LCD after Wi-Fi reconnects while the device awaits a claim.
 - Preserve the stored device credential if startup cannot read it. Restarting after storage
   recovers restores the original binding.
 

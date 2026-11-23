@@ -9,6 +9,7 @@ int mybot_presenter_init(mybot_presenter_t *presenter) {
     if (!presenter) {
         return -1;
     }
+    presenter->pair_code[0] = '\0';
     presenter->indicators = MYBOT_LCD_INDICATOR_NONE;
     if (!mybot_lcd_is_registered()) {
         return 0;
@@ -51,14 +52,16 @@ void mybot_presenter_show_screen(mybot_presenter_t *presenter, mybot_lcd_screen_
     }
 }
 
-void mybot_presenter_show_pair_code(mybot_presenter_t *presenter, const char *code) {
+void mybot_presenter_set_pair_code(mybot_presenter_t *presenter, const char *code) {
     if (!presenter) {
         return;
     }
-    presenter->indicators = MYBOT_LCD_INDICATOR_NONE;
-    if (presenter->active && mybot_lcd_show_pair_code(&presenter->lcd, code) < 0) {
-        AOSL_LOG_WRN("failed to render LCD pair code");
+    size_t len = code ? strlen(code) : 0;
+    if (!len || len >= sizeof(presenter->pair_code)) {
+        presenter->pair_code[0] = '\0';
+        return;
     }
+    memcpy(presenter->pair_code, code, len + 1);
 }
 
 void mybot_presenter_set_vp_registered(mybot_presenter_t *presenter, bool registered) {
@@ -117,6 +120,9 @@ void mybot_presenter_render_state(mybot_presenter_t *presenter,
     mybot_state_view_t state = mybot_state_model_get_view(state_model);
     mybot_device_state_t device_state = state.device_state;
     mybot_state_t app_state = state.app_state;
+    if (device_state != MYBOT_DEVICE_STATE_AWAITING_CLAIM) {
+        presenter->pair_code[0] = '\0';
+    }
     if (!app_state_matches_device_state(device_state, app_state)) {
         return;
     }
@@ -129,6 +135,10 @@ void mybot_presenter_render_state(mybot_presenter_t *presenter,
         break;
     case MYBOT_DEVICE_STATE_AWAITING_CLAIM:
         presenter->indicators = MYBOT_LCD_INDICATOR_NONE;
+        if (presenter->active && presenter->pair_code[0] &&
+            mybot_lcd_show_pair_code(&presenter->lcd, presenter->pair_code) < 0) {
+            AOSL_LOG_WRN("failed to render LCD pair code");
+        }
         break;
     case MYBOT_DEVICE_STATE_RUNTIME:
         presenter->indicators = MYBOT_LCD_INDICATOR_NONE;
