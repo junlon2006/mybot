@@ -615,17 +615,11 @@ void mybot_media_pipeline_push_remote_audio(mybot_media_pipeline_t *pipeline, co
     }
 }
 
-int mybot_media_pipeline_play_prompt(mybot_media_pipeline_t *pipeline, mybot_prompt_type_t type,
-                                     const void *args) {
-    if (!pipeline || !args) {
+int mybot_media_pipeline_play_pair_code(mybot_media_pipeline_t *pipeline, const char *code) {
+    if (!pipeline || !code) {
         return -1;
     }
-
-    switch (type) {
-    case MYBOT_PROMPT_PAIR_CODE:
-        return mybot_announce_play_pair_code(&pipeline->announce, (const char *)args);
-    }
-    return -1;
+    return mybot_announce_play_pair_code(&pipeline->announce, code);
 }
 
 void mybot_media_pipeline_stop_prompt(mybot_media_pipeline_t *pipeline) {
